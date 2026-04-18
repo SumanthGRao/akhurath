@@ -82,7 +82,7 @@ $attEventsCount = count(akh_editor_attendance_read_doc()['events']);
 $leaveReqCount = count(akh_editor_leave_read()['requests']);
 
 $pageTitle = 'Editor attendance — ' . SITE_NAME;
-$bodyClass = 'page-portal admin-page admin-page--board admin-page--attendance admin-page--attendance-full';
+$bodyClass = 'page-portal admin-page admin-page--board';
 $adminNavActive = 'attendance.php';
 
 $years = range((int) date('Y'), (int) date('Y') - 2);
@@ -94,39 +94,40 @@ $months = [
 require_once AKH_ROOT . '/includes/header.php';
 ?>
 
-  <main id="main" class="portal-main portal-main--board admin-attendance-main">
-    <div class="admin-attendance-fullwrap">
-      <header class="admin-head admin-attendance-fullhead admin-attendance-headerbar">
-        <div class="admin-attendance-headerbar__main">
+  <main id="main" class="portal-main portal-main--board">
+    <div class="portal-card portal-card--tasks admin-shell">
+      <header class="admin-head">
+        <div>
           <h1 class="portal-title">Editor attendance</h1>
           <p class="portal-lead admin-head__meta">One line per editor — open a name for the full calendar. <strong class="atd-legend atd-legend--leave">Red</strong> absent · <strong class="atd-legend atd-legend--pleave">Purple</strong> approved leave · Saturday half-day. <span class="admin-attendance-tz">All times <?php echo h(AKH_SITE_TIMEZONE === 'Asia/Kolkata' ? 'IST (Asia/Kolkata)' : AKH_SITE_TIMEZONE); ?>.</span></p>
         </div>
-        <div class="admin-attendance-headerbar__right">
-          <form class="admin-attendance-cornerpicker" method="get" action="">
-            <label class="admin-attendance-cornerpicker__item"><span class="visually-hidden">Month</span>
-              <select name="month" aria-label="Month">
-                <?php foreach ($months as $num => $label): ?>
-                  <option value="<?php echo (int) $num; ?>"<?php echo $num === $report['month'] ? ' selected' : ''; ?>><?php echo h($label); ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-            <label class="admin-attendance-cornerpicker__item"><span class="visually-hidden">Year</span>
-              <select name="year" aria-label="Year">
-                <?php foreach ($years as $yr): ?>
-                  <option value="<?php echo (int) $yr; ?>"<?php echo $yr === $report['year'] ? ' selected' : ''; ?>><?php echo (int) $yr; ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-            <button type="submit" class="btn btn--primary btn--sm">Show</button>
-          </form>
-          <div class="admin-head__actions">
-            <?php $adminConsoleActive = ''; require __DIR__ . '/includes/admin-console-sidebar.php'; ?>
-            <a class="btn btn--ghost btn--sm" href="<?php echo h(base_path('admin/logout.php')); ?>">Sign out</a>
-          </div>
+        <div class="admin-head__actions">
+          <?php $adminConsoleActive = ''; require __DIR__ . '/includes/admin-console-sidebar.php'; ?>
+          <a class="btn btn--ghost btn--sm" href="<?php echo h(base_path('admin/logout.php')); ?>">Sign out</a>
         </div>
       </header>
 
       <?php require AKH_ROOT . '/includes/admin-nav.php'; ?>
+
+      <form class="admin-attendance-toolbar" method="get" action="" aria-label="Report month">
+        <span class="admin-attendance-toolbar__label">Month</span>
+        <label class="admin-attendance-toolbar__field"><span class="visually-hidden">Month</span>
+          <select name="month" aria-label="Month">
+            <?php foreach ($months as $num => $label): ?>
+              <option value="<?php echo (int) $num; ?>"<?php echo $num === $report['month'] ? ' selected' : ''; ?>><?php echo h($label); ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+        <span class="admin-attendance-toolbar__label">Year</span>
+        <label class="admin-attendance-toolbar__field"><span class="visually-hidden">Year</span>
+          <select name="year" aria-label="Year">
+            <?php foreach ($years as $yr): ?>
+              <option value="<?php echo (int) $yr; ?>"<?php echo $yr === $report['year'] ? ' selected' : ''; ?>><?php echo (int) $yr; ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+        <button type="submit" class="btn btn--primary btn--sm">Show</button>
+      </form>
 
       <?php if ($okBanner): ?>
         <p class="banner banner--ok" role="status">Leave request updated.</p>
