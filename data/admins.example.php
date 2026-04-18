@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 /**
  * Copy to data/admins.php and replace with real bcrypt hashes.
- * Generate with: php scripts/seed-admin-console.php
+ * Default admin is created by: php scripts/seed-admin-console.php (user admin / password from that script).
  *
  * @return array<string, string> lowercase username => password_hash
  */
 return [
-    // 'akhurath' => '$2y$10$...',
+    // 'admin' => '$2y$10$...',
 ];

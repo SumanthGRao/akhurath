@@ -5,14 +5,13 @@ declare(strict_types=1);
 
 /**
  * Writes data/admins.php with a bcrypt hash for the default admin.
- * After this file exists, set AKH_ADMIN_BOOTSTRAP_ENABLED to false in includes/config.php.
  */
 
 $root = dirname(__DIR__);
 $target = $root . '/data/admins.php';
 
-$username = 'akhurath';
-$password = 'Akhurath@123';
+$username = 'admin';
+$password = 'admin@123';
 
 $hash = password_hash($password, PASSWORD_DEFAULT);
 if ($hash === false) {
@@ -32,4 +31,3 @@ if (file_put_contents($target, $body) === false) {
 }
 
 echo "Wrote {$target} for user '{$username}'.\n";
-echo "Disable plaintext bootstrap: set AKH_ADMIN_BOOTSTRAP_ENABLED to false in includes/config.php.\n";

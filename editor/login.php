@@ -42,10 +42,6 @@ require_once AKH_ROOT . '/includes/header.php';
       <h1 class="portal-title">Editor login</h1>
       <p class="portal-lead">Assign incoming client tasks to yourself and update status. This is separate from the client portal.</p>
 
-      <?php if (AKH_DEV_TEST_LOGIN): ?>
-        <p class="banner banner--topic" role="status"><strong>Dev mode:</strong> sign in with username <code>test</code> and password <code>test</code>. Set <code>AKH_DEV_TEST_LOGIN</code> to <code>false</code> in <code>includes/config.php</code> before production.</p>
-      <?php endif; ?>
-
       <?php if (!$accountsReady && !AKH_DEV_TEST_LOGIN): ?>
         <p class="banner banner--info" role="status">Setup: copy <code>data/editors.example.php</code> to <code>data/editors.php</code> with password hashes (same workflow as client accounts).</p>
       <?php endif; ?>

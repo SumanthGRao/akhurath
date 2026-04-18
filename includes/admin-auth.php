@@ -46,17 +46,6 @@ function akh_admin_login(string $username, string $password): bool
         return true;
     }
 
-    if (AKH_ADMIN_BOOTSTRAP_ENABLED) {
-        $bootUser = strtolower(trim(AKH_ADMIN_BOOTSTRAP_USER));
-        $bootPass = AKH_ADMIN_BOOTSTRAP_PASS;
-        if ($key === $bootUser && strlen($password) === strlen($bootPass) && hash_equals($bootPass, $password)) {
-            session_regenerate_id(true);
-            $_SESSION['akh_admin_user'] = $key;
-
-            return true;
-        }
-    }
-
     return false;
 }
 

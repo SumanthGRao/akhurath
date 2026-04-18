@@ -14,24 +14,16 @@ define('AKH_ROOT', dirname(__DIR__));
 const BASE_URL = '';
 
 /**
- * When true: client and editor portals accept username `test` with password `test` (no account files needed).
- * Set to false before production and use data/customers.php + data/editors.php instead.
+ * When true (local only): client and editor portals accept username `test` / password `test` without account files.
+ * Leave false in production; use data/customers.php and data/editors.php with real password hashes.
  */
-const AKH_DEV_TEST_LOGIN = true;
+const AKH_DEV_TEST_LOGIN = false;
 
 /**
  * When true, /customer/register.php lets visitors create a client account (writes data/customers.php).
  * Disable on production if you only want manually provisioned accounts.
  */
 const AKH_ALLOW_CLIENT_REGISTRATION = true;
-
-/**
- * When data/admins.php is missing, allow admin login with these credentials (plaintext in config).
- * For production: run `php scripts/seed-admin-console.php`, then set AKH_ADMIN_BOOTSTRAP_ENABLED to false.
- */
-const AKH_ADMIN_BOOTSTRAP_ENABLED = true;
-const AKH_ADMIN_BOOTSTRAP_USER = 'Akhurath';
-const AKH_ADMIN_BOOTSTRAP_PASS = 'Akhurath@123';
 
 /** Site identity */
 const SITE_NAME = 'Akhurath Studio';

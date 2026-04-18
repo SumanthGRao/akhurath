@@ -43,10 +43,6 @@ require_once AKH_ROOT . '/includes/header.php';
       <h1 class="portal-title">Client login</h1>
       <p class="portal-lead">Sign in to submit tasks (Drive link or NAS upload), track status, and open your deliverables portal at <strong><?php echo h(parse_url(DRIVE_PORTAL_URL, PHP_URL_HOST) ?: DRIVE_PORTAL_URL); ?></strong> — use the drive credentials we gave you when you land there.</p>
 
-      <?php if (AKH_DEV_TEST_LOGIN): ?>
-        <p class="banner banner--topic" role="status"><strong>Dev mode:</strong> sign in with username <code>test</code> and password <code>test</code>. Set <code>AKH_DEV_TEST_LOGIN</code> to <code>false</code> in <code>includes/config.php</code> before production.</p>
-      <?php endif; ?>
-
       <?php if (!$accountsReady && !AKH_DEV_TEST_LOGIN): ?>
         <p class="banner banner--info" role="status">Setup: copy <code>data/customers.example.php</code> to <code>data/customers.php</code>, add hashed passwords (see <code>PHASES.txt</code>).</p>
       <?php endif; ?>

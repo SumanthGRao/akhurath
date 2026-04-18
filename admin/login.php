@@ -21,6 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pass = (string) ($_POST['password'] ?? '');
     if ($user === '' || $pass === '') {
         $error = 'Enter username and password.';
+    } elseif (akh_admin_accounts() === []) {
+        $error = 'No admin accounts are configured.';
     } elseif (!akh_admin_login($user, $pass)) {
         $error = 'Invalid credentials.';
     } else {
@@ -36,9 +38,6 @@ require_once AKH_ROOT . '/includes/header.php';
     <div class="portal-card">
       <h1 class="portal-title">Admin console</h1>
       <p class="portal-lead">Sign in to manage clients, editors, and tasks.</p>
-      <?php if (AKH_ADMIN_BOOTSTRAP_ENABLED && akh_admin_accounts() === []): ?>
-        <p class="banner banner--topic" role="status">Bootstrap login: <strong><?php echo h(AKH_ADMIN_BOOTSTRAP_USER); ?></strong> / password from config. Create <code>data/admins.php</code> with <code>php scripts/seed-admin-console.php</code> and set <code>AKH_ADMIN_BOOTSTRAP_ENABLED</code> to <code>false</code> when ready.</p>
-      <?php endif; ?>
       <?php if ($error !== ''): ?>
         <p class="banner banner--err" role="alert"><?php echo h($error); ?></p>
       <?php endif; ?>
