@@ -119,9 +119,10 @@ require_once AKH_ROOT . '/includes/header.php';
             </label>
             <button type="submit" class="btn btn--primary btn--sm">Show</button>
           </form>
-          <p class="admin-head__actions">
+          <div class="admin-head__actions">
+            <?php $adminConsoleActive = ''; require __DIR__ . '/includes/admin-console-sidebar.php'; ?>
             <a class="btn btn--ghost btn--sm" href="<?php echo h(base_path('admin/logout.php')); ?>">Sign out</a>
-          </p>
+          </div>
         </div>
       </header>
 

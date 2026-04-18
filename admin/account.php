@@ -120,9 +120,10 @@ require_once AKH_ROOT . '/includes/header.php';
           <h1 class="portal-title">Account & security</h1>
           <p class="portal-lead admin-head__meta">Signed in as <strong><?php echo h($user); ?></strong></p>
         </div>
-        <p class="admin-head__actions">
+        <div class="admin-head__actions">
+          <?php $adminConsoleActive = ''; require __DIR__ . '/includes/admin-console-sidebar.php'; ?>
           <a class="btn btn--ghost btn--sm" href="<?php echo h(base_path('admin/logout.php')); ?>">Sign out</a>
-        </p>
+        </div>
       </header>
 
       <?php require AKH_ROOT . '/includes/admin-nav.php'; ?>

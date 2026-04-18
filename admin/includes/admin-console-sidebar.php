@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
-/** @var string $adminConsoleActive One of: tasks, create, clients, editors */
+/**
+ * @var string $adminConsoleActive One of: tasks, create, clients, editors.
+ *            Use '' on Overview, Attendance, Account, etc. (no console link marked active).
+ */
 
 $adminBase = base_path('admin/');
-$active = $adminConsoleActive ?? 'tasks';
+$active = $adminConsoleActive ?? '';
 ?>
 <details class="admin-console-dd">
   <summary class="admin-console-dd__summary btn btn--ghost btn--sm">Console</summary>
