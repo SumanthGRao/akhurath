@@ -188,20 +188,36 @@ require_once AKH_ROOT . '/includes/header.php';
           if (($ed['leave_pending_in_month'] ?? 0) > 0) {
               $brief .= ' · ' . (int) $ed['leave_pending_in_month'] . ' leave pending';
           }
-          $todayLine = akh_editor_attendance_today_summary((string) ($ed['username'] ?? ''));
+          $punches = akh_editor_attendance_today_punch_parts((string) ($ed['username'] ?? ''));
           ?>
           <div class="admin-attendance-row">
             <div class="admin-attendance-row__who">
               <a class="admin-attendance-row__name" href="<?php echo h($detailUrl); ?>"><?php echo h((string) ($ed['username'] ?? '')); ?></a>
               <span class="admin-attendance-row__month"><?php echo h($monthLabel); ?></span>
             </div>
-            <div class="admin-attendance-row__today">
-              <span class="admin-attendance-row__k">Today</span>
-              <span class="admin-attendance-row__v"><?php echo h($todayLine); ?></span>
+            <div class="admin-attendance-row__today" aria-label="Today">
+              <span class="admin-attendance-row__inline-k">Today</span>
+              <?php if ($punches['kind'] === 'empty'): ?>
+                <span class="admin-attendance-row__inline-muted">No punches today</span>
+              <?php elseif ($punches['kind'] === 'on_shift'): ?>
+                <span class="admin-attendance-row__inline-bit">In</span>
+                <span class="admin-attendance-row__time"><?php echo h($punches['in']); ?></span>
+                <span class="admin-attendance-row__sep" aria-hidden="true">·</span>
+                <span class="admin-attendance-row__inline-muted">On shift</span>
+              <?php elseif ($punches['kind'] === 'full'): ?>
+                <span class="admin-attendance-row__inline-bit">In</span>
+                <span class="admin-attendance-row__time"><?php echo h($punches['in']); ?></span>
+                <span class="admin-attendance-row__sep" aria-hidden="true">·</span>
+                <span class="admin-attendance-row__inline-bit">Out</span>
+                <span class="admin-attendance-row__time"><?php echo h($punches['out']); ?></span>
+              <?php else: ?>
+                <span class="admin-attendance-row__inline-bit">In</span>
+                <span class="admin-attendance-row__time"><?php echo h($punches['in']); ?></span>
+              <?php endif; ?>
             </div>
-            <div class="admin-attendance-row__brief">
-              <span class="admin-attendance-row__k">Month</span>
-              <span class="admin-attendance-row__v"><?php echo h($brief); ?></span>
+            <div class="admin-attendance-row__brief" aria-label="Month summary">
+              <span class="admin-attendance-row__inline-k">Month</span>
+              <span class="admin-attendance-row__inline-val"><?php echo h($brief); ?></span>
             </div>
             <div class="admin-attendance-row__go">
               <a class="btn btn--ghost btn--sm" href="<?php echo h($detailUrl); ?>">Details</a>

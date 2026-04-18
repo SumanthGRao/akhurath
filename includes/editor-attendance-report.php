@@ -326,14 +326,18 @@ function akh_editor_attendance_format_hours(int $sec): string
     return $m === 0 ? $h . 'h' : $h . 'h ' . $m . 'm';
 }
 
-/** One-line summary for the list view (plain text). */
-function akh_editor_attendance_today_summary(string $editor): string
+/**
+ * Today’s punches for the admin list row (highlight In / Out separately).
+ *
+ * @return array{kind: string, in: string, out: string} kind: empty|on_shift|full|in_only
+ */
+function akh_editor_attendance_today_punch_parts(string $editor): array
 {
     $today = date('Y-m-d');
     $start = strtotime($today . ' 00:00:00');
     $end = strtotime($today . ' 23:59:59');
     if ($start === false || $end === false) {
-        return '—';
+        return ['kind' => 'empty', 'in' => '', 'out' => ''];
     }
     $key = strtolower(trim($editor));
     $events = akh_editor_attendance_events_sorted();
@@ -360,17 +364,34 @@ function akh_editor_attendance_today_summary(string $editor): string
     $firstIn = $ins[0] ?? null;
     $lastOut = $outs !== [] ? $outs[count($outs) - 1] : null;
     if ($firstIn === null) {
-        return 'No punches today';
+        return ['kind' => 'empty', 'in' => '', 'out' => ''];
     }
     $inStr = date('g:i A', $firstIn);
     if ($on) {
-        return 'In ' . $inStr . ' · on shift';
+        return ['kind' => 'on_shift', 'in' => $inStr, 'out' => ''];
     }
     if ($lastOut !== null && $lastOut >= $firstIn) {
-        return 'In ' . $inStr . ' · Out ' . date('g:i A', $lastOut);
+        return ['kind' => 'full', 'in' => $inStr, 'out' => date('g:i A', $lastOut)];
     }
 
-    return 'In ' . $inStr;
+    return ['kind' => 'in_only', 'in' => $inStr, 'out' => ''];
+}
+
+/** One-line summary for the list view (plain text). */
+function akh_editor_attendance_today_summary(string $editor): string
+{
+    $p = akh_editor_attendance_today_punch_parts($editor);
+    if ($p['kind'] === 'empty') {
+        return 'No punches today';
+    }
+    if ($p['kind'] === 'on_shift') {
+        return 'In ' . $p['in'] . ' · on shift';
+    }
+    if ($p['kind'] === 'full') {
+        return 'In ' . $p['in'] . ' · Out ' . $p['out'];
+    }
+
+    return 'In ' . $p['in'];
 }
 
 /**
