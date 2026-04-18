@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once AKH_ROOT . '/includes/editor-auth.php';
+require_once AKH_ROOT . '/includes/editor-attendance.php';
 require_once AKH_ROOT . '/includes/tasks.php';
 require_once AKH_ROOT . '/includes/task-thread-panel.php';
 require_once AKH_ROOT . '/includes/csrf.php';
@@ -79,6 +80,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $flash = 'Status updated.';
             }
+        } elseif ($action === 'attendance_clock_in' && AKH_EDITOR_ATTENDANCE_ENABLED) {
+            if (akh_editor_attendance_append($editor, 'clock_in')) {
+                $flash = 'Clocked in.';
+            } else {
+                $error = 'Could not record clock-in.';
+            }
+        } elseif ($action === 'attendance_clock_out' && AKH_EDITOR_ATTENDANCE_ENABLED) {
+            if (akh_editor_attendance_append($editor, 'clock_out')) {
+                $flash = 'Clocked out.';
+            } else {
+                $error = 'Could not record clock-out.';
+            }
         }
     }
 }
@@ -94,6 +107,10 @@ $seenNew = akh_task_editor_seen_load()[strtolower($editor)] ?? [];
 $editorBellCount = akh_task_editor_board_bell_count($editor);
 $pageCsrf = akh_csrf_token();
 
+$attendanceOn = AKH_EDITOR_ATTENDANCE_ENABLED && akh_editor_attendance_is_clocked_in($editor);
+$attendanceSinceTs = AKH_EDITOR_ATTENDANCE_ENABLED ? akh_editor_attendance_open_shift_started_at_for($editor) : null;
+$attendanceSinceLabel = $attendanceSinceTs !== null ? date('M j, g:i A', $attendanceSinceTs) : '';
+
 require_once AKH_ROOT . '/includes/header.php';
 ?>
 
@@ -102,7 +119,8 @@ require_once AKH_ROOT . '/includes/header.php';
       <header class="desk-head desk-head--editor">
         <div>
           <h1 class="portal-title" style="margin-bottom:0.35rem">Task board</h1>
-          <p class="portal-lead" style="margin-bottom:0">Signed in as <strong><?php echo h($editor); ?></strong>. New jobs notify every editor until you open them; assigned tasks ring when the client replies or posts feedback.</p>
+          <p class="portal-lead" style="margin-bottom:0">Signed in as <strong><?php echo h($editor); ?></strong><?php if (AKH_EDITOR_ATTENDANCE_ENABLED): ?> — attendance: <?php echo $attendanceOn ? 'on shift since ' . h($attendanceSinceLabel) : 'not clocked in'; ?><?php endif; ?>. New jobs notify every editor until you open them; assigned tasks ring when the client replies or posts feedback.</p>
+          <p class="portal-muted" style="margin:0.35rem 0 0;font-size:0.9rem"><a class="text-link" href="<?php echo h(base_path('editor/logout.php')); ?>">Sign out</a> ends your session<?php if (AKH_EDITOR_ATTENDANCE_ENABLED): ?> and clocks you out if you are still on shift<?php endif; ?>.</p>
         </div>
         <?php if ($editorBellCount > 0): ?>
           <a class="desk-bell desk-bell--editor<?php echo $editorBellCount > 0 ? ' desk-bell--wiggle desk-bell--pop' : ''; ?>" href="#editor-desk-updates" title="New tasks and client updates">
@@ -122,6 +140,28 @@ require_once AKH_ROOT . '/includes/header.php';
       <?php endif; ?>
       <?php if ($error !== ''): ?>
         <p class="banner banner--err" role="alert"><?php echo h($error); ?></p>
+      <?php endif; ?>
+
+      <?php if (AKH_EDITOR_ATTENDANCE_ENABLED): ?>
+        <section class="portal-section" aria-labelledby="att-heading" style="margin-top:0.5rem">
+          <h2 id="att-heading" class="portal-section__title">Attendance</h2>
+          <p class="portal-muted" style="margin-top:-0.35rem">Clock in when you start working and clock out when you finish (signing out also records clock-out if you are still on shift).</p>
+          <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-top:0.5rem">
+            <?php if (!$attendanceOn): ?>
+              <form method="post" action="">
+                <input type="hidden" name="csrf_token" value="<?php echo h($pageCsrf); ?>" />
+                <input type="hidden" name="action" value="attendance_clock_in" />
+                <button type="submit" class="btn btn--primary btn--sm">Clock in</button>
+              </form>
+            <?php else: ?>
+              <form method="post" action="">
+                <input type="hidden" name="csrf_token" value="<?php echo h($pageCsrf); ?>" />
+                <input type="hidden" name="action" value="attendance_clock_out" />
+                <button type="submit" class="btn btn--ghost btn--sm">Clock out</button>
+              </form>
+            <?php endif; ?>
+          </div>
+        </section>
       <?php endif; ?>
 
       <section class="portal-section" aria-labelledby="new-heading">

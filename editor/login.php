@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once AKH_ROOT . '/includes/editor-auth.php';
+require_once AKH_ROOT . '/includes/csrf.php';
 
 $pageTitle = 'Editor login — ' . SITE_NAME;
 $metaDescription = 'Staff task board for ' . SITE_NAME . '.';
@@ -17,18 +18,22 @@ if (akh_editor_current() !== null) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $user = trim((string) ($_POST['username'] ?? ''));
-    $pass = (string) ($_POST['password'] ?? '');
-
-    if ($user === '' || $pass === '') {
-        $error = 'Enter username and password.';
-    } elseif (akh_editor_accounts() === [] && !AKH_DEV_TEST_LOGIN) {
-        $error = 'No editor accounts are configured.';
-    } elseif (!akh_editor_login($user, $pass)) {
-        $error = 'Invalid username or password.';
+    if (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
+        $error = 'Security check failed. Refresh the page and try again.';
     } else {
-        header('Location: ' . base_path('editor/dashboard.php'));
-        exit;
+        $user = trim((string) ($_POST['username'] ?? ''));
+        $pass = (string) ($_POST['password'] ?? '');
+
+        if ($user === '' || $pass === '') {
+            $error = 'Enter username and password.';
+        } elseif (akh_editor_accounts() === [] && !AKH_DEV_TEST_LOGIN) {
+            $error = 'No editor accounts are configured.';
+        } elseif (!akh_editor_login($user, $pass)) {
+            $error = 'Invalid username or password.';
+        } else {
+            header('Location: ' . base_path('editor/dashboard.php'));
+            exit;
+        }
     }
 }
 
@@ -45,6 +50,7 @@ require_once AKH_ROOT . '/includes/header.php';
       <?php endif; ?>
 
       <form class="portal-form" method="post" action="" autocomplete="username">
+        <input type="hidden" name="csrf_token" value="<?php echo h(akh_csrf_token()); ?>" />
         <label class="field">
           <span>Username</span>
           <input type="text" name="username" required autocomplete="username" maxlength="120" />

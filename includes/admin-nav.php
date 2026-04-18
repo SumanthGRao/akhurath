@@ -9,6 +9,7 @@ require_once AKH_ROOT . '/includes/admin-meta.php';
 $items = [
     'index.php' => 'Overview',
     'tasks.php' => 'Tasks',
+    'attendance.php' => 'Attendance',
     'account.php' => 'Account',
 ];
 $base = base_path('admin/');

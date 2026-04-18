@@ -14,6 +14,17 @@ define('AKH_ROOT', dirname(__DIR__));
 const BASE_URL = '';
 
 /**
+ * PHP session lifetime (seconds) for admin, editor, and client portals: cookie max-age and
+ * session.gc_maxlifetime. Default 9 hours. Each request refreshes the cookie (sliding window).
+ */
+const AKH_SESSION_LIFETIME_SECONDS = 9 * 3600;
+
+/**
+ * Editor portal: clock-in at login (optional checkbox), clock in/out on task board, auto clock-out on sign out.
+ */
+const AKH_EDITOR_ATTENDANCE_ENABLED = true;
+
+/**
  * When true (local only): client and editor portals accept username `test` / password `test` without account files.
  * Leave false in production; use data/customers.php and data/editors.php with real password hashes.
  */
@@ -72,6 +83,14 @@ function base_path(string $path = ''): string
     }
 
     return $b . '/' . $p;
+}
+
+/** Cookie path for PHP sessions (subfolder installs need the app prefix). */
+function akh_session_cookie_path(): string
+{
+    $b = BASE_URL === '' ? '' : rtrim(BASE_URL, '/');
+
+    return $b === '' ? '/' : $b . '/';
 }
 
 /** Absolute URL for the current request (links in emails, verification). */

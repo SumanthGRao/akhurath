@@ -1,0 +1,14 @@
+{
+  "events": [
+    {
+      "editor": "editor_username",
+      "type": "clock_in",
+      "at": 1710000000
+    },
+    {
+      "editor": "editor_username",
+      "type": "clock_out",
+      "at": 1710003600
+    }
+  ]
+}

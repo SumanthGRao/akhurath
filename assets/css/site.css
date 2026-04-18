@@ -4363,4 +4363,415 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   .marquee__inner {
     animation: none;
   }
+
+  .admin-attendance-card,
+  .admin-attendance-stat--pop {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .atd--leave {
+    animation: none !important;
+  }
+
+  .admin-attendance-bar__fill {
+    animation: none !important;
+    width: var(--w) !important;
+  }
+}
+
+/* --- Admin: editor attendance --- */
+.admin-page--attendance .portal-card--tasks {
+  max-width: min(64rem, 100%);
+}
+
+.admin-attendance__picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: flex-end;
+  margin: 1rem 0 0.5rem;
+  max-width: 38rem;
+}
+
+.admin-attendance__picker .field {
+  margin-bottom: 0;
+}
+
+.admin-attendance-card {
+  margin-top: 1.75rem;
+  padding: 1rem 1.1rem 1.35rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+  animation: adminAttCardIn 0.55s ease forwards;
+  animation-delay: calc(var(--stagger, 0) * 0.08s);
+  opacity: 0;
+}
+
+@keyframes adminAttCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.admin-attendance-card__head {
+  margin-bottom: 0.75rem;
+}
+
+.admin-attendance-card__title {
+  margin: 0;
+  font-size: 1.2rem;
+  letter-spacing: 0.02em;
+}
+
+.admin-attendance-card__sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.admin-attendance-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.admin-attendance-stat {
+  padding: 0.55rem 0.65rem;
+  border-radius: calc(var(--radius) - 2px);
+  border: 1px solid var(--line);
+  text-align: center;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.admin-attendance-stat--pop {
+  animation: adminAttStatPop 0.45s ease backwards;
+  animation-delay: calc(var(--stagger, 0) * 0.08s + 0.15s + var(--si, 0) * 0.05s);
+}
+
+.admin-attendance-stat:nth-child(1) {
+  --si: 0;
+}
+.admin-attendance-stat:nth-child(2) {
+  --si: 1;
+}
+.admin-attendance-stat:nth-child(3) {
+  --si: 2;
+}
+.admin-attendance-stat:nth-child(4) {
+  --si: 3;
+}
+.admin-attendance-stat:nth-child(5) {
+  --si: 4;
+}
+.admin-attendance-stat:nth-child(6) {
+  --si: 5;
+}
+
+@keyframes adminAttStatPop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.admin-attendance-stat--warn {
+  border-color: rgba(200, 80, 80, 0.45);
+  background: rgba(200, 60, 60, 0.08);
+}
+
+.admin-attendance-stat--muted {
+  opacity: 0.85;
+}
+
+.admin-attendance-stat__value {
+  display: block;
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.admin-attendance-stat__label {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  line-height: 1.25;
+}
+
+.admin-attendance-stat__hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.65rem;
+  line-height: 1.2;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-weight: 500;
+}
+
+.admin-attendance-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  max-width: 28rem;
+}
+
+.admin-attendance-bar {
+  display: grid;
+  grid-template-columns: 1fr 5fr auto;
+  gap: 0.5rem 0.65rem;
+  align-items: center;
+  font-size: 0.82rem;
+}
+
+.admin-attendance-bar__label {
+  color: var(--muted);
+}
+
+.admin-attendance-bar__track {
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.admin-attendance-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  width: 0;
+  animation: adminAttBarFillVar 0.85s ease-out 0.2s forwards;
+  transform-origin: left center;
+}
+
+.admin-attendance-bar__fill--mint {
+  background: linear-gradient(90deg, #5a9, #7cb);
+}
+
+.admin-attendance-bar__fill--sky {
+  background: linear-gradient(90deg, #6a9fe0, #8ab8f0);
+}
+
+.admin-attendance-bar__fill--green {
+  background: linear-gradient(90deg, #3a9d5f, #5cb87a);
+}
+
+@keyframes adminAttBarFillVar {
+  from {
+    width: 0;
+  }
+
+  to {
+    width: var(--w);
+  }
+}
+
+.admin-attendance-bar__pct {
+  font-weight: 600;
+  min-width: 2.5rem;
+  text-align: right;
+}
+
+.atd-legend {
+  font-weight: 600;
+}
+.atd-legend--leave {
+  color: #c44;
+}
+.atd-legend--short {
+  color: #c44;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+.atd-legend--9h {
+  color: #2a8;
+}
+
+.admin-attendance-cal {
+  margin-top: 0.25rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.admin-attendance-cal__dow,
+.admin-attendance-cal__row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(2.65rem, 1fr));
+  gap: 4px;
+}
+
+.admin-attendance-cal__dow {
+  margin-bottom: 0.35rem;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  text-align: center;
+}
+
+.admin-attendance-cal__row + .admin-attendance-cal__row {
+  margin-top: 4px;
+}
+
+.atd {
+  min-height: 3.1rem;
+  border-radius: calc(var(--radius) - 3px);
+  border: 1px solid var(--line);
+  padding: 0.28rem 0.32rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 0.68rem;
+  line-height: 1.15;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  animation: atdCellIn 0.35s ease backwards;
+}
+
+.admin-attendance-cal .atd:nth-child(7n + 1) {
+  animation-delay: 0.01s;
+}
+.admin-attendance-cal .atd:nth-child(7n + 2) {
+  animation-delay: 0.02s;
+}
+.admin-attendance-cal .atd:nth-child(7n + 3) {
+  animation-delay: 0.03s;
+}
+.admin-attendance-cal .atd:nth-child(7n + 4) {
+  animation-delay: 0.04s;
+}
+.admin-attendance-cal .atd:nth-child(7n + 5) {
+  animation-delay: 0.05s;
+}
+.admin-attendance-cal .atd:nth-child(7n + 6) {
+  animation-delay: 0.06s;
+}
+.admin-attendance-cal .atd:nth-child(7n + 7) {
+  animation-delay: 0.07s;
+}
+
+@keyframes atdCellIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.atd__num {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.atd__hrs {
+  font-size: 0.62rem;
+  color: var(--muted);
+  margin-top: 0.1rem;
+}
+
+.atd--empty {
+  border: none;
+  background: transparent;
+  min-height: 3rem;
+  animation: none;
+}
+
+.atd--sun {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--muted);
+  border-style: dashed;
+}
+
+.atd--future {
+  opacity: 0.45;
+  border-style: dashed;
+}
+
+.atd--leave {
+  background: linear-gradient(160deg, rgba(210, 70, 70, 0.35), rgba(160, 35, 35, 0.55));
+  color: #fff;
+  border-color: rgba(255, 120, 120, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 80, 80, 0.2);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .atd--leave {
+    animation: atdLeavePulse 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes atdLeavePulse {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.12);
+  }
+}
+
+.atd--short {
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 3px solid #d04040;
+  box-shadow: inset 0 -1px 0 rgba(208, 64, 64, 0.35);
+}
+
+.atd--short .atd__hrs {
+  color: #822;
+}
+
+.atd--9h {
+  background: linear-gradient(160deg, rgba(50, 150, 100, 0.28), rgba(40, 120, 85, 0.4));
+  border-color: rgba(60, 140, 100, 0.45);
+}
+
+.atd--9h .atd__hrs {
+  color: #063;
+}
+
+.atd--ok {
+  background: rgba(50, 140, 110, 0.12);
+  border-color: rgba(50, 140, 110, 0.35);
+}
+
+.atd--in {
+  background: rgba(90, 130, 200, 0.1);
+  border-color: rgba(90, 130, 200, 0.35);
+}
+
+.atd--na {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.atd--today {
+  box-shadow: 0 0 0 2px rgba(90, 140, 220, 0.65);
+}
+
+.atd:hover:not(.atd--empty) {
+  transform: translateY(-1px);
 }
