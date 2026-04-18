@@ -4997,12 +4997,12 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   text-align: center;
 }
 
+/* Match .admin-page--board .portal-main--board so tab bar aligns with Overview / Tasks / Account */
 .admin-page--attendance-full .portal-main--board.admin-attendance-main,
 .admin-page--attendance-full.admin-attendance-main {
   max-width: 100%;
   width: 100%;
-  padding-left: clamp(0.65rem, 2vw, 1.25rem);
-  padding-right: clamp(0.65rem, 2vw, 1.25rem);
+  padding: 1rem clamp(0.65rem, 2vw, 1.75rem) 3.5rem;
   box-sizing: border-box;
 }
 
@@ -5026,8 +5026,8 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   box-sizing: border-box;
 }
 
-.admin-attendance-fullhead {
-  margin-bottom: 0.25rem;
+.admin-attendance-fullhead.admin-head {
+  margin-bottom: 1rem;
 }
 
 .admin-attendance-rows {

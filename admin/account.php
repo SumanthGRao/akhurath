@@ -11,7 +11,7 @@ require_once AKH_ROOT . '/includes/csrf.php';
 akh_require_admin();
 
 $pageTitle = 'Account & security — ' . SITE_NAME;
-$bodyClass = 'page-portal admin-page';
+$bodyClass = 'page-portal admin-page admin-page--board';
 $adminNavActive = 'account.php';
 
 $error = '';
@@ -113,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 require_once AKH_ROOT . '/includes/header.php';
 ?>
 
-  <main id="main" class="portal-main">
+  <main id="main" class="portal-main portal-main--board">
     <div class="portal-card portal-card--tasks admin-shell">
       <header class="admin-head">
         <div>
