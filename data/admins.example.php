@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 /**
- * Copy to data/admins.php and replace with real bcrypt hashes.
- * Default admin is created by: php scripts/seed-admin-console.php (user admin / password from that script).
+ * Live file is data/admins.php (same in production). Create or refresh with:
+ *   php scripts/seed-admin-console.php
+ * Default login is admin / admin@123 (see script to change).
  *
  * @return array<string, string> lowercase username => password_hash
  */
