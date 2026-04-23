@@ -10,10 +10,12 @@ declare(strict_types=1);
  *
  *   php scripts/ensure-database.php
  *   php scripts/ensure-database.php --migrate-customers-from-files
+ *   php scripts/ensure-database.php --migrate-editors-from-files
  *
  * Flags:
  *   --migrate-customers-from-files  Upsert data/customers.php (+ customer-emails.json) into users (role=customer).
- *   --patches-only                  Skip customer file import (default if no migrate flag).
+ *   --migrate-editors-from-files    Upsert data/editors.php into users (role=editor).
+ *   --patches-only                  Skip file → DB user imports (default if no migrate flag).
  */
 
 $root = dirname(__DIR__);
@@ -29,10 +31,12 @@ require_once $dbLocal;
 require_once AKH_ROOT . '/includes/db.php';
 
 $args = array_slice($argv, 1);
-$migrateFiles = in_array('--migrate-customers-from-files', $args, true);
+$migrateCustomers = in_array('--migrate-customers-from-files', $args, true);
+$migrateEditors = in_array('--migrate-editors-from-files', $args, true);
 $patchesOnly = in_array('--patches-only', $args, true);
 if ($patchesOnly) {
-    $migrateFiles = false;
+    $migrateCustomers = false;
+    $migrateEditors = false;
 }
 
 /**
@@ -124,8 +128,43 @@ if (akh_ensure_table_exists($pdo, $schema, 'contact_enquiries')
 
 echo "Schema patches are up to date.\n";
 
-if (!$migrateFiles) {
-    echo "Skipped file → DB customer import (pass --migrate-customers-from-files to run it).\n";
+if (!$migrateCustomers && !$migrateEditors) {
+    echo "Skipped file → DB user imports (pass --migrate-customers-from-files and/or --migrate-editors-from-files).\n";
+    exit(0);
+}
+
+if ($migrateEditors) {
+    $editorsPath = AKH_ROOT . '/data/editors.php';
+    if (!is_file($editorsPath)) {
+        echo "No data/editors.php — nothing to import for editors.\n";
+    } else {
+        /** @var mixed $edAccounts */
+        $edAccounts = require $editorsPath;
+        if (!is_array($edAccounts) || $edAccounts === []) {
+            echo "data/editors.php is empty — no editor rows imported.\n";
+        } else {
+            $insEd = $pdo->prepare(
+                'INSERT INTO users (role, username, password_hash, email) VALUES (\'editor\', ?, ?, NULL)
+                 ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash)'
+            );
+            $edN = 0;
+            foreach ($edAccounts as $username => $hash) {
+                if (!is_string($username) || !is_string($hash)) {
+                    continue;
+                }
+                $u = strtolower(trim($username));
+                if ($u === '' || $hash === '') {
+                    continue;
+                }
+                $insEd->execute([$u, $hash]);
+                ++$edN;
+            }
+            echo "Imported/merged {$edN} editor row(s) from data/editors.php into users (role=editor).\n";
+        }
+    }
+}
+
+if (!$migrateCustomers) {
     exit(0);
 }
 
