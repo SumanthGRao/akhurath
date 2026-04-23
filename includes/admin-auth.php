@@ -110,23 +110,41 @@ function akh_require_admin(): void
 
 /**
  * @param array<string, string> $accounts lowercase username => password_hash
+ * @param ?string $contactEmail When using MySQL and there is exactly one admin row in $accounts, stored in users.email (first-time setup).
  */
-function akh_admin_save_accounts(array $accounts): bool
+function akh_admin_save_accounts(array $accounts, ?string $contactEmail = null): bool
 {
     if (akh_admin_storage_is_database()) {
+        $emailForRow = null;
+        if ($contactEmail !== null && count($accounts) === 1) {
+            $ce = strtolower(trim($contactEmail));
+            if ($ce !== '' && filter_var($ce, FILTER_VALIDATE_EMAIL) && mb_strlen($ce) <= 120) {
+                $emailForRow = $ce;
+            }
+        }
         try {
             $pdo = akh_db();
             $pdo->beginTransaction();
             $pdo->prepare('DELETE FROM users WHERE role = ?')->execute(['admin']);
-            $ins = $pdo->prepare(
-                'INSERT INTO users (role, username, password_hash) VALUES (?, ?, ?)'
-            );
+            if ($emailForRow !== null) {
+                $ins = $pdo->prepare(
+                    'INSERT INTO users (role, username, password_hash, email) VALUES (?, ?, ?, ?)'
+                );
+            } else {
+                $ins = $pdo->prepare(
+                    'INSERT INTO users (role, username, password_hash) VALUES (?, ?, ?)'
+                );
+            }
             foreach ($accounts as $u => $hash) {
                 $u = strtolower(trim((string) $u));
                 if ($u === '' || !is_string($hash)) {
                     continue;
                 }
-                $ins->execute(['admin', $u, $hash]);
+                if ($emailForRow !== null) {
+                    $ins->execute(['admin', $u, $hash, $emailForRow]);
+                } else {
+                    $ins->execute(['admin', $u, $hash]);
+                }
             }
             $pdo->commit();
 

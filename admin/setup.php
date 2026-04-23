@@ -66,7 +66,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && AKH_ADMIN_SETUP_ENABLED) {
             $hash = password_hash($pass, PASSWORD_DEFAULT);
             if ($hash === false) {
                 $error = 'Could not hash password.';
-            } elseif (!akh_admin_save_accounts([$user => $hash])) {
+            } elseif (!akh_admin_save_accounts([$user => $hash], $email)) {
                 $error = 'Could not save the admin account. With MySQL: confirm config/database.local.php uses the same dbname as phpMyAdmin and import sql/schema.sql. Without MySQL: ensure the server user can create files in data/.';
             } elseif (!akh_admin_meta_save([
                 'email' => $email,

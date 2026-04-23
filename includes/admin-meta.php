@@ -72,6 +72,21 @@ function akh_admin_meta_save(array $patch): bool
         akh_admin_meta_require_kv();
         try {
             akh_kv_set(AKH_ADMIN_META_KV_KEY, json_encode($next, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            if (function_exists('akh_db') && isset($patch['email'])) {
+                $em = strtolower(trim((string) $patch['email']));
+                if ($em !== '' && filter_var($em, FILTER_VALIDATE_EMAIL) && mb_strlen($em) <= 120) {
+                    $who = function_exists('akh_admin_current') ? akh_admin_current() : null;
+                    if (is_string($who) && $who !== '') {
+                        try {
+                            akh_db()->prepare(
+                                'UPDATE users SET email = ? WHERE role = ? AND username = ?'
+                            )->execute([$em, 'admin', strtolower(trim($who))]);
+                        } catch (\Throwable $e) {
+                            // best-effort; app_kv is source of truth for notifications
+                        }
+                    }
+                }
+            }
 
             return true;
         } catch (\Throwable $e) {
@@ -148,6 +163,18 @@ function akh_admin_meta_verify_token(?string $token): bool
         'verify_expires_at' => null,
     ])) {
         return false;
+    }
+
+    if (function_exists('akh_db')) {
+        $m = akh_admin_meta();
+        $em = strtolower(trim((string) ($m['email'] ?? '')));
+        if ($em !== '' && filter_var($em, FILTER_VALIDATE_EMAIL) && mb_strlen($em) <= 120) {
+            try {
+                akh_db()->prepare('UPDATE users SET email = ? WHERE role = ?')->execute([$em, 'admin']);
+            } catch (\Throwable $e) {
+                // best-effort
+            }
+        }
     }
 
     return true;
