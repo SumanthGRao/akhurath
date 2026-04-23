@@ -4,6 +4,19 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/site-notify-mail.php';
 
+/** Tasks, task_seq counter, and editor-seen map live in MySQL app_kv when the DB is bootstrapped. */
+function akh_tasks_storage_is_database(): bool
+{
+    return function_exists('akh_db');
+}
+
+function akh_tasks_require_kv(): void
+{
+    if (akh_tasks_storage_is_database() && !function_exists('akh_kv_get')) {
+        require_once __DIR__ . '/app-kv.php';
+    }
+}
+
 function akh_tasks_file(): string
 {
     return AKH_ROOT . '/data/tasks.json';
@@ -29,6 +42,48 @@ function akh_task_editor_seen_file(): string
  */
 function akh_task_generate_id(): string
 {
+    if (akh_tasks_storage_is_database()) {
+        akh_tasks_require_kv();
+        $pdo = akh_db();
+        try {
+            $pdo->beginTransaction();
+            $stTasks = $pdo->prepare('SELECT v FROM app_kv WHERE k = ? FOR UPDATE');
+            $stTasks->execute(['tasks']);
+            $tasksRaw = $stTasks->fetchColumn();
+            $tasksList = [];
+            if (is_string($tasksRaw) && $tasksRaw !== '') {
+                $decoded = json_decode($tasksRaw, true);
+                if (is_array($decoded)) {
+                    $tasksList = array_values(array_filter($decoded, 'is_array'));
+                }
+            }
+            $boot = akh_task_seq_bootstrap_next($tasksList);
+            $stSeq = $pdo->prepare('SELECT v FROM app_kv WHERE k = ? FOR UPDATE');
+            $stSeq->execute(['task_seq']);
+            $seqRaw = $stSeq->fetchColumn();
+            $next = $boot;
+            if (is_string($seqRaw) && $seqRaw !== '') {
+                $j = json_decode($seqRaw, true);
+                if (is_array($j)) {
+                    $next = max($next, max(1, (int) ($j['next'] ?? 1)));
+                }
+            }
+            $id = sprintf('AS_%04d', $next);
+            $nextWrite = $next + 1;
+            $out = json_encode(['next' => $nextWrite], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            akh_kv_set_with_pdo($pdo, 'task_seq', $out);
+            $pdo->commit();
+
+            return $id;
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
+            return 'AS_' . strtoupper(bin2hex(random_bytes(3)));
+        }
+    }
+
     $path = akh_task_seq_state_file();
     $dir = dirname($path);
     if (!is_dir($dir)) {
@@ -90,6 +145,27 @@ function akh_task_seq_bootstrap_next(array $tasks): int
  */
 function akh_task_editor_seen_load(): array
 {
+    if (akh_tasks_storage_is_database()) {
+        akh_tasks_require_kv();
+        $raw = akh_kv_get('editor_seen_tasks');
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+        $j = json_decode($raw, true);
+        if (!is_array($j)) {
+            return [];
+        }
+        $out = [];
+        foreach ($j as $k => $v) {
+            if (!is_string($k) || !is_array($v)) {
+                continue;
+            }
+            $out[strtolower($k)] = array_values(array_filter($v, 'is_string'));
+        }
+
+        return $out;
+    }
+
     $path = akh_task_editor_seen_file();
     if (!is_file($path)) {
         return [];
@@ -118,16 +194,27 @@ function akh_task_editor_seen_load(): array
  */
 function akh_task_editor_seen_save(array $data): bool
 {
-    $path = akh_task_editor_seen_file();
-    $dir = dirname($path);
-    if (!is_dir($dir)) {
-        @mkdir($dir, 0755, true);
-    }
-
     try {
         $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
     } catch (\Throwable $e) {
         return false;
+    }
+
+    if (akh_tasks_storage_is_database()) {
+        akh_tasks_require_kv();
+        try {
+            akh_kv_set('editor_seen_tasks', $json);
+        } catch (\Throwable $e) {
+            return false;
+        }
+
+        return true;
+    }
+
+    $path = akh_task_editor_seen_file();
+    $dir = dirname($path);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
     }
 
     return @file_put_contents($path, $json, LOCK_EX) !== false;
@@ -438,6 +525,20 @@ function akh_task_ajax_client_view_ack(string $clientUsername, string $taskId): 
  */
 function akh_tasks_load(): array
 {
+    if (akh_tasks_storage_is_database()) {
+        akh_tasks_require_kv();
+        $raw = akh_kv_get('tasks');
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        return array_values(array_filter($decoded, 'is_array'));
+    }
+
     $path = akh_tasks_file();
     if (!is_file($path)) {
         return [];
@@ -459,6 +560,32 @@ function akh_tasks_load(): array
  */
 function akh_tasks_save_locked(array $tasks): bool
 {
+    if (akh_tasks_storage_is_database()) {
+        akh_tasks_require_kv();
+        $pdo = akh_db();
+        try {
+            $json = json_encode($tasks, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        } catch (\Throwable $e) {
+            return false;
+        }
+        try {
+            $pdo->beginTransaction();
+            $st = $pdo->prepare('SELECT v FROM app_kv WHERE k = ? FOR UPDATE');
+            $st->execute(['tasks']);
+            $st->fetch();
+            akh_kv_set_with_pdo($pdo, 'tasks', $json);
+            $pdo->commit();
+
+            return true;
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
+            return false;
+        }
+    }
+
     $path = akh_tasks_file();
     $dir = dirname($path);
     if (!is_dir($dir)) {
@@ -1519,13 +1646,7 @@ function akh_task_client_save_post_delivery(
  */
 function akh_task_write_editor_feedback_notification(array $task): void
 {
-    $dir = akh_task_notify_dir();
-    if (!is_dir($dir)) {
-        @mkdir($dir, 0755, true);
-    }
     $id = (string) ($task['id'] ?? 'unknown');
-    $safe = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
-    $file = $dir . '/' . gmdate('Y-m-d_His') . '_' . $safe . '_CLIENT_FEEDBACK.txt';
     $editor = (string) ($task['assigned_editor'] ?? '');
     $fb = trim((string) ($task['client_feedback'] ?? ''));
     $snippet = $fb === '' ? '(meeting only / no written feedback)' : (mb_strlen($fb) > 600 ? mb_substr($fb, 0, 600) . '…' : $fb);
@@ -1537,6 +1658,23 @@ function akh_task_write_editor_feedback_notification(array $task): void
         . 'Title: ' . ($task['title'] ?? '') . "\n"
         . 'Status after save: reverted' . "\n\n"
         . 'Feedback (snippet):' . "\n" . $snippet . "\n";
+    if (akh_tasks_storage_is_database()) {
+        try {
+            akh_db()->prepare(
+                'INSERT INTO task_notification_events (event_kind, task_id, body) VALUES (?, ?, ?)'
+            )->execute(['client_feedback', $id, $block]);
+        } catch (\Throwable $e) {
+            // best-effort notification
+        }
+
+        return;
+    }
+    $dir = akh_task_notify_dir();
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    $safe = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
+    $file = $dir . '/' . gmdate('Y-m-d_His') . '_' . $safe . '_CLIENT_FEEDBACK.txt';
     @file_put_contents($file, $block, LOCK_EX);
 }
 
@@ -1584,13 +1722,7 @@ function akh_task_editor_clear_feedback_notify(string $taskId, string $editorUse
  */
 function akh_task_write_studio_notification(array $task): void
 {
-    $dir = akh_task_notify_dir();
-    if (!is_dir($dir)) {
-        @mkdir($dir, 0755, true);
-    }
     $id = (string) ($task['id'] ?? 'unknown');
-    $safe = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
-    $file = $dir . '/' . gmdate('Y-m-d_His') . '_' . $safe . '.txt';
     $mode = akh_task_delivery_description_sentence((string) ($task['delivery_mode'] ?? 'google_drive'));
     $link = (string) ($task['drive_link'] ?? '');
     $ref = trim((string) ($task['reference_link'] ?? ''));
@@ -1613,6 +1745,23 @@ function akh_task_write_studio_notification(array $task): void
     $block .= 'Delivery: ' . $mode . "\n"
         . ($link !== '' ? 'Drive: ' . $link . "\n" : '')
         . "\nFull notes:\n" . ($task['description'] ?? '') . "\n";
+    if (akh_tasks_storage_is_database()) {
+        try {
+            akh_db()->prepare(
+                'INSERT INTO task_notification_events (event_kind, task_id, body) VALUES (?, ?, ?)'
+            )->execute(['studio_new', $id, $block]);
+        } catch (\Throwable $e) {
+            // best-effort notification
+        }
+
+        return;
+    }
+    $dir = akh_task_notify_dir();
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    $safe = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
+    $file = $dir . '/' . gmdate('Y-m-d_His') . '_' . $safe . '.txt';
     @file_put_contents($file, $block, LOCK_EX);
 }
 

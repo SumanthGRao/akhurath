@@ -5,6 +5,8 @@ declare(strict_types=1);
 /**
  * Copy this entire file to config/database.local.php and uncomment ONE block.
  * database.local.php is gitignored — do not commit passwords.
+ * On Hostinger you must create this file on the server (Git does not deploy it); otherwise
+ * admin setup and logins will not write to MySQL and the site will not use the database.
  *
  * === Hostinger — database `u113439427_akhurath` (phpMyAdmin) ===
  * MySQL user is often the same full name as the database (verify in hPanel → Databases → Management).
