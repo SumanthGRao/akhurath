@@ -4,6 +4,14 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/config.php';
 
+/** When config/database.local.php exists, load MySQL (Hostinger, XAMPP with DB, etc.). Otherwise file-based JSON/tasks only. */
+$dbLocal = AKH_ROOT . '/config/database.local.php';
+if (is_file($dbLocal)) {
+    require_once $dbLocal;
+    require_once __DIR__ . '/db.php';
+    require_once __DIR__ . '/app-kv.php';
+}
+
 @date_default_timezone_set(AKH_SITE_TIMEZONE);
 
 $life = max(60, (int) AKH_SESSION_LIFETIME_SECONDS);

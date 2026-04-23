@@ -1,6 +1,7 @@
--- MySQL schema for Akhurath Studio (Hostinger, XAMPP, etc.). Run once on an empty database:
---   hPanel: phpMyAdmin → select database → Import → this file
---   CLI:    mysql -u USER -p DBNAME < sql/schema.sql
+-- MySQL schema for Akhurath Studio. Run once on an empty database.
+--   hPanel: phpMyAdmin → select `u113439427_akhurath` → Import → this file
+--   CLI (see scripts/mysql-import-schema.sh), e.g.:
+--     mysql -h localhost -u u113439427_akhurath -p u113439427_akhurath < sql/schema.sql
 
 SET NAMES utf8mb4;
 SET time_zone = '+00:00';

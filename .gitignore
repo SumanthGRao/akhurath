@@ -1,6 +1,9 @@
 .env
 /*.log
 
+# Local MySQL credentials (Hostinger / XAMPP) — never commit
+config/database.local.php
+
 # Ignore everything under data/, then allow committed templates & config
 /data/**
 !/data/
