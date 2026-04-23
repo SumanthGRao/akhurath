@@ -1,0 +1,11 @@
+---
+description: Default GitHub remote for this project (push/pull target)
+alwaysApply: true
+---
+
+# Git remote for this workspace
+
+- **Primary repo (this app):** [SumanthGRao/akhurath](https://github.com/SumanthGRao/akhurath) — use `origin` (`git@github.com:SumanthGRao/akhurath.git`). Default push branch: `main`.
+- **Legacy / alternate:** `akhurath-site` → `git@github.com:SumanthGRao/akhurath-site.git` — only push here if the user explicitly asks.
+
+When the user asks to push to GitHub, use **`git push origin main`** (or their current branch) against **akhurath**, not akhurath-site, unless they say otherwise.
