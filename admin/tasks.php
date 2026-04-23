@@ -297,7 +297,7 @@ require_once AKH_ROOT . '/includes/header.php';
                   <tr>
                     <td>
                       <span class="admin-table__mono"><?php echo h($tid); ?></span>
-                      <div><strong><?php echo h((string) ($t['title'] ?? '')); ?></strong></div>
+                      <div><strong><?php echo h((string) ($t['title'] ?? '')); ?></strong><?php if (akh_task_is_bundle_parent($t)): ?> <span class="portal-muted" style="font-weight:400">(bundle overview)</span><?php elseif (akh_task_is_bundle_child($t)): ?> <span class="portal-muted" style="font-weight:400">(part of <?php echo h((string) ($t['parent_task_id'] ?? '')); ?>)</span><?php endif; ?></div>
                       <?php if (trim((string) ($t['description'] ?? '')) !== ''): ?>
                         <p class="task-table__desc"><?php echo nl2br(h((string) ($t['description'] ?? ''))); ?></p>
                       <?php endif; ?>

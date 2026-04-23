@@ -161,7 +161,7 @@ function akh_task_editor_unseen_new_count(string $editorUsername): int
     $seen = akh_task_editor_seen_load()[$editorUsername] ?? [];
     $n = 0;
     foreach (akh_tasks_load() as $t) {
-        if (($t['status'] ?? '') !== 'new' || ($t['assigned_editor'] ?? null) !== null) {
+        if (!akh_task_editor_pool_eligible($t)) {
             continue;
         }
         $id = (string) ($t['id'] ?? '');
@@ -327,6 +327,9 @@ function akh_task_client_unread_editor_count(string $clientUsername): int
         if (strtolower((string) ($t['client_username'] ?? '')) !== $c) {
             continue;
         }
+        if (akh_task_is_bundle_parent($t)) {
+            continue;
+        }
         if (($t['client_editor_notify'] ?? false) === true) {
             ++$n;
         }
@@ -339,6 +342,7 @@ function akh_task_client_clear_editor_notify(string $taskId, string $clientUsern
 {
     $c = strtolower(trim($clientUsername));
     $list = akh_tasks_load();
+    $changed = false;
     foreach ($list as $i => $t) {
         if (($t['id'] ?? '') !== $taskId) {
             continue;
@@ -346,13 +350,32 @@ function akh_task_client_clear_editor_notify(string $taskId, string $clientUsern
         if (strtolower((string) ($t['client_username'] ?? '')) !== $c) {
             return false;
         }
+        if (akh_task_is_bundle_parent($t)) {
+            foreach (akh_task_bundle_children($taskId, $list) as $ch) {
+                $cid = (string) ($ch['id'] ?? '');
+                if ($cid === '') {
+                    continue;
+                }
+                foreach ($list as $j => $u) {
+                    if (($u['id'] ?? '') === $cid) {
+                        $list[$j]['client_editor_notify'] = false;
+                        $list[$j]['updated_at'] = gmdate('c');
+                        $changed = true;
+                        break;
+                    }
+                }
+            }
+        }
         $list[$i]['client_editor_notify'] = false;
         $list[$i]['updated_at'] = gmdate('c');
-
-        return akh_tasks_save_locked($list);
+        $changed = true;
+        break;
+    }
+    if (!$changed) {
+        return false;
     }
 
-    return false;
+    return akh_tasks_save_locked($list);
 }
 
 /**
@@ -540,9 +563,419 @@ function akh_task_edit_type_label(string $slug): string
 {
     $extra = [
         'studio_admin' => 'Studio (admin entry)',
+        'bundle_parent' => 'Multi-part job (overview)',
     ];
 
     return akh_task_client_edit_types()[$slug] ?? ($extra[$slug] ?? $slug);
+}
+
+function akh_task_is_bundle_parent(array $t): bool
+{
+    return ($t['task_role'] ?? '') === 'bundle_parent';
+}
+
+function akh_task_is_bundle_child(array $t): bool
+{
+    return ($t['task_role'] ?? '') === 'bundle_child';
+}
+
+/**
+ * Editors may claim normal “new” tasks and bundle children, never the bundle coordinator row.
+ */
+function akh_task_editor_pool_eligible(array $t): bool
+{
+    if (akh_task_is_bundle_parent($t)) {
+        return false;
+    }
+    if (($t['status'] ?? '') !== 'new' || ($t['assigned_editor'] ?? null) !== null) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function akh_task_bundle_children(string $parentId, array $tasks): array
+{
+    $parentId = trim($parentId);
+    if ($parentId === '') {
+        return [];
+    }
+    $out = [];
+    foreach ($tasks as $t) {
+        if (!is_array($t)) {
+            continue;
+        }
+        if ((string) ($t['parent_task_id'] ?? '') === $parentId) {
+            $out[] = $t;
+        }
+    }
+    usort($out, static function (array $a, array $b): int {
+        return strcmp((string) ($a['id'] ?? ''), (string) ($b['id'] ?? ''));
+    });
+
+    return $out;
+}
+
+/** Lower = earlier in pipeline (less complete). */
+function akh_task_pipeline_rank(string $status): int
+{
+    static $map = [
+        'new' => 0,
+        'assigned' => 1,
+        'in_progress' => 2,
+        'review' => 3,
+        'reverted' => 4,
+        'delivered' => 5,
+        'closed' => 6,
+    ];
+
+    return $map[$status] ?? 0;
+}
+
+/** @return list<string> */
+function akh_task_pipeline_statuses_in_order(): array
+{
+    return ['new', 'assigned', 'in_progress', 'review', 'reverted', 'delivered', 'closed'];
+}
+
+function akh_task_pipeline_status_from_rank(int $rank): string
+{
+    $order = akh_task_pipeline_statuses_in_order();
+
+    return $order[max(0, min($rank, count($order) - 1))] ?? 'new';
+}
+
+/**
+ * Keeps the bundle parent row aligned with the least-advanced child (one client-facing job).
+ */
+function akh_task_bundle_sync_parent(string $parentId): bool
+{
+    $parentId = trim($parentId);
+    if ($parentId === '') {
+        return false;
+    }
+    $list = akh_tasks_load();
+    $pIdx = null;
+    foreach ($list as $i => $t) {
+        if (($t['id'] ?? '') === $parentId && akh_task_is_bundle_parent($t)) {
+            $pIdx = $i;
+            break;
+        }
+    }
+    if ($pIdx === null) {
+        return false;
+    }
+    $children = akh_task_bundle_children($parentId, $list);
+    if ($children === []) {
+        return false;
+    }
+    $minRank = 99;
+    foreach ($children as $c) {
+        $minRank = min($minRank, akh_task_pipeline_rank((string) ($c['status'] ?? 'new')));
+    }
+    $newStatus = akh_task_pipeline_status_from_rank($minRank);
+    $list[$pIdx]['status'] = $newStatus;
+    $list[$pIdx]['updated_at'] = gmdate('c');
+
+    return akh_tasks_save_locked($list);
+}
+
+/**
+ * When an editor or status change touches a child, mirror client bell to the bundle parent.
+ */
+function akh_task_bundle_flag_parent_client_notify(string $parentId): bool
+{
+    $parentId = trim($parentId);
+    if ($parentId === '') {
+        return false;
+    }
+    $list = akh_tasks_load();
+    foreach ($list as $i => $t) {
+        if (($t['id'] ?? '') !== $parentId || !akh_task_is_bundle_parent($t)) {
+            continue;
+        }
+        $list[$i]['client_editor_notify'] = true;
+        $list[$i]['updated_at'] = gmdate('c');
+
+        return akh_tasks_save_locked($list);
+    }
+
+    return false;
+}
+
+function akh_task_bundle_build_parent_title(string $coupleName, int $partCount): string
+{
+    $suffix = ' — Multi-part request (' . $partCount . ' deliverables)';
+    $title = trim($coupleName);
+    if (mb_strlen($title . $suffix) > 200) {
+        $budget = 200 - mb_strlen($suffix);
+        if ($budget < 8) {
+            $budget = 8;
+        }
+        $title = mb_substr(trim($coupleName), 0, $budget) . '…';
+    }
+
+    return $title . $suffix;
+}
+
+/**
+ * @param list<string> $editTypeSlugs
+ * @return array{0: string, 1: bool}
+ */
+function akh_task_bundle_build_parent_description(
+    string $coupleName,
+    array $editTypeSlugs,
+    string $projectDetails,
+    string $referenceLink,
+    string $deliveryMode,
+    string $driveLink
+): array {
+    $labels = [];
+    foreach ($editTypeSlugs as $slug) {
+        $labels[] = akh_task_edit_type_label((string) $slug);
+    }
+    $typeLine = 'Types of edit: ' . implode('; ', $labels);
+    $descParts = [
+        'Couple / project name: ' . $coupleName,
+        $typeLine,
+        '',
+        'Project details:',
+        $projectDetails,
+        '',
+    ];
+    if ($referenceLink !== '') {
+        $descParts[] = 'Reference / style link: ' . $referenceLink;
+    } else {
+        $descParts[] = 'Reference / style link: — (not supplied)';
+    }
+    $descParts[] = '';
+    $descParts[] = 'Delivery: ' . akh_task_delivery_description_sentence($deliveryMode);
+    if ($deliveryMode === 'google_drive' && $driveLink !== '') {
+        $descParts[] = 'Drive link: ' . $driveLink;
+    }
+    $descParts[] = '';
+    $descParts[] = 'This job is split into separate editor tasks (one per type). Each part has its own task ID.';
+    $description = implode("\n", $descParts);
+    if (mb_strlen($description) > 8000) {
+        return ['', false];
+    }
+
+    return [$description, true];
+}
+
+/**
+ * @param list<string> $editTypes ordered unique client slugs
+ * @return array<string, mixed>|null parent task on success
+ */
+function akh_task_create_bundle(
+    string $clientUsername,
+    string $coupleName,
+    array $editTypes,
+    string $projectDetails,
+    string $referenceLink,
+    string $deliveryMode,
+    string $driveLink,
+    bool $allowEmptyReference = false
+): ?array {
+    $clientUsername = strtolower(trim($clientUsername));
+    if ($clientUsername === '') {
+        return null;
+    }
+    $editTypes = array_values(array_unique(array_filter(array_map('trim', $editTypes), static fn ($s) => $s !== '')));
+    if (count($editTypes) < 2) {
+        return null;
+    }
+
+    $coupleName = trim($coupleName);
+    if ($coupleName === '' || mb_strlen($coupleName) > 200) {
+        return null;
+    }
+
+    $clientTypes = array_keys(akh_task_client_edit_types());
+    $allowedTypes = $allowEmptyReference ? array_merge($clientTypes, ['studio_admin']) : $clientTypes;
+    foreach ($editTypes as $et) {
+        if (!in_array($et, $allowedTypes, true)) {
+            return null;
+        }
+    }
+
+    $projectDetails = trim($projectDetails);
+    if ($projectDetails === '' || mb_strlen($projectDetails) > 8000) {
+        return null;
+    }
+
+    $referenceLink = trim($referenceLink);
+    if ($allowEmptyReference) {
+        if ($referenceLink !== '' && !akh_task_is_valid_reference_link($referenceLink)) {
+            return null;
+        }
+    } elseif (!akh_task_is_valid_reference_link($referenceLink)) {
+        return null;
+    }
+
+    if (!in_array($deliveryMode, akh_task_valid_delivery_modes(), true)) {
+        return null;
+    }
+    $driveLink = trim($driveLink);
+    if ($deliveryMode === 'google_drive') {
+        if ($driveLink === '' || mb_strlen($driveLink) > 2000) {
+            return null;
+        }
+        if (!preg_match('#^https?://#i', $driveLink)) {
+            return null;
+        }
+    }
+
+    $parentTitle = akh_task_bundle_build_parent_title($coupleName, count($editTypes));
+    [$parentDesc, $pOk] = akh_task_bundle_build_parent_description(
+        $coupleName,
+        $editTypes,
+        $projectDetails,
+        $referenceLink,
+        $deliveryMode,
+        $driveLink
+    );
+    if (!$pOk) {
+        return null;
+    }
+
+    $childDescPreview = [];
+    $suffixStub = "\n\n— Bundle root: AS_PLACEHOLDER — This is one part of a multi-type request; claim only this row for this deliverable.";
+    foreach ($editTypes as $slug) {
+        [$cd, $ok] = akh_task_build_description(
+            $coupleName,
+            $slug,
+            $projectDetails,
+            $referenceLink,
+            $deliveryMode,
+            $driveLink
+        );
+        if (!$ok) {
+            return null;
+        }
+        if (mb_strlen($cd . $suffixStub) > 8000) {
+            return null;
+        }
+        $childDescPreview[] = $cd;
+    }
+
+    $parentId = akh_task_generate_id();
+    $childIds = [];
+    foreach ($editTypes as $_) {
+        $childIds[] = akh_task_generate_id();
+    }
+
+    $now = gmdate('c');
+    $path = akh_tasks_file();
+    $dir = dirname($path);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    $fp = fopen($path, 'c+');
+    if ($fp === false) {
+        return null;
+    }
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+
+        return null;
+    }
+    $parent = null;
+    $childRows = [];
+    try {
+        rewind($fp);
+        $raw = stream_get_contents($fp);
+        $list = [];
+        if ($raw !== false && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $list = array_values(array_filter($decoded, 'is_array'));
+            }
+        }
+
+        foreach ($editTypes as $i => $slug) {
+            $cid = $childIds[$i];
+            $cdesc = $childDescPreview[$i] . "\n\n— Bundle root: " . $parentId . ' — This is one part of a multi-type request; claim only this row for this deliverable.';
+            $childRows[] = [
+                'id' => $cid,
+                'task_role' => 'bundle_child',
+                'parent_task_id' => $parentId,
+                'client_username' => $clientUsername,
+                'title' => akh_task_build_title($coupleName, $slug),
+                'description' => $cdesc,
+                'couple_name' => $coupleName,
+                'edit_type' => $slug,
+                'project_details' => $projectDetails,
+                'reference_link' => $referenceLink,
+                'delivery_mode' => $deliveryMode,
+                'drive_link' => $deliveryMode === 'google_drive' ? $driveLink : '',
+                'deliverable_output' => '',
+                'client_feedback' => '',
+                'client_meeting_date' => '',
+                'client_meeting_link' => '',
+                'created_at' => $now,
+                'updated_at' => $now,
+                'status' => 'new',
+                'assigned_editor' => null,
+                'editor_feedback_notify' => false,
+                'client_editor_notify' => false,
+                'conversation' => [],
+            ];
+        }
+
+        $parent = [
+            'id' => $parentId,
+            'task_role' => 'bundle_parent',
+            'child_task_ids' => $childIds,
+            'bundle_edit_types' => $editTypes,
+            'client_username' => $clientUsername,
+            'title' => $parentTitle,
+            'description' => $parentDesc,
+            'couple_name' => $coupleName,
+            'edit_type' => 'bundle_parent',
+            'project_details' => $projectDetails,
+            'reference_link' => $referenceLink,
+            'delivery_mode' => $deliveryMode,
+            'drive_link' => $deliveryMode === 'google_drive' ? $driveLink : '',
+            'deliverable_output' => '',
+            'client_feedback' => '',
+            'client_meeting_date' => '',
+            'client_meeting_link' => '',
+            'created_at' => $now,
+            'updated_at' => $now,
+            'status' => 'new',
+            'assigned_editor' => null,
+            'editor_feedback_notify' => false,
+            'client_editor_notify' => false,
+            'conversation' => [],
+        ];
+
+        $list = array_merge($list, [$parent], $childRows);
+        $json = json_encode($list, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        ftruncate($fp, 0);
+        rewind($fp);
+        if (fwrite($fp, $json) === false) {
+            $parent = null;
+        }
+        fflush($fp);
+    } finally {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+    }
+
+    if ($parent === null) {
+        return null;
+    }
+
+    akh_task_write_studio_notification($parent);
+    foreach ($childRows as $ch) {
+        akh_task_write_studio_notification($ch);
+    }
+
+    return $parent;
 }
 
 function akh_task_is_valid_reference_link(string $link): bool
@@ -640,7 +1073,21 @@ function akh_task_build_description(
 
 function akh_task_client_may_edit(array $t): bool
 {
-    return ($t['status'] ?? '') === 'new' && ($t['assigned_editor'] ?? null) === null;
+    if (($t['status'] ?? '') !== 'new' || ($t['assigned_editor'] ?? null) !== null) {
+        return false;
+    }
+    if (akh_task_is_bundle_parent($t)) {
+        $kids = akh_task_bundle_children((string) ($t['id'] ?? ''), akh_tasks_load());
+        foreach ($kids as $c) {
+            if (!akh_task_client_may_edit($c)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    return true;
 }
 
 function akh_task_is_valid_google_meet_url(string $url): bool
@@ -812,11 +1259,6 @@ function akh_task_client_update(
     if ($coupleName === '' || mb_strlen($coupleName) > 200) {
         return null;
     }
-    $clientTypes = array_keys(akh_task_client_edit_types());
-    $allowedTypes = $allowEmptyReference ? array_merge($clientTypes, ['studio_admin']) : $clientTypes;
-    if (!in_array($editType, $allowedTypes, true)) {
-        return null;
-    }
     $projectDetails = trim($projectDetails);
     if ($projectDetails === '' || mb_strlen($projectDetails) > 8000) {
         return null;
@@ -839,6 +1281,104 @@ function akh_task_client_update(
         }
     }
 
+    $list = akh_tasks_load();
+    $existing = null;
+    $existingIdx = null;
+    foreach ($list as $i => $t) {
+        if (($t['id'] ?? '') === $taskId) {
+            $existing = $t;
+            $existingIdx = $i;
+            break;
+        }
+    }
+    if ($existing === null || $existingIdx === null) {
+        return null;
+    }
+    if (strtolower((string) ($existing['client_username'] ?? '')) !== $clientUsername) {
+        return null;
+    }
+    if (!akh_task_client_may_edit($existing)) {
+        return null;
+    }
+
+    if (akh_task_is_bundle_parent($existing)) {
+        $bundleTypes = $existing['bundle_edit_types'] ?? null;
+        if (!is_array($bundleTypes) || count($bundleTypes) < 2) {
+            return null;
+        }
+        $bundleTypes = array_values(array_filter($bundleTypes, 'is_string'));
+        if (count($bundleTypes) < 2) {
+            return null;
+        }
+        $parentTitle = akh_task_bundle_build_parent_title($coupleName, count($bundleTypes));
+        [$parentDesc, $pOk] = akh_task_bundle_build_parent_description(
+            $coupleName,
+            $bundleTypes,
+            $projectDetails,
+            $referenceLink,
+            $deliveryMode,
+            $driveLink
+        );
+        if (!$pOk) {
+            return null;
+        }
+        $pid = (string) ($existing['id'] ?? '');
+        $list[$existingIdx]['title'] = $parentTitle;
+        $list[$existingIdx]['description'] = $parentDesc;
+        $list[$existingIdx]['couple_name'] = $coupleName;
+        $list[$existingIdx]['edit_type'] = 'bundle_parent';
+        $list[$existingIdx]['project_details'] = $projectDetails;
+        $list[$existingIdx]['reference_link'] = $referenceLink;
+        $list[$existingIdx]['delivery_mode'] = $deliveryMode;
+        $list[$existingIdx]['drive_link'] = $deliveryMode === 'google_drive' ? $driveLink : '';
+        $list[$existingIdx]['updated_at'] = gmdate('c');
+        $suffixTpl = "\n\n— Bundle root: " . $pid . ' — This is one part of a multi-type request; claim only this row for this deliverable.';
+        foreach ($list as $j => $u) {
+            if (!akh_task_is_bundle_child($u) || (string) ($u['parent_task_id'] ?? '') !== $pid) {
+                continue;
+            }
+            $slug = (string) ($u['edit_type'] ?? '');
+            if ($slug === '') {
+                return null;
+            }
+            [$cdesc, $cOk] = akh_task_build_description(
+                $coupleName,
+                $slug,
+                $projectDetails,
+                $referenceLink,
+                $deliveryMode,
+                $driveLink
+            );
+            if (!$cOk) {
+                return null;
+            }
+            $cdesc .= $suffixTpl;
+            if (mb_strlen($cdesc) > 8000) {
+                return null;
+            }
+            $list[$j]['title'] = akh_task_build_title($coupleName, $slug);
+            $list[$j]['description'] = $cdesc;
+            $list[$j]['couple_name'] = $coupleName;
+            $list[$j]['project_details'] = $projectDetails;
+            $list[$j]['reference_link'] = $referenceLink;
+            $list[$j]['delivery_mode'] = $deliveryMode;
+            $list[$j]['drive_link'] = $deliveryMode === 'google_drive' ? $driveLink : '';
+            $list[$j]['updated_at'] = gmdate('c');
+        }
+        if (!akh_tasks_save_locked($list)) {
+            return null;
+        }
+        akh_task_bundle_sync_parent($pid);
+
+        return $list[$existingIdx];
+    }
+
+    $clientTypes = array_keys(akh_task_client_edit_types());
+    $allowedTypes = $allowEmptyReference ? array_merge($clientTypes, ['studio_admin']) : $clientTypes;
+    if (!in_array($editType, $allowedTypes, true)) {
+        return null;
+    }
+
     $title = akh_task_build_title($coupleName, $editType);
     [$description, $descOk] = akh_task_build_description(
         $coupleName,
@@ -852,7 +1392,6 @@ function akh_task_client_update(
         return null;
     }
 
-    $list = akh_tasks_load();
     $out = null;
     foreach ($list as $i => $t) {
         if (($t['id'] ?? '') !== $taskId) {
@@ -1073,17 +1612,21 @@ function akh_task_claim(string $taskId, string $editorUsername): ?array
 {
     $list = akh_tasks_load();
     $found = false;
+    $parentId = '';
     foreach ($list as $i => $t) {
         if (($t['id'] ?? '') !== $taskId) {
             continue;
         }
-        if (($t['status'] ?? '') !== 'new' || ($t['assigned_editor'] ?? null) !== null) {
+        if (!akh_task_editor_pool_eligible($t)) {
             return null;
         }
         $list[$i]['assigned_editor'] = $editorUsername;
         $list[$i]['status'] = 'assigned';
         $list[$i]['updated_at'] = gmdate('c');
         $list[$i]['client_editor_notify'] = true;
+        if (akh_task_is_bundle_child($t)) {
+            $parentId = trim((string) ($t['parent_task_id'] ?? ''));
+        }
         $found = true;
         $out = $list[$i];
         break;
@@ -1093,6 +1636,9 @@ function akh_task_claim(string $taskId, string $editorUsername): ?array
     }
     if (!akh_tasks_save_locked($list)) {
         return null;
+    }
+    if ($parentId !== '') {
+        akh_task_bundle_sync_parent($parentId);
     }
 
     return $out;
@@ -1141,6 +1687,12 @@ function akh_task_set_status(string $taskId, string $editorUsername, string $new
     if (!akh_tasks_save_locked($list)) {
         return null;
     }
+    if (akh_task_is_bundle_child($out)) {
+        $pid = trim((string) ($out['parent_task_id'] ?? ''));
+        if ($pid !== '') {
+            akh_task_bundle_sync_parent($pid);
+        }
+    }
 
     return $out;
 }
@@ -1161,6 +1713,9 @@ function akh_task_status_counts(): array
         'other' => 0,
     ];
     foreach (akh_tasks_load() as $t) {
+        if (akh_task_is_bundle_parent($t)) {
+            continue;
+        }
         $s = (string) ($t['status'] ?? 'new');
         if (isset($counts[$s])) {
             ++$counts[$s];
@@ -1215,9 +1770,13 @@ function akh_task_admin_assign(string $taskId, ?string $editorUsername): ?string
     }
     $list = akh_tasks_load();
     $found = false;
+    $parentForSync = '';
     foreach ($list as $i => $t) {
         if (($t['id'] ?? '') !== $taskId) {
             continue;
+        }
+        if (akh_task_is_bundle_parent($t)) {
+            return 'Use the child task rows to assign editors for each deliverable.';
         }
         $found = true;
         if ($editorUsername === '') {
@@ -1228,6 +1787,9 @@ function akh_task_admin_assign(string $taskId, ?string $editorUsername): ?string
             $list[$i]['status'] = 'assigned';
         }
         $list[$i]['updated_at'] = gmdate('c');
+        if (akh_task_is_bundle_child($t)) {
+            $parentForSync = trim((string) ($t['parent_task_id'] ?? ''));
+        }
         break;
     }
     if (!$found) {
@@ -1235,6 +1797,9 @@ function akh_task_admin_assign(string $taskId, ?string $editorUsername): ?string
     }
     if (!akh_tasks_save_locked($list)) {
         return 'Could not save tasks.';
+    }
+    if ($parentForSync !== '') {
+        akh_task_bundle_sync_parent($parentForSync);
     }
 
     return null;
@@ -1251,9 +1816,13 @@ function akh_task_admin_set_status(string $taskId, string $newStatus): ?string
     }
     $list = akh_tasks_load();
     $found = false;
+    $parentForSync = '';
     foreach ($list as $i => $t) {
         if (($t['id'] ?? '') !== $taskId) {
             continue;
+        }
+        if (akh_task_is_bundle_parent($t)) {
+            return 'Use the child task rows to change status; the bundle row tracks children automatically.';
         }
         $found = true;
         $list[$i]['status'] = $newStatus;
@@ -1265,6 +1834,9 @@ function akh_task_admin_set_status(string $taskId, string $newStatus): ?string
         }
         $list[$i]['client_editor_notify'] = true;
         $list[$i]['updated_at'] = gmdate('c');
+        if (akh_task_is_bundle_child($t)) {
+            $parentForSync = trim((string) ($t['parent_task_id'] ?? ''));
+        }
         break;
     }
     if (!$found) {
@@ -1273,24 +1845,138 @@ function akh_task_admin_set_status(string $taskId, string $newStatus): ?string
     if (!akh_tasks_save_locked($list)) {
         return 'Could not save tasks.';
     }
+    if ($parentForSync !== '') {
+        akh_task_bundle_sync_parent($parentForSync);
+    }
 
     return null;
 }
 
 function akh_task_admin_delete(string $taskId): bool
 {
+    $taskId = trim($taskId);
+    if ($taskId === '') {
+        return false;
+    }
     $list = akh_tasks_load();
-    $out = [];
-    $found = false;
+    $target = null;
     foreach ($list as $t) {
         if (($t['id'] ?? '') === $taskId) {
-            $found = true;
+            $target = $t;
+            break;
+        }
+    }
+    if ($target === null) {
+        return false;
+    }
+
+    if (akh_task_is_bundle_parent($target)) {
+        $remove = [$taskId => true];
+        foreach ($target['child_task_ids'] ?? [] as $cid) {
+            if (is_string($cid) && $cid !== '') {
+                $remove[$cid] = true;
+            }
+        }
+        $out = [];
+        foreach ($list as $t) {
+            $id = (string) ($t['id'] ?? '');
+            if ($id !== '' && isset($remove[$id])) {
+                continue;
+            }
+            $out[] = $t;
+        }
+
+        return akh_tasks_save_locked($out);
+    }
+
+    if (akh_task_is_bundle_child($target)) {
+        $parentId = trim((string) ($target['parent_task_id'] ?? ''));
+        $out = [];
+        foreach ($list as $t) {
+            if (($t['id'] ?? '') === $taskId) {
+                continue;
+            }
+            $out[] = $t;
+        }
+        $pIdx = null;
+        foreach ($out as $i => $t) {
+            if (($t['id'] ?? '') === $parentId && akh_task_is_bundle_parent($t)) {
+                $pIdx = $i;
+                break;
+            }
+        }
+        if ($pIdx !== null) {
+            $kids = [];
+            foreach ($out[$pIdx]['child_task_ids'] ?? [] as $cid) {
+                if (is_string($cid) && $cid !== '' && $cid !== $taskId) {
+                    $kids[] = $cid;
+                }
+            }
+            $out[$pIdx]['child_task_ids'] = $kids;
+            $types = [];
+            foreach ($kids as $cid) {
+                foreach ($out as $u) {
+                    if (($u['id'] ?? '') === $cid && akh_task_is_bundle_child($u)) {
+                        $types[] = (string) ($u['edit_type'] ?? '');
+                        break;
+                    }
+                }
+            }
+            $out[$pIdx]['bundle_edit_types'] = $types;
+            $out[$pIdx]['updated_at'] = gmdate('c');
+            if (count($kids) < 2) {
+                $survivorId = $kids[0] ?? '';
+                unset($out[$pIdx]);
+                $out = array_values($out);
+                if ($survivorId !== '') {
+                    foreach ($out as $j => $u) {
+                        if (($u['id'] ?? '') !== $survivorId) {
+                            continue;
+                        }
+                        $slug = (string) ($u['edit_type'] ?? '');
+                        $cn = (string) ($u['couple_name'] ?? '');
+                        $pd = (string) ($u['project_details'] ?? '');
+                        $rf = (string) ($u['reference_link'] ?? '');
+                        $dm = (string) ($u['delivery_mode'] ?? 'google_drive');
+                        $dl = (string) ($u['drive_link'] ?? '');
+                        unset($out[$j]['task_role'], $out[$j]['parent_task_id']);
+                        $out[$j]['title'] = akh_task_build_title($cn, $slug);
+                        [$dsc, $ok] = akh_task_build_description($cn, $slug, $pd, $rf, $dm, $dl);
+                        if ($ok) {
+                            $out[$j]['description'] = $dsc;
+                        }
+                        $out[$j]['updated_at'] = gmdate('c');
+                        break;
+                    }
+                }
+            } else {
+                $cn = (string) ($out[$pIdx]['couple_name'] ?? '');
+                $out[$pIdx]['title'] = akh_task_bundle_build_parent_title($cn, count($kids));
+            }
+        }
+
+        if (!akh_tasks_save_locked($out)) {
+            return false;
+        }
+        if ($parentId !== '') {
+            $still = akh_task_by_id($parentId);
+            if ($still !== null && akh_task_is_bundle_parent($still)) {
+                akh_task_bundle_sync_parent($parentId);
+            }
+        }
+
+        return true;
+    }
+
+    $out = [];
+    foreach ($list as $t) {
+        if (($t['id'] ?? '') === $taskId) {
             continue;
         }
         $out[] = $t;
     }
 
-    return $found && akh_tasks_save_locked($out);
+    return akh_tasks_save_locked($out);
 }
 
 /** Remove every task (admin only). Returns whether save succeeded. */

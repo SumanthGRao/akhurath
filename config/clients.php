@@ -14,6 +14,9 @@ declare(strict_types=1);
  *
  * Sync from your Mac folder (run from project root):
  *   bash scripts/sync-client-logos.sh
+ *
+ * On the server (e.g. XAMPP), those image files must exist or the site shows name labels instead.
+ * Hero / about videos: add assets/video/hero-background.{mp4,webm,mov} and about-reel.{mp4,m4v} locally.
  */
 $marquee_names = [
     'Kiran ARK Photography',

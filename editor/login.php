@@ -11,14 +11,22 @@ $metaDescription = 'Staff task board for ' . SITE_NAME . '.';
 $bodyClass = 'page-portal';
 
 $error = '';
+$dbError = '';
+try {
+    akh_editor_accounts();
+} catch (Throwable $e) {
+    $dbError = 'Could not connect to the database. Start MySQL in XAMPP and set the correct database name and user in config/database.local.php. Detail: ' . trim((string) $e->getMessage());
+}
 
 if (akh_editor_current() !== null) {
     header('Location: ' . base_path('editor/dashboard.php'));
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    if ($dbError !== '') {
+        // Banner uses $dbError only (avoid duplicating the same message in $error).
+    } elseif (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
         $error = 'Security check failed. Refresh the page and try again.';
     } else {
         $user = trim((string) ($_POST['username'] ?? ''));
@@ -26,13 +34,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($user === '' || $pass === '') {
             $error = 'Enter username and password.';
-        } elseif (akh_editor_accounts() === [] && !AKH_DEV_TEST_LOGIN) {
-            $error = 'No editor accounts are configured.';
-        } elseif (!akh_editor_login($user, $pass)) {
-            $error = 'Invalid username or password.';
         } else {
-            header('Location: ' . base_path('editor/dashboard.php'));
-            exit;
+            try {
+                if (akh_editor_accounts() === [] && !AKH_DEV_TEST_LOGIN) {
+                    $error = 'No editor accounts are configured.';
+                } elseif (!akh_editor_login($user, $pass)) {
+                    $error = 'Invalid username or password.';
+                } else {
+                    header('Location: ' . base_path('editor/dashboard.php'));
+                    exit;
+                }
+            } catch (Throwable $e) {
+                $error = 'Sign-in failed (database error). Check MySQL and config/database.local.php.';
+            }
         }
     }
 }
@@ -45,7 +59,9 @@ require_once AKH_ROOT . '/includes/header.php';
       <h1 class="portal-title">Editor login</h1>
       <p class="portal-lead">Assign incoming client tasks to yourself and update status. This is separate from the client portal.</p>
 
-      <?php if ($error !== ''): ?>
+      <?php if ($dbError !== ''): ?>
+        <p class="banner banner--err" role="alert"><?php echo h($dbError); ?></p>
+      <?php elseif ($error !== ''): ?>
         <p class="banner banner--err" role="alert"><?php echo h($error); ?></p>
       <?php endif; ?>
 

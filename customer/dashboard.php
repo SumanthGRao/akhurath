@@ -92,23 +92,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } else {
             $coupleName = trim((string) ($_POST['couple_name'] ?? ''));
-            $editType = trim((string) ($_POST['edit_type'] ?? ''));
             $projectDetails = trim((string) ($_POST['project_details'] ?? ''));
             $referenceLink = trim((string) ($_POST['reference_link'] ?? ''));
             $mode = (string) ($_POST['delivery_mode'] ?? '');
             $link = trim((string) ($_POST['drive_link'] ?? ''));
 
-            $task = akh_task_create($user, $coupleName, $editType, $projectDetails, $referenceLink, $mode, $link, false);
-            if ($task === null) {
-                $error = 'Could not create the task. Fill every required field: couple name, type of edit, project details, reference link (https), and either a Google Drive link or a storage/courier option as described.';
-            } else {
-                if ($mode === 'nas_storage') {
-                    $portalOpenUrl = DRIVE_PORTAL_URL;
-                    $flash = 'Your task was submitted. Open the upload portal in a new tab when you’re ready.';
-                } elseif ($mode === 'courier_hdd') {
-                    $flash = 'Your task was submitted. Ship your hard drive or media to the studio as agreed — add tracking or notes in project details if you like.';
+            $rawTypes = $_POST['edit_types'] ?? $_POST['edit_type'] ?? [];
+            if (!is_array($rawTypes)) {
+                $rawTypes = $rawTypes !== '' ? [(string) $rawTypes] : [];
+            }
+            $editTypes = array_values(array_unique(array_filter(array_map('trim', $rawTypes), static fn ($s) => $s !== '')));
+            if ($editTypes === []) {
+                $error = 'Pick at least one type of edit.';
+            } elseif (count($editTypes) >= 2) {
+                $task = akh_task_create_bundle($user, $coupleName, $editTypes, $projectDetails, $referenceLink, $mode, $link, false);
+                if ($task === null) {
+                    $error = 'Could not create the job. Check couple name, at least two edit types, project details, a valid https reference link, and footage options (Drive link when required).';
                 } else {
-                    $flash = 'Your task was submitted. We’ll assign an editor and update the status here.';
+                    if ($mode === 'nas_storage') {
+                        $portalOpenUrl = DRIVE_PORTAL_URL;
+                        $flash = 'Your multi-part job was submitted. Each type is a separate editor task under one request. Open the upload portal in a new tab when you’re ready.';
+                    } elseif ($mode === 'courier_hdd') {
+                        $flash = 'Your multi-part job was submitted. Each type is a separate editor task under one request. Ship media as agreed.';
+                    } else {
+                        $flash = 'Your multi-part job was submitted. Each type is a separate editor task; editors claim them individually from the pool.';
+                    }
+                }
+            } else {
+                $task = akh_task_create($user, $coupleName, $editTypes[0], $projectDetails, $referenceLink, $mode, $link, false);
+                if ($task === null) {
+                    $error = 'Could not create the task. Fill every required field: couple name, type of edit, project details, reference link (https), and either a Google Drive link or a storage/courier option as described.';
+                } else {
+                    if ($mode === 'nas_storage') {
+                        $portalOpenUrl = DRIVE_PORTAL_URL;
+                        $flash = 'Your task was submitted. Open the upload portal in a new tab when you’re ready.';
+                    } elseif ($mode === 'courier_hdd') {
+                        $flash = 'Your task was submitted. Ship your hard drive or media to the studio as agreed — add tracking or notes in project details if you like.';
+                    } else {
+                        $flash = 'Your task was submitted. We’ll assign an editor and update the status here.';
+                    }
                 }
             }
         }
@@ -116,6 +138,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $tasks = akh_tasks_for_client($user);
+$displayTasks = array_values(array_filter($tasks, static function (array $t): bool {
+    return !akh_task_is_bundle_child($t);
+}));
 $openTicketId = trim((string) ($_GET['ticket'] ?? ''));
 $clientBellCount = akh_task_client_unread_editor_count($user);
 $pageCsrf = akh_csrf_token();
@@ -124,12 +149,26 @@ $editId = trim((string) ($_GET['edit'] ?? ''));
 $editTask = null;
 if ($editId !== '') {
     foreach ($tasks as $t) {
-        if (($t['id'] ?? '') === $editId && akh_task_client_may_edit($t)) {
-            $editTask = $t;
-            break;
+        if (($t['id'] ?? '') !== $editId || !akh_task_client_may_edit($t)) {
+            continue;
         }
+        if (akh_task_is_bundle_child($t)) {
+            $pid = trim((string) ($t['parent_task_id'] ?? ''));
+            if ($pid !== '') {
+                header('Location: ' . base_path('customer/dashboard.php?edit=' . rawurlencode($pid)));
+
+                exit;
+            }
+        }
+        $editTask = $t;
+        break;
     }
 }
+
+$showNewTaskForm = $editTask === null
+    && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
+    && trim((string) ($_POST['task_action'] ?? '')) === 'create_task'
+    && $error !== '';
 
 require_once AKH_ROOT . '/includes/header.php';
 ?>
@@ -168,12 +207,12 @@ require_once AKH_ROOT . '/includes/header.php';
 
       <section class="portal-section" aria-labelledby="your-tasks-heading"<?php echo $clientBellCount > 0 ? ' id="client-desk-updates"' : ''; ?>>
         <h2 id="your-tasks-heading" class="portal-section__title">Your tasks</h2>
-        <p class="portal-muted" style="margin-top:-0.5rem">Each row shows the <strong>task ID</strong> and a short <strong>headline</strong>. Open a task to see full notes, links, editor deliverables, and feedback.</p>
-        <?php if ($tasks === []): ?>
+        <p class="portal-muted" style="margin-top:-0.5rem">Each row shows the <strong>task ID</strong> and a short <strong>headline</strong>. Open a task to see full notes, links, editor deliverables, and feedback. <strong>Multi-part jobs</strong> list each deliverable below the summary so you can track every editor.</p>
+        <?php if ($displayTasks === []): ?>
           <p class="portal-muted">No tasks yet — use the form below to create your first one.</p>
         <?php else: ?>
           <div class="ticket-board">
-                <?php foreach ($tasks as $t): ?>
+                <?php foreach ($displayTasks as $t): ?>
                   <?php
                   $tid = (string) ($t['id'] ?? '');
                   $st = (string) ($t['status'] ?? 'new');
@@ -182,9 +221,20 @@ require_once AKH_ROOT . '/includes/header.php';
                   $stSlug = preg_replace('/[^a-z_]/', '', $st);
                   $delOut = trim((string) ($t['deliverable_output'] ?? ''));
                   $assignedEd = trim((string) ($t['assigned_editor'] ?? ''));
-                  $showPostDelivery = ($st === 'delivered' || $st === 'reverted');
+                  $isBundleParent = akh_task_is_bundle_parent($t);
+                  $bundleKids = $isBundleParent ? akh_task_bundle_children($tid, $tasks) : [];
+                  $showPostDelivery = !$isBundleParent && ($st === 'delivered' || $st === 'reverted');
                   $isOpen = $openTicketId !== '' && $openTicketId === $tid;
                   $clientNotify = ($t['client_editor_notify'] ?? false) === true;
+                  if ($isBundleParent) {
+                      $clientNotify = false;
+                      foreach ($bundleKids as $ch) {
+                          if (($ch['client_editor_notify'] ?? false) === true) {
+                              $clientNotify = true;
+                              break;
+                          }
+                      }
+                  }
                   ?>
             <details
               class="ticket ticket--st-<?php echo h($stSlug); ?>"
@@ -214,8 +264,30 @@ require_once AKH_ROOT . '/includes/header.php';
                     <dl class="ticket__dl">
                       <div><dt>Updated</dt><dd><?php echo h((string) ($t['updated_at'] ?? '—')); ?></dd></div>
                       <div><dt>Delivery</dt><dd><?php echo h(akh_task_delivery_mode_label($dm)); ?></dd></div>
-                      <div><dt>Editor</dt><dd><?php echo h($assignedEd !== '' ? $assignedEd : '—'); ?></dd></div>
+                      <div><dt>Editor</dt><dd><?php echo h($isBundleParent ? '— (per part below)' : ($assignedEd !== '' ? $assignedEd : '—')); ?></dd></div>
                     </dl>
+                    <?php if ($isBundleParent && $bundleKids !== []): ?>
+                      <div class="ticket__block">
+                        <h3 class="ticket__block-title">Deliverables (separate editor tasks)</h3>
+                        <ul class="portal-muted" style="margin:0;padding-left:1.1rem;line-height:1.55">
+                          <?php foreach ($bundleKids as $ch): ?>
+                            <?php
+                            $cid = (string) ($ch['id'] ?? '');
+                            $cst = (string) ($ch['status'] ?? 'new');
+                            $cstSlug = preg_replace('/[^a-z_]/', '', $cst);
+                            $ced = trim((string) ($ch['assigned_editor'] ?? ''));
+                            $ctype = akh_task_edit_type_label((string) ($ch['edit_type'] ?? ''));
+                            ?>
+                            <li>
+                              <strong><?php echo h($ctype); ?></strong>
+                              — <span class="task-badge task-badge--<?php echo h($cstSlug); ?>"><?php echo h(akh_task_status_label($cst)); ?></span>
+                              <?php if ($ced !== ''): ?> · <?php echo h($ced); ?><?php endif; ?>
+                              · <span class="admin-table__mono"><?php echo h($cid); ?></span>
+                            </li>
+                          <?php endforeach; ?>
+                        </ul>
+                      </div>
+                    <?php endif; ?>
                     <?php if (trim((string) ($t['description'] ?? '')) !== ''): ?>
                       <div class="ticket__block">
                         <h3 class="ticket__block-title">Brief &amp; notes</h3>
@@ -228,19 +300,19 @@ require_once AKH_ROOT . '/includes/header.php';
                     <?php if ($dm === 'google_drive' && trim((string) ($t['drive_link'] ?? '')) !== ''): ?>
                       <p class="ticket__line"><a class="text-link" href="<?php echo h((string) $t['drive_link']); ?>" target="_blank" rel="noopener noreferrer">Your footage (Google Drive)</a></p>
                     <?php endif; ?>
-                    <?php if ($delOut !== ''): ?>
+                    <?php if (!$isBundleParent && $delOut !== ''): ?>
                       <div class="ticket__block ticket__block--deliverable">
                         <h3 class="ticket__block-title">Final deliverable<?php echo $assignedEd !== '' ? ' — from ' . h($assignedEd) : ''; ?></h3>
                         <div class="ticket__prose"><?php echo nl2br(h($delOut)); ?></div>
                       </div>
                     <?php endif; ?>
-                    <?php if (trim((string) ($t['client_feedback'] ?? '')) !== ''): ?>
+                    <?php if (!$isBundleParent && trim((string) ($t['client_feedback'] ?? '')) !== ''): ?>
                       <div class="ticket__block">
                         <h3 class="ticket__block-title">Your feedback (on file)</h3>
                         <div class="ticket__prose"><?php echo nl2br(h((string) $t['client_feedback'])); ?></div>
                       </div>
                     <?php endif; ?>
-                    <?php if (trim((string) ($t['client_meeting_date'] ?? '')) !== ''): ?>
+                    <?php if (!$isBundleParent && trim((string) ($t['client_meeting_date'] ?? '')) !== ''): ?>
                       <p class="ticket__line portal-muted"><strong>Meeting:</strong> <?php echo h((string) $t['client_meeting_date']); ?>
                         <?php if (trim((string) ($t['client_meeting_link'] ?? '')) !== ''): ?>
                           — <a class="text-link" href="<?php echo h((string) $t['client_meeting_link']); ?>" target="_blank" rel="noopener noreferrer">Google Meet</a>
@@ -272,8 +344,67 @@ require_once AKH_ROOT . '/includes/header.php';
                         <button type="submit" class="btn btn--primary btn--sm">Save feedback / meeting</button>
                       </form>
                     <?php endif; ?>
+                    <?php if ($isBundleParent): ?>
+                      <?php foreach ($bundleKids as $ch): ?>
+                        <?php
+                        $cid = (string) ($ch['id'] ?? '');
+                        $cst = (string) ($ch['status'] ?? 'new');
+                        $chDel = trim((string) ($ch['deliverable_output'] ?? ''));
+                        $chEd = trim((string) ($ch['assigned_editor'] ?? ''));
+                        $chShowPost = ($cst === 'delivered' || $cst === 'reverted');
+                        ?>
+                        <?php if ($chDel !== '' || trim((string) ($ch['client_feedback'] ?? '')) !== '' || $chShowPost): ?>
+                          <div class="ticket__block" style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid rgba(0,0,0,0.08)">
+                            <h3 class="ticket__block-title"><?php echo h(akh_task_edit_type_label((string) ($ch['edit_type'] ?? ''))); ?> <span class="admin-table__mono"><?php echo h($cid); ?></span></h3>
+                            <?php if ($chDel !== ''): ?>
+                              <div class="ticket__prose"><?php echo nl2br(h($chDel)); ?></div>
+                            <?php endif; ?>
+                            <?php if (trim((string) ($ch['client_feedback'] ?? '')) !== ''): ?>
+                              <p class="portal-muted" style="margin-top:0.5rem"><strong>Your feedback:</strong></p>
+                              <div class="ticket__prose"><?php echo nl2br(h((string) $ch['client_feedback'])); ?></div>
+                            <?php endif; ?>
+                            <?php if ($chShowPost): ?>
+                              <form class="portal-form portal-form--compact ticket__form" method="post" action="" style="margin-top:0.5rem">
+                                <input type="hidden" name="csrf_token" value="<?php echo h($pageCsrf); ?>" />
+                                <input type="hidden" name="task_action" value="save_delivered" />
+                                <input type="hidden" name="task_id" value="<?php echo h($cid); ?>" />
+                                <p class="portal-muted" style="margin-top:0">Feedback for this part only — notifies <?php echo h($chEd !== '' ? $chEd : 'your editor'); ?>.</p>
+                                <label class="field">
+                                  <span>Feedback</span>
+                                  <textarea name="client_feedback" rows="2" maxlength="4000"><?php echo h((string) ($ch['client_feedback'] ?? '')); ?></textarea>
+                                </label>
+                                <div class="portal-form__row">
+                                  <label class="field">
+                                    <span>Meeting date</span>
+                                    <input type="date" name="client_meeting_date" value="<?php echo h((string) ($ch['client_meeting_date'] ?? '')); ?>" />
+                                  </label>
+                                  <label class="field">
+                                    <span>Google Meet</span>
+                                    <input type="url" name="client_meeting_link" maxlength="2000" placeholder="https://meet.google.com/…" value="<?php echo h((string) ($ch['client_meeting_link'] ?? '')); ?>" />
+                                  </label>
+                                </div>
+                                <button type="submit" class="btn btn--primary btn--sm">Save for this part</button>
+                              </form>
+                            <?php endif; ?>
+                          </div>
+                        <?php endif; ?>
+                      <?php endforeach; ?>
+                    <?php endif; ?>
                   </div>
-                  <?php akh_render_task_thread_panel($t, 'client', $pageCsrf); ?>
+                  <?php if ($isBundleParent): ?>
+                    <div class="ticket__thread-stack" style="min-width:min(100%,14rem)">
+                      <?php foreach ($bundleKids as $ch): ?>
+                        <?php if (trim((string) ($ch['assigned_editor'] ?? '')) !== ''): ?>
+                          <div style="margin-bottom:1rem">
+                            <p class="portal-muted" style="font-size:0.82rem;margin:0 0 0.35rem"><?php echo h(akh_task_edit_type_label((string) ($ch['edit_type'] ?? ''))); ?></p>
+                            <?php akh_render_task_thread_panel($ch, 'client', $pageCsrf); ?>
+                          </div>
+                        <?php endif; ?>
+                      <?php endforeach; ?>
+                    </div>
+                  <?php else: ?>
+                    <?php akh_render_task_thread_panel($t, 'client', $pageCsrf); ?>
+                  <?php endif; ?>
                 </div>
               </div>
             </details>
@@ -298,22 +429,38 @@ require_once AKH_ROOT . '/includes/header.php';
             $edRef = (string) ($ev['reference_link'] ?? '');
             $edMode = (string) ($ev['delivery_mode'] ?? 'google_drive');
             $edDrive = (string) ($ev['drive_link'] ?? '');
+            $edIsBundleParent = akh_task_is_bundle_parent($ev);
+            $edBundleTypes = $edIsBundleParent && is_array($ev['bundle_edit_types'] ?? null) ? $ev['bundle_edit_types'] : [];
             ?>
             <label class="field">
               <span>Couple / project name <span class="req">*</span></span>
               <input type="text" name="couple_name" required maxlength="200" value="<?php echo h($edCouple); ?>" />
             </label>
-            <label class="field">
-              <span>Type of edit <span class="req">*</span></span>
-              <select name="edit_type" required>
+            <?php if ($edIsBundleParent): ?>
+              <input type="hidden" name="edit_type" value="bundle_parent" />
+              <fieldset class="field field--fieldset">
+                <legend>Types of edit</legend>
+                <p class="portal-muted" style="margin:0 0 0.5rem;font-size:0.88rem">Locked while the job is open for editors. Contact the studio if you need to change deliverables.</p>
                 <?php foreach (akh_task_client_edit_types() as $slug => $label): ?>
-                  <option value="<?php echo h($slug); ?>"<?php echo $slug === $edType ? ' selected' : ''; ?>><?php echo h($label); ?></option>
+                  <label class="field field--checkbox" style="margin:0.15rem 0">
+                    <input type="checkbox" disabled<?php echo in_array($slug, $edBundleTypes, true) ? ' checked' : ''; ?> />
+                    <span><?php echo h($label); ?></span>
+                  </label>
                 <?php endforeach; ?>
-                <?php if ($edType !== '' && !array_key_exists($edType, akh_task_client_edit_types())): ?>
-                  <option value="<?php echo h($edType); ?>" selected><?php echo h(akh_task_edit_type_label($edType)); ?></option>
-                <?php endif; ?>
-              </select>
-            </label>
+              </fieldset>
+            <?php else: ?>
+              <label class="field">
+                <span>Type of edit <span class="req">*</span></span>
+                <select name="edit_type" required>
+                  <?php foreach (akh_task_client_edit_types() as $slug => $label): ?>
+                    <option value="<?php echo h($slug); ?>"<?php echo $slug === $edType ? ' selected' : ''; ?>><?php echo h($label); ?></option>
+                  <?php endforeach; ?>
+                  <?php if ($edType !== '' && !array_key_exists($edType, akh_task_client_edit_types())): ?>
+                    <option value="<?php echo h($edType); ?>" selected><?php echo h(akh_task_edit_type_label($edType)); ?></option>
+                  <?php endif; ?>
+                </select>
+              </label>
+            <?php endif; ?>
             <label class="field">
               <span>Project details <span class="req">*</span></span>
               <textarea name="project_details" rows="6" required maxlength="8000"><?php echo h($edProj); ?></textarea>
@@ -350,55 +497,76 @@ require_once AKH_ROOT . '/includes/header.php';
       <?php if ($editTask === null): ?>
       <section class="portal-section" aria-labelledby="new-task-heading">
         <h2 id="new-task-heading" class="portal-section__title">New task</h2>
-        <div class="portal-callout" role="note">
-          <p><strong>One task per deliverable.</strong> If you need separate outputs (for example a reel, a teaser, and a highlights film), create <strong>three separate tasks</strong> so we can schedule and track each one. You can use the same Google Drive link on each task or different links — whatever matches your footage.</p>
+        <div id="new-task-launch" class="portal-new-task__launch"<?php echo $showNewTaskForm ? ' hidden' : ''; ?>>
+          <p class="portal-muted" style="margin-top:0">When you’re ready, open the form to enter your brief and footage options.</p>
+          <button type="button" class="btn btn--primary btn--sm portal-new-task__reveal-btn" id="new-task-reveal-btn" aria-expanded="<?php echo $showNewTaskForm ? 'true' : 'false'; ?>" aria-controls="new-task-form-wrap">Create new task</button>
         </div>
-        <form class="portal-form portal-form--task" method="post" action="">
-          <input type="hidden" name="csrf_token" value="<?php echo h(akh_csrf_token()); ?>" />
-          <input type="hidden" name="task_action" value="create_task" />
-          <label class="field">
-            <span>Couple / project name <span class="req">*</span></span>
-            <input type="text" name="couple_name" required maxlength="200" placeholder="e.g. Meera &amp; Rahul" autocomplete="name" />
-          </label>
-          <label class="field">
-            <span>Type of edit <span class="req">*</span></span>
-            <select name="edit_type" required>
-              <option value="" disabled selected>Select type…</option>
-              <?php foreach (akh_task_client_edit_types() as $slug => $label): ?>
-                <option value="<?php echo h($slug); ?>"><?php echo h($label); ?></option>
-              <?php endforeach; ?>
-            </select>
-          </label>
-          <label class="field">
-            <span>Project details <span class="req">*</span></span>
-            <textarea name="project_details" rows="6" required maxlength="8000" placeholder="Deliverables, pacing, music, deadlines, and for “Other” describe exactly what you need…"></textarea>
-          </label>
-          <label class="field">
-            <span>Reference video / style link <span class="req">*</span></span>
-            <input type="url" name="reference_link" required maxlength="2000" placeholder="https://…" inputmode="url" />
-          </label>
-          <fieldset class="field field--fieldset">
-            <legend>Footage: Drive, cloud upload, or courier <span class="req">*</span></legend>
-            <label class="field field--radio">
-              <input type="radio" name="delivery_mode" value="google_drive" required checked />
-              <span>I’ll share a <strong>Google Drive</strong> link to my footage (paste below). <span class="req">*</span></span>
+        <div id="new-task-form-wrap" class="portal-new-task__form"<?php echo $showNewTaskForm ? '' : ' hidden'; ?> role="region" aria-labelledby="new-task-form-title" tabindex="-1">
+          <h3 id="new-task-form-title" class="portal-section__sub" style="margin:0 0 0.75rem;font-size:1.05rem;font-weight:600">Task details</h3>
+          <div class="portal-callout" role="note">
+            <p><strong>Types of edit:</strong> choose <strong>every</strong> deliverable you need from the list (multiple allowed). More than one type still shows as <strong>one job</strong> for you, with a separate <strong>editor task</strong> per type. A single type stays one classic task.</p>
+          </div>
+          <form class="portal-form portal-form--task" method="post" action="">
+            <input type="hidden" name="csrf_token" value="<?php echo h(akh_csrf_token()); ?>" />
+            <input type="hidden" name="task_action" value="create_task" />
+            <label class="field">
+              <span>Couple / project name <span class="req">*</span></span>
+              <input type="text" name="couple_name" required maxlength="200" placeholder="e.g. Meera &amp; Rahul" autocomplete="name" />
             </label>
-            <label class="field field--radio">
-              <input type="radio" name="delivery_mode" value="nas_storage" />
-              <span><strong>NAS / Nextcloud</strong> — after submit, open our upload portal in a <strong>new tab</strong> (no Drive link here).</span>
+            <div class="field">
+              <span>Type(s) of edit <span class="req">*</span></span>
+              <div class="portal-ms" id="new-task-edit-ms" data-portal-ms>
+                <button type="button" class="portal-ms__trigger" id="new-task-ms-trigger" aria-expanded="false" aria-haspopup="listbox" aria-controls="new-task-ms-panel">
+                  <span class="portal-ms__summary" id="new-task-ms-summary">Select types…</span>
+                  <span class="portal-ms__chevron" aria-hidden="true">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </span>
+                </button>
+                <div class="portal-ms__panel" id="new-task-ms-panel" role="listbox" aria-labelledby="new-task-ms-trigger" hidden>
+                  <?php foreach (akh_task_client_edit_types() as $slug => $label): ?>
+                    <label class="portal-ms__row">
+                      <span class="portal-ms__hit">
+                        <input type="checkbox" name="edit_types[]" value="<?php echo h($slug); ?>" class="portal-ms__check" />
+                        <span class="portal-ms__box" aria-hidden="true"></span>
+                      </span>
+                      <span class="portal-ms__text"><?php echo h($label); ?></span>
+                    </label>
+                  <?php endforeach; ?>
+                </div>
+              </div>
+              <span class="portal-note" id="new-task-edit-types-hint">Open the list, then tick every deliverable you need.</span>
+            </div>
+            <label class="field">
+              <span>Project details <span class="req">*</span></span>
+              <textarea name="project_details" rows="6" required maxlength="8000" placeholder="Deliverables, pacing, music, deadlines, and for “Other” describe exactly what you need…"></textarea>
             </label>
-            <label class="field field--radio">
-              <input type="radio" name="delivery_mode" value="courier_hdd" />
-              <span><strong>Courier / hard drive / copy locally</strong> — partner will ship media to the studio (no Drive link required).</span>
+            <label class="field">
+              <span>Reference video / style link <span class="req">*</span></span>
+              <input type="url" name="reference_link" required maxlength="2000" placeholder="https://…" inputmode="url" />
             </label>
-          </fieldset>
-          <label class="field" id="drive-link-field">
-            <span>Google Drive link <span class="req" id="drive-link-req" aria-hidden="true">*</span></span>
-            <input type="url" name="drive_link" maxlength="2000" placeholder="https://drive.google.com/..." inputmode="url" />
-          </label>
-          <p class="portal-note" id="drive-link-hint">Required for Google Drive. Hidden for NAS or courier.</p>
-          <button type="submit" class="btn btn--primary btn--block">Submit task</button>
-        </form>
+            <fieldset class="field field--fieldset">
+              <legend>Footage: Drive, cloud upload, or courier <span class="req">*</span></legend>
+              <label class="field field--radio">
+                <input type="radio" name="delivery_mode" value="google_drive" required checked />
+                <span>I’ll share a <strong>Google Drive</strong> link to my footage (paste below). <span class="req">*</span></span>
+              </label>
+              <label class="field field--radio">
+                <input type="radio" name="delivery_mode" value="nas_storage" />
+                <span><strong>NAS / Nextcloud</strong> — after submit, open our upload portal in a <strong>new tab</strong> (no Drive link here).</span>
+              </label>
+              <label class="field field--radio">
+                <input type="radio" name="delivery_mode" value="courier_hdd" />
+                <span><strong>Courier / hard drive / copy locally</strong> — partner will ship media to the studio (no Drive link required).</span>
+              </label>
+            </fieldset>
+            <label class="field" id="drive-link-field">
+              <span>Google Drive link <span class="req" id="drive-link-req" aria-hidden="true">*</span></span>
+              <input type="url" name="drive_link" maxlength="2000" placeholder="https://drive.google.com/..." inputmode="url" />
+            </label>
+            <p class="portal-note" id="drive-link-hint">Required for Google Drive. Hidden for NAS or courier.</p>
+            <button type="submit" class="btn btn--primary btn--block">Submit task</button>
+          </form>
+        </div>
       </section>
       <?php endif; ?>
 
@@ -434,7 +602,73 @@ require_once AKH_ROOT . '/includes/header.php';
             sync();
           }
           var nf = document.querySelector('input[name="task_action"][value="create_task"]');
-          if (nf) bind(nf.closest('form'), { field: 'drive-link-field', hint: 'drive-link-hint', req: 'drive-link-req' });
+          var createForm = nf ? nf.closest('form') : null;
+          var launch = document.getElementById('new-task-launch');
+          var wrap = document.getElementById('new-task-form-wrap');
+          var revealBtn = document.getElementById('new-task-reveal-btn');
+          if (revealBtn && launch && wrap) {
+            revealBtn.addEventListener('click', function () {
+              launch.hidden = true;
+              wrap.hidden = false;
+              revealBtn.setAttribute('aria-expanded', 'true');
+              var first = wrap.querySelector('input[name="couple_name"]');
+              if (first) {
+                first.focus();
+              } else {
+                wrap.focus();
+              }
+            });
+          }
+          if (createForm) {
+            bind(createForm, { field: 'drive-link-field', hint: 'drive-link-hint', req: 'drive-link-req' });
+            createForm.addEventListener('submit', function (e) {
+              var checked = createForm.querySelectorAll('input[name="edit_types[]"]:checked');
+              if (!checked || checked.length < 1) {
+                e.preventDefault();
+                alert('Select at least one type of edit.');
+              }
+            });
+          }
+          document.querySelectorAll('[data-portal-ms]').forEach(function (container) {
+            var trigger = container.querySelector('.portal-ms__trigger');
+            var panel = container.querySelector('.portal-ms__panel');
+            var summary = container.querySelector('.portal-ms__summary');
+            var checks = container.querySelectorAll('input[name="edit_types[]"]');
+            if (!trigger || !panel || !summary) return;
+            function countSel() {
+              var n = 0;
+              checks.forEach(function (c) {
+                if (c.checked) {
+                  n++;
+                }
+              });
+              return n;
+            }
+            function syncSummary() {
+              var n = countSel();
+              summary.textContent = n === 0 ? 'Select types…' : (n + ' selected');
+              container.classList.toggle('has-selection', n > 0);
+            }
+            function setOpen(open) {
+              container.classList.toggle('is-open', open);
+              panel.hidden = !open;
+              trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+            }
+            trigger.addEventListener('click', function () {
+              setOpen(panel.hidden);
+            });
+            checks.forEach(function (c) {
+              c.addEventListener('change', syncSummary);
+            });
+            document.addEventListener('click', function (e) {
+              if (!container.classList.contains('is-open')) return;
+              if (!container.contains(e.target)) setOpen(false);
+            });
+            document.addEventListener('keydown', function (e) {
+              if (e.key === 'Escape' && container.classList.contains('is-open')) setOpen(false);
+            });
+            syncSummary();
+          });
           var uf = document.querySelector('input[name="task_action"][value="update_task"]');
           if (uf) bind(uf.closest('form'), { field: 'edit-drive-link-field', hint: 'edit-drive-link-hint', req: 'edit-drive-link-req' });
         })();

@@ -12,24 +12,39 @@ $bodyClass = 'page-portal';
 $error = '';
 $registered = isset($_GET['registered']) && $_GET['registered'] === '1';
 
+$dbError = '';
+try {
+    akh_customer_accounts();
+} catch (Throwable $e) {
+    $dbError = 'Could not connect to the database. Start MySQL in XAMPP and set the correct database name and user in config/database.local.php. Detail: ' . trim((string) $e->getMessage());
+}
+
 if (akh_customer_current() !== null) {
     header('Location: ' . base_path('customer/dashboard.php'));
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $user = trim((string) ($_POST['username'] ?? ''));
     $pass = (string) ($_POST['password'] ?? '');
 
-    if ($user === '' || $pass === '') {
+    if ($dbError !== '') {
+        // Shown via $dbError banner only.
+    } elseif ($user === '' || $pass === '') {
         $error = 'Enter username and password.';
-    } elseif (akh_customer_accounts() === [] && !AKH_DEV_TEST_LOGIN) {
-        $error = 'No customer accounts are configured.';
-    } elseif (!akh_customer_login($user, $pass)) {
-        $error = 'Invalid username or password.';
     } else {
-        header('Location: ' . base_path('customer/dashboard.php'));
-        exit;
+        try {
+            if (akh_customer_accounts() === [] && !AKH_DEV_TEST_LOGIN) {
+                $error = 'No customer accounts are configured.';
+            } elseif (!akh_customer_login($user, $pass)) {
+                $error = 'Invalid username or password.';
+            } else {
+                header('Location: ' . base_path('customer/dashboard.php'));
+                exit;
+            }
+        } catch (Throwable $e) {
+            $error = 'Sign-in failed (database error). Check MySQL and config/database.local.php.';
+        }
     }
 }
 
@@ -41,11 +56,13 @@ require_once AKH_ROOT . '/includes/header.php';
       <h1 class="portal-title">Client login</h1>
       <p class="portal-lead">Sign in to submit tasks (Drive link or NAS upload), track status, and open your deliverables portal at <strong><?php echo h(parse_url(DRIVE_PORTAL_URL, PHP_URL_HOST) ?: DRIVE_PORTAL_URL); ?></strong> — use the drive credentials we gave you when you land there.</p>
 
-      <?php if ($registered): ?>
+      <?php if ($dbError !== ''): ?>
+        <p class="banner banner--err" role="alert"><?php echo h($dbError); ?></p>
+      <?php endif; ?>
+      <?php if ($registered && $dbError === ''): ?>
         <p class="banner banner--ok" role="status">Account created. Sign in below with your new username and password.</p>
       <?php endif; ?>
-
-      <?php if ($error !== ''): ?>
+      <?php if ($error !== '' && $dbError === ''): ?>
         <p class="banner banner--err" role="alert"><?php echo h($error); ?></p>
       <?php endif; ?>
 

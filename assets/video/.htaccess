@@ -1,0 +1,6 @@
+# Help Apache send correct types for background media (XAMPP / shared hosts).
+<IfModule mod_mime.c>
+  AddType video/quicktime .mov
+  AddType video/mp4 .mp4 .m4v
+  AddType video/webm .webm
+</IfModule>

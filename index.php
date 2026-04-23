@@ -16,23 +16,37 @@ $bottom_logos = $clientsConfig['bottom_logos'];
 
 $aboutMapEmbed = 'https://www.google.com/maps?q=' . rawurlencode('Bangalore, Karnataka, India') . '&hl=en&z=11&output=embed';
 
+/** First existing file wins (mp4/webm preferred over mov for size + Safari). */
+$heroVideoUrl = null;
+foreach (['assets/video/hero-background.mp4', 'assets/video/hero-background.webm', 'assets/video/hero-background.mov'] as $heroRel) {
+    if (is_file(AKH_ROOT . '/' . $heroRel)) {
+        $heroVideoUrl = base_path($heroRel);
+        break;
+    }
+}
+
+$aboutReelMp4Disk = AKH_ROOT . '/assets/video/about-reel.mp4';
+$aboutReelM4vDisk = AKH_ROOT . '/assets/video/about-reel.m4v';
+$aboutReelHasVideo = is_file($aboutReelMp4Disk) || is_file($aboutReelM4vDisk);
+$aboutReelMp4 = is_file($aboutReelMp4Disk) ? base_path('assets/video/about-reel.mp4') : '';
+$aboutReelM4v = is_file($aboutReelM4vDisk) ? base_path('assets/video/about-reel.m4v') : '';
+
 $bottom_logo_items = [];
 foreach ($bottom_logos as $bl) {
     $src = client_logo_src_for_entry($bl);
-    if ($src !== null) {
-        $bottom_logo_items[] = [
-            'name' => (string) ($bl['name'] ?? ''),
-            'src' => $src,
-            'img_class' => trim((string) ($bl['img_class'] ?? '')),
-        ];
-    }
+    $bottom_logo_items[] = [
+        'name' => (string) ($bl['name'] ?? ''),
+        'src' => $src,
+        'img_class' => trim((string) ($bl['img_class'] ?? '')),
+        'has_image' => $src !== null,
+    ];
 }
 
 require_once AKH_ROOT . '/includes/header.php';
 ?>
 
   <main id="main">
-    <section class="hero hero--video">
+    <section class="hero hero--video<?php echo $heroVideoUrl !== null ? ' hero--has-video' : ' hero--no-video'; ?>">
       <div class="hero__media" aria-hidden="true">
         <video
           class="hero__video"
@@ -40,9 +54,9 @@ require_once AKH_ROOT . '/includes/header.php';
           playsinline
           loop
           preload="none"
-          data-hero-src="<?php echo h(base_path('assets/video/hero-background.mov')); ?>"
+          <?php if ($heroVideoUrl !== null): ?>data-hero-src="<?php echo h($heroVideoUrl); ?>"<?php endif; ?>
         ></video>
-        <div class="video-busy" data-video-busy aria-hidden="true">
+        <div class="video-busy<?php echo $heroVideoUrl === null ? ' is-done' : ''; ?>" data-video-busy aria-hidden="true">
           <span class="video-busy__ring"></span>
         </div>
         <div class="hero__scrim"></div>
@@ -91,28 +105,34 @@ require_once AKH_ROOT . '/includes/header.php';
           </div>
         </div>
         <aside class="about-hero-split__reel" aria-label="Studio showreel">
-          <div class="about-reel-frame">
-            <video
-              class="about-reel__video"
-              muted
-              playsinline
-              webkit-playsinline
-              autoplay
-              loop
-              preload="auto"
-              width="400"
-              height="711"
-            >
-              <?php
-              $aboutReelMp4 = base_path('assets/video/about-reel.mp4');
-              $aboutReelM4v = base_path('assets/video/about-reel.m4v');
-              ?>
-              <source src="<?php echo h($aboutReelMp4); ?>#t=0.001" type="video/mp4" />
-              <source src="<?php echo h($aboutReelM4v); ?>#t=0.001" type="video/mp4" />
-            </video>
-            <div class="video-busy video-busy--compact" data-video-busy aria-hidden="true">
-              <span class="video-busy__ring"></span>
-            </div>
+          <div class="about-reel-frame<?php echo $aboutReelHasVideo ? '' : ' about-reel-frame--static'; ?>">
+            <?php if ($aboutReelHasVideo): ?>
+              <video
+                class="about-reel__video"
+                muted
+                playsinline
+                webkit-playsinline
+                autoplay
+                loop
+                preload="metadata"
+                width="400"
+                height="711"
+              >
+                <?php if ($aboutReelMp4 !== ''): ?>
+                  <source src="<?php echo h($aboutReelMp4); ?>#t=0.001" type="video/mp4" />
+                <?php endif; ?>
+                <?php if ($aboutReelM4v !== ''): ?>
+                  <source src="<?php echo h($aboutReelM4v); ?>#t=0.001" type="video/mp4" />
+                <?php endif; ?>
+              </video>
+              <div class="video-busy video-busy--compact" data-video-busy aria-hidden="true">
+                <span class="video-busy__ring"></span>
+              </div>
+            <?php else: ?>
+              <div class="about-reel-placeholder" aria-hidden="true">
+                <span class="about-reel-placeholder__glyph" aria-hidden="true"></span>
+              </div>
+            <?php endif; ?>
             <p class="about-reel__label" aria-hidden="true">Reel</p>
           </div>
         </aside>
@@ -262,22 +282,26 @@ require_once AKH_ROOT . '/includes/header.php';
         ?>
         <ul class="<?php echo h($logoGridClass); ?>">
           <?php foreach ($bottom_logo_items as $item): ?>
-            <?php
-            $logoClass = 'client-list__logo';
-            if (($item['img_class'] ?? '') !== '') {
-                $logoClass .= ' ' . $item['img_class'];
-            }
-            ?>
             <li>
-              <img
-                class="<?php echo h($logoClass); ?>"
-                src="<?php echo h($item['src']); ?>"
-                alt="<?php echo h($item['name']); ?>"
-                width="300"
-                height="200"
-                loading="lazy"
-                decoding="async"
-              />
+              <?php if (($item['has_image'] ?? false) && ($item['src'] ?? '') !== ''): ?>
+                <?php
+                $logoClass = 'client-list__logo';
+                if (($item['img_class'] ?? '') !== '') {
+                    $logoClass .= ' ' . $item['img_class'];
+                }
+                ?>
+                <img
+                  class="<?php echo h($logoClass); ?>"
+                  src="<?php echo h((string) $item['src']); ?>"
+                  alt="<?php echo h($item['name']); ?>"
+                  width="300"
+                  height="200"
+                  loading="lazy"
+                  decoding="async"
+                />
+              <?php else: ?>
+                <span class="client-list__nameplate"><?php echo h($item['name']); ?></span>
+              <?php endif; ?>
             </li>
           <?php endforeach; ?>
         </ul>

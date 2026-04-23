@@ -11,6 +11,12 @@ $metaDescription = 'Register to submit tasks and track status at ' . SITE_NAME .
 $bodyClass = 'page-portal';
 
 $error = '';
+$dbError = '';
+try {
+    akh_customer_accounts();
+} catch (Throwable $e) {
+    $dbError = 'Could not connect to the database. Start MySQL in XAMPP and set the correct database name and user in config/database.local.php. Detail: ' . trim((string) $e->getMessage());
+}
 
 if (!AKH_ALLOW_CLIENT_REGISTRATION) {
     http_response_code(403);
@@ -21,22 +27,30 @@ if (akh_customer_current() !== null) {
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && AKH_ALLOW_CLIENT_REGISTRATION) {
-    $hp = trim((string) ($_POST['website'] ?? ''));
-    if ($hp !== '') {
-        $error = 'Spam detected.';
-    } elseif (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
-        $error = 'Security check failed. Refresh the page and try again.';
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && AKH_ALLOW_CLIENT_REGISTRATION) {
+    if ($dbError !== '') {
+        // Shown via $dbError banner only.
     } else {
-        $user = trim((string) ($_POST['username'] ?? ''));
-        $pass = (string) ($_POST['password'] ?? '');
-        $pass2 = (string) ($_POST['password_confirm'] ?? '');
-        $err = akh_customer_register($user, $pass, $pass2);
-        if ($err !== null) {
-            $error = $err;
+        $hp = trim((string) ($_POST['website'] ?? ''));
+        if ($hp !== '') {
+            $error = 'Spam detected.';
+        } elseif (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
+            $error = 'Security check failed. Refresh the page and try again.';
         } else {
-            header('Location: ' . base_path('customer/login.php?registered=1'));
-            exit;
+            try {
+                $user = trim((string) ($_POST['username'] ?? ''));
+                $pass = (string) ($_POST['password'] ?? '');
+                $pass2 = (string) ($_POST['password_confirm'] ?? '');
+                $err = akh_customer_register($user, $pass, $pass2);
+                if ($err !== null) {
+                    $error = $err;
+                } else {
+                    header('Location: ' . base_path('customer/login.php?registered=1'));
+                    exit;
+                }
+            } catch (Throwable $e) {
+                $error = 'Registration failed (database error). Check MySQL and config/database.local.php.';
+            }
         }
     }
 }
@@ -54,10 +68,13 @@ require_once AKH_ROOT . '/includes/header.php';
       <?php else: ?>
         <p class="portal-lead">Choose a username and password. You’ll use these to log in, submit tasks, and track status. Usernames are lowercase letters, numbers, and underscores only.</p>
 
-        <?php if ($error !== ''): ?>
+        <?php if ($dbError !== ''): ?>
+          <p class="banner banner--err" role="alert"><?php echo h($dbError); ?></p>
+        <?php elseif ($error !== ''): ?>
           <p class="banner banner--err" role="alert"><?php echo h($error); ?></p>
         <?php endif; ?>
 
+        <?php if ($dbError === ''): ?>
         <form class="portal-form" method="post" action="" autocomplete="off">
           <input type="hidden" name="csrf_token" value="<?php echo h(akh_csrf_token()); ?>" />
           <label class="field honeypot" aria-hidden="true">
@@ -78,6 +95,7 @@ require_once AKH_ROOT . '/includes/header.php';
           </label>
           <button type="submit" class="btn btn--primary btn--block">Create account</button>
         </form>
+        <?php endif; ?>
 
         <p class="portal-foot">
           <a class="text-link" href="<?php echo h(base_path('customer/login.php')); ?>">Already have an account? Sign in</a>

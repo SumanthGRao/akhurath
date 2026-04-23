@@ -12,40 +12,60 @@ $bodyClass = 'page-portal';
 $error = '';
 $setupOk = (string) ($_GET['setup'] ?? '') === '1';
 
+$dbError = '';
+$noAdmins = true;
+$showFirstSetup = false;
+$devTestLoginUi = false;
+try {
+    $noAdmins = akh_admin_accounts() === [];
+    $showFirstSetup = AKH_ADMIN_SETUP_ENABLED && $noAdmins;
+    $devTestLoginUi = akh_admin_dev_test_login_allowed();
+} catch (Throwable $e) {
+    $dbError = 'Could not connect to the database. In XAMPP, start MySQL, then check config/database.local.php (host, database name, user, password). Detail: ' . trim((string) $e->getMessage());
+}
+
 if (akh_admin_current() !== null) {
     header('Location: ' . base_path('admin/index.php'));
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $user = trim((string) ($_POST['username'] ?? ''));
     $pass = (string) ($_POST['password'] ?? '');
-    if ($user === '' || $pass === '') {
+    if ($dbError !== '') {
+        // Shown via $dbError banner only.
+    } elseif ($user === '' || $pass === '') {
         $error = 'Enter username and password.';
-    } elseif (!akh_admin_login($user, $pass)) {
-        $error = (akh_admin_accounts() === [] && !akh_admin_dev_test_login_allowed())
-            ? 'No admin accounts are configured.'
-            : 'Invalid credentials.';
     } else {
-        header('Location: ' . base_path('admin/index.php'));
-        exit;
+        try {
+            if (!akh_admin_login($user, $pass)) {
+                $error = (akh_admin_accounts() === [] && !akh_admin_dev_test_login_allowed())
+                    ? 'No admin accounts are configured.'
+                    : 'Invalid credentials.';
+            } else {
+                header('Location: ' . base_path('admin/index.php'));
+                exit;
+            }
+        } catch (Throwable $e) {
+            $error = 'Sign-in failed (database error). Confirm MySQL is running and config/database.local.php is correct.';
+        }
     }
 }
 
 require_once AKH_ROOT . '/includes/header.php';
-
-$noAdmins = akh_admin_accounts() === [];
-$showFirstSetup = AKH_ADMIN_SETUP_ENABLED && $noAdmins;
 ?>
 
   <main id="main" class="portal-main">
     <div class="portal-card">
       <h1 class="portal-title">Admin console</h1>
       <p class="portal-lead">Sign in to manage clients, editors, and tasks.</p>
+      <?php if ($dbError !== ''): ?>
+        <p class="banner banner--err" role="alert"><?php echo h($dbError); ?></p>
+      <?php endif; ?>
       <?php if ($setupOk): ?>
         <p class="banner banner--ok" role="status">First admin account was created. Sign in below. You can change password and email under <strong>Account</strong> after login.</p>
       <?php endif; ?>
-      <?php if ($showFirstSetup): ?>
+      <?php if ($showFirstSetup && $dbError === ''): ?>
         <p class="banner banner--info" role="status">No admin exists yet. <a class="text-link" href="<?php echo h(base_path('admin/setup.php')); ?>">Create the first admin account</a> (or run <code>php scripts/seed-admin-console.php</code> on the server).</p>
       <?php endif; ?>
       <?php if ($error !== ''): ?>
@@ -63,7 +83,7 @@ $showFirstSetup = AKH_ADMIN_SETUP_ENABLED && $noAdmins;
         <button type="submit" class="btn btn--primary btn--block">Sign in</button>
       </form>
       <p class="portal-foot">
-        <?php if (akh_admin_dev_test_login_allowed()): ?>
+        <?php if ($devTestLoginUi && $dbError === ''): ?>
           <a class="text-link" href="<?php echo h(base_path('admin/test-login.php')); ?>">Test login (UI, test / test)</a>
           ·
         <?php endif; ?>

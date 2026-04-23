@@ -22,3 +22,5 @@ if [[ "$n" -eq 0 ]]; then
   exit 1
 fi
 echo "Done. $n file(s) in $DEST — match names in config/clients.php (\`file\`) or rename to slug + extension."
+# Apache/XAMPP runs as another user; without +r the browser gets 403 on images/video.
+chmod -R a+rX "$ROOT/assets"

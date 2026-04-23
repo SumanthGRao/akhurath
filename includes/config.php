@@ -9,9 +9,57 @@ define('AKH_ROOT', dirname(__DIR__));
 
 /**
  * If the site lives in a subfolder, set to '/subfolder' (no trailing slash).
- * Leave '' when the site is at the domain root.
+ * Leave '' to auto-detect from DOCUMENT_ROOT vs AKH_ROOT (e.g. htdocs/my-site),
+ * or when the site is served from the domain document root.
  */
 const BASE_URL = '';
+
+/**
+ * URL path prefix for this install (no trailing slash), e.g. '/cursor-mysql'.
+ * Uses BASE_URL when set; otherwise derives the folder under the web server document root.
+ */
+function akh_install_base_url(): string
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $manual = BASE_URL === '' ? '' : rtrim(BASE_URL, '/');
+    if ($manual !== '') {
+        $cached = $manual;
+
+        return $cached;
+    }
+    if (PHP_SAPI === 'cli' || empty($_SERVER['DOCUMENT_ROOT'])) {
+        $cached = '';
+
+        return $cached;
+    }
+    $doc = realpath((string) $_SERVER['DOCUMENT_ROOT']);
+    $root = realpath(AKH_ROOT);
+    if ($doc === false || $root === false) {
+        $cached = '';
+
+        return $cached;
+    }
+    $docNorm = rtrim(str_replace('\\', '/', $doc), '/');
+    $rootNorm = rtrim(str_replace('\\', '/', $root), '/');
+    if ($rootNorm === $docNorm) {
+        $cached = '';
+
+        return $cached;
+    }
+    if (!str_starts_with($rootNorm, $docNorm . '/')) {
+        $cached = '';
+
+        return $cached;
+    }
+    $rel = substr($rootNorm, strlen($docNorm));
+    $rel = '/' . ltrim($rel, '/');
+    $cached = $rel === '/' ? '' : rtrim($rel, '/');
+
+    return $cached;
+}
 
 /** PHP default timezone (IST) for attendance, dashboards, and all displayed clock times. */
 const AKH_SITE_TIMEZONE = 'Asia/Kolkata';
@@ -54,7 +102,7 @@ const AKH_ADMIN_SETUP_ENABLED = true;
 /** Site identity */
 const SITE_NAME = 'Akhurath Studio';
 const SITE_TAGLINE = 'Wedding film editing — edit, color, sound, and story.';
-const CONTACT_EMAIL = 'hello@akhurathstudio.com';
+const CONTACT_EMAIL = 'info@akhurathstudio.com';
 
 /**
  * Hostinger email (or any SMTP): set AKH_SMTP_ENABLED true and fill credentials to send
@@ -71,7 +119,7 @@ const AKH_SMTP_FROM_EMAIL = '';
 const AKH_SMTP_FROM_NAME = SITE_NAME;
 
 /** Contact form: messages are sent to this address. */
-const LEADS_EMAIL = 'akhurathstudios@gmail.com';
+const LEADS_EMAIL = 'info@akhurathstudio.com';
 
 /** WhatsApp (E.164 without +) — opens wa.me for web & app */
 const WHATSAPP_MSISDN = '919483184620';
@@ -86,7 +134,7 @@ const DRIVE_PORTAL_URL = 'https://drive.akhurathstudio.com';
 function base_path(string $path = ''): string
 {
     $p = ltrim($path, '/');
-    $b = BASE_URL === '' ? '' : rtrim(BASE_URL, '/');
+    $b = akh_install_base_url();
     if ($b === '') {
         return '/' . $p;
     }
@@ -97,7 +145,7 @@ function base_path(string $path = ''): string
 /** Cookie path for PHP sessions (subfolder installs need the app prefix). */
 function akh_session_cookie_path(): string
 {
-    $b = BASE_URL === '' ? '' : rtrim(BASE_URL, '/');
+    $b = akh_install_base_url();
 
     return $b === '' ? '/' : $b . '/';
 }
@@ -111,7 +159,10 @@ function akh_absolute_url(string $path = ''): string
         || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
     $scheme = $https ? 'https' : 'http';
     $host = (string) ($_SERVER['HTTP_HOST'] ?? 'localhost');
-    $base = BASE_URL === '' ? '' : rtrim(BASE_URL, '/');
+    $base = akh_install_base_url();
+    if ($base === '') {
+        return $scheme . '://' . $host . '/' . $p;
+    }
 
     return $scheme . '://' . $host . $base . '/' . $p;
 }

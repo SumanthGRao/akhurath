@@ -120,10 +120,12 @@
       dismissVideoBusy(video);
       return;
     }
-    armVideoBusyUntilPlaying(video, 14000);
+    armVideoBusyUntilPlaying(video, 8000);
     function attachAndPlay() {
       if (video.getAttribute('data-hero-loaded') === '1') return;
       video.setAttribute('data-hero-loaded', '1');
+      video.setAttribute('webkit-playsinline', '');
+      video.playsInline = true;
       video.src = src;
       video.load();
       var p = video.play();
@@ -131,8 +133,10 @@
         p.catch(function () {});
       }
     }
+    /* Start soon: Safari can stall on requestIdleCallback-only; daemon must be able to read files (chmod a+r). */
+    window.setTimeout(attachAndPlay, 150);
     if ('requestIdleCallback' in window) {
-      window.requestIdleCallback(attachAndPlay, { timeout: 2500 });
+      window.requestIdleCallback(attachAndPlay, { timeout: 2200 });
     } else {
       window.addEventListener('load', function () {
         window.setTimeout(attachAndPlay, 400);
@@ -143,7 +147,7 @@
   (function initAboutReelPlayback() {
     var video = document.querySelector('.about-reel__video');
     if (!video) return;
-    armVideoBusyUntilPlaying(video, 16000);
+    armVideoBusyUntilPlaying(video, 9000);
     function tryPlay() {
       video.muted = true;
       if (video.readyState === 0) return;

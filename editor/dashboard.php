@@ -99,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $all = akh_tasks_all_sorted();
 $newTasks = array_values(array_filter($all, static function (array $t): bool {
-    return ($t['status'] ?? '') === 'new' && ($t['assigned_editor'] ?? null) === null;
+    return akh_task_editor_pool_eligible($t);
 }));
 $mine = array_values(array_filter($all, static function (array $t) use ($editor): bool {
     return ($t['assigned_editor'] ?? null) === $editor;
@@ -205,6 +205,9 @@ require_once AKH_ROOT . '/includes/header.php';
                       <span class="ticket__pill ticket__pill--new">New for you</span>
                     <?php endif; ?>
                     <span class="ticket__meta-muted"><?php echo h((string) ($t['client_username'] ?? '')); ?></span>
+                    <?php if (akh_task_is_bundle_child($t)): ?>
+                      <span class="ticket__pill ticket__pill--new" title="Child task of a multi-type client job">Part of <?php echo h((string) ($t['parent_task_id'] ?? '')); ?></span>
+                    <?php endif; ?>
                     <span class="ticket__meta-muted"><?php echo h(akh_task_delivery_mode_label($dm)); ?></span>
                     <span class="ticket__meta-muted"><?php echo h((string) ($t['created_at'] ?? '')); ?></span>
                   </span>
@@ -281,6 +284,9 @@ require_once AKH_ROOT . '/includes/header.php';
                   <span class="ticket__meta">
                     <span class="task-badge task-badge--<?php echo h($stSlug); ?>"><?php echo h(akh_task_status_label($st)); ?></span>
                     <span class="ticket__meta-muted"><?php echo h((string) ($t['client_username'] ?? '')); ?></span>
+                    <?php if (akh_task_is_bundle_child($t)): ?>
+                      <span class="ticket__pill ticket__pill--new" title="Child task of a multi-type client job">Part of <?php echo h((string) ($t['parent_task_id'] ?? '')); ?></span>
+                    <?php endif; ?>
                     <span class="ticket__meta-muted"><?php echo h((string) ($t['updated_at'] ?? '')); ?></span>
                   </span>
                 </summary>

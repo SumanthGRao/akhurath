@@ -6,7 +6,7 @@ declare(strict_types=1);
  */
 $site_name = 'Akhurath Studio';
 $tagline = 'Wedding film editing — color, sound, and story.';
-$email = 'hello@akhurathstudio.com';
+$email = 'info@akhurathstudio.com';
 $year = (int) date('Y');
 ?>
 <!DOCTYPE html>

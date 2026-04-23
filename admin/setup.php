@@ -12,12 +12,20 @@ $pageTitle = 'Create first admin — ' . SITE_NAME;
 $metaDescription = 'One-time setup for the studio admin console.';
 $bodyClass = 'page-portal';
 
+$dbError = '';
+$adminList = [];
+try {
+    $adminList = akh_admin_accounts();
+} catch (Throwable $e) {
+    $dbError = 'Could not connect to the database. Start MySQL (XAMPP) and verify config/database.local.php matches your phpMyAdmin database. Detail: ' . trim((string) $e->getMessage());
+}
+
 if (akh_admin_current() !== null) {
     header('Location: ' . base_path('admin/index.php'));
     exit;
 }
 
-if (akh_admin_accounts() !== []) {
+if ($dbError === '' && $adminList !== []) {
     header('Location: ' . base_path('admin/login.php'));
     exit;
 }
@@ -29,7 +37,10 @@ if (!AKH_ADMIN_SETUP_ENABLED) {
 $error = '';
 $success = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && AKH_ADMIN_SETUP_ENABLED) {
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && AKH_ADMIN_SETUP_ENABLED) {
+    if ($dbError !== '') {
+        // Shown via $dbError banner only.
+    } else {
     $hp = trim((string) ($_POST['website'] ?? ''));
     if ($hp !== '') {
         $error = 'Spam detected.';
@@ -56,14 +67,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && AKH_ADMIN_SETUP_ENABLED) {
             if ($hash === false) {
                 $error = 'Could not hash password.';
             } elseif (!akh_admin_save_accounts([$user => $hash])) {
-                $error = 'Could not write admin accounts file. Check data/ permissions.';
+                $error = 'Could not save the admin account. Check database connection and permissions.';
             } elseif (!akh_admin_meta_save([
                 'email' => $email,
                 'email_verified' => !AKH_SMTP_ENABLED,
                 'verify_token' => null,
                 'verify_expires_at' => null,
             ])) {
-                $error = 'Account was created but saving profile failed. Check data/ permissions.';
+                $error = 'Account was created but saving profile failed. Check database / app_kv.';
             } elseif (AKH_SMTP_ENABLED) {
                 $token = akh_admin_meta_begin_verification($email);
                 if ($token === null) {
@@ -86,6 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && AKH_ADMIN_SETUP_ENABLED) {
             }
         }
     }
+    }
 }
 
 require_once AKH_ROOT . '/includes/header.php';
@@ -101,13 +113,16 @@ require_once AKH_ROOT . '/includes/header.php';
       <?php else: ?>
         <p class="portal-lead">This page is only available while no admin accounts exist. After you create one, use <strong>Account</strong> in the console to change password or email.</p>
 
-        <?php if ($error !== ''): ?>
+        <?php if ($dbError !== ''): ?>
+          <p class="banner banner--err" role="alert"><?php echo h($dbError); ?></p>
+        <?php elseif ($error !== ''): ?>
           <p class="banner banner--err" role="alert"><?php echo h($error); ?></p>
         <?php endif; ?>
         <?php if ($success !== ''): ?>
           <p class="banner banner--ok" role="status"><?php echo h($success); ?></p>
         <?php endif; ?>
 
+        <?php if ($dbError === ''): ?>
         <form class="portal-form" method="post" action="" autocomplete="off">
           <input type="hidden" name="csrf_token" value="<?php echo h(akh_csrf_token()); ?>" />
           <label class="field honeypot" aria-hidden="true">
@@ -132,6 +147,7 @@ require_once AKH_ROOT . '/includes/header.php';
           </label>
           <button type="submit" class="btn btn--primary btn--block">Create admin account</button>
         </form>
+        <?php endif; ?>
         <p class="portal-foot"><a class="text-link" href="<?php echo h(base_path('admin/login.php')); ?>">← Admin login</a></p>
       <?php endif; ?>
     </div>
