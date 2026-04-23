@@ -7,6 +7,6 @@ declare(strict_types=1);
  * Create the database there, then import sql/schema.sql (or run scripts/mysql-import-schema.sh).
  */
 
-define('AKH_DB_DSN', 'mysql:host=127.0.0.1;dbname=akhurath_studio;charset=utf8mb4');
-define('AKH_DB_USER', 'root');
-define('AKH_DB_PASS', '');
+define('AKH_DB_DSN', 'mysql:host=127.0.0.1;dbname=u113439427_akhurath;charset=utf8mb4');
+define('AKH_DB_USER', 'akhurath');
+define('AKH_DB_PASS', 'Akhurath@123');
