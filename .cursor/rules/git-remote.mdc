@@ -9,3 +9,13 @@ alwaysApply: true
 - **Legacy / alternate:** `akhurath-site` → `git@github.com:SumanthGRao/akhurath-site.git` — only push here if the user explicitly asks.
 
 When the user asks to push to GitHub, use **`git push origin main`** (or their current branch) against **akhurath**, not akhurath-site, unless they say otherwise.
+
+## Commits and what to push
+
+- When the user asks to push **only what was updated** for a task: **`git add` only the relevant paths** (app code, assets, includes). Do **not** stage junk such as **`.DS_Store`**, editor temp files, or unrelated local experiments. Prefer **one coherent commit** per logical change set unless the user asks to split.
+- If **`git push` is rejected** (remote ahead), run **`git pull --rebase origin main`** (or the current branch), resolve conflicts if any, then **`git push origin main`** again.
+
+## `includes/config.php` (production credentials)
+
+- **`includes/config.php` is gitignored** and must **not** be committed. The tracked template is **`includes/config.example.php`**. New clones and servers: copy the example to `includes/config.php` and edit there.
+- Deploying: a `git pull` will **not** overwrite an untracked `includes/config.php` on the server. If a host ever had the old **tracked** `includes/config.php`, back it up before the first pull that removes it from the tree, then restore into the ignored `includes/config.php`.
