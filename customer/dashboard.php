@@ -51,7 +51,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim((string) ($_POST['ajax_action'
 
 $flash = '';
 $error = '';
-$portalOpenUrl = '';
+$portalOpenUrl = trim((string) ($_GET['portal'] ?? '')) === '1' ? DRIVE_PORTAL_URL : '';
+$flashCode = trim((string) ($_GET['flash'] ?? ''));
+if ($flashCode !== '') {
+    $flashMap = [
+        'feedback_saved' => 'Your feedback was sent to your editor. This task is now marked returned for revision.',
+        'task_updated' => 'Task updated.',
+        'task_created' => 'Your task was submitted. We’ll assign an editor and update the status here.',
+        'task_created_courier' => 'Your task was submitted. Ship your hard drive or media to the studio as agreed — add tracking or notes in project details if you like.',
+        'bundle_created' => 'Your multi-part job was submitted. Each type is a separate editor task; editors claim them individually from the pool.',
+        'bundle_created_courier' => 'Your multi-part job was submitted. Each type is a separate editor task under one request. Ship media as agreed.',
+    ];
+    if (isset($flashMap[$flashCode])) {
+        $flash = $flashMap[$flashCode];
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
@@ -77,7 +91,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($err !== null) {
                 $error = $err;
             } else {
-                $flash = 'Your feedback was sent to your editor. This task is now marked returned for revision.';
+                $q = http_build_query(['ticket' => $tid, 'flash' => 'feedback_saved']);
+                header('Location: ' . base_path('customer/dashboard.php?' . $q));
+                exit;
             }
         } elseif ($action === 'update_task') {
             $tid = trim((string) ($_POST['task_id'] ?? ''));
@@ -91,12 +107,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($task === null) {
                 $error = 'Could not update the task. Check all required fields, or this task may no longer be editable (after an editor is assigned).';
             } else {
+                $params = ['ticket' => $tid, 'flash' => 'task_updated'];
                 if ($mode === 'nas_storage') {
-                    $portalOpenUrl = DRIVE_PORTAL_URL;
-                    $flash = 'Task updated. Open the upload portal in a new tab when you’re ready.';
-                } else {
-                    $flash = 'Task updated.';
+                    $params['portal'] = '1';
                 }
+                $q = http_build_query($params);
+                header('Location: ' . base_path('customer/dashboard.php?' . $q));
+                exit;
             }
         } elseif ($action === 'create_task') {
             $coupleName = trim((string) ($_POST['couple_name'] ?? ''));
@@ -117,28 +134,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($task === null) {
                     $error = 'Could not create the job. Check couple name, at least two edit types, project details, a valid https reference link, and footage options (Drive link when required).';
                 } else {
+                    $params = [
+                        'ticket' => (string) ($task['id'] ?? ''),
+                        'flash' => $mode === 'courier_hdd' ? 'bundle_created_courier' : 'bundle_created',
+                    ];
                     if ($mode === 'nas_storage') {
-                        $portalOpenUrl = DRIVE_PORTAL_URL;
-                        $flash = 'Your multi-part job was submitted. Each type is a separate editor task under one request. Open the upload portal in a new tab when you’re ready.';
-                    } elseif ($mode === 'courier_hdd') {
-                        $flash = 'Your multi-part job was submitted. Each type is a separate editor task under one request. Ship media as agreed.';
-                    } else {
-                        $flash = 'Your multi-part job was submitted. Each type is a separate editor task; editors claim them individually from the pool.';
+                        $params['portal'] = '1';
                     }
+                    $q = http_build_query($params);
+                    header('Location: ' . base_path('customer/dashboard.php?' . $q));
+                    exit;
                 }
             } else {
                 $task = akh_task_create($user, $coupleName, $editTypes[0], $projectDetails, $referenceLink, $mode, $link, false);
                 if ($task === null) {
                     $error = 'Could not create the task. Fill every required field: couple name, type of edit, project details, reference link (https), and either a Google Drive link or a storage/courier option as described.';
                 } else {
+                    $params = [
+                        'ticket' => (string) ($task['id'] ?? ''),
+                        'flash' => $mode === 'courier_hdd' ? 'task_created_courier' : 'task_created',
+                    ];
                     if ($mode === 'nas_storage') {
-                        $portalOpenUrl = DRIVE_PORTAL_URL;
-                        $flash = 'Your task was submitted. Open the upload portal in a new tab when you’re ready.';
-                    } elseif ($mode === 'courier_hdd') {
-                        $flash = 'Your task was submitted. Ship your hard drive or media to the studio as agreed — add tracking or notes in project details if you like.';
-                    } else {
-                        $flash = 'Your task was submitted. We’ll assign an editor and update the status here.';
+                        $params['portal'] = '1';
                     }
+                    $q = http_build_query($params);
+                    header('Location: ' . base_path('customer/dashboard.php?' . $q));
+                    exit;
                 }
             }
         } elseif ($action === '') {
