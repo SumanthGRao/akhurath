@@ -643,6 +643,12 @@ require_once AKH_ROOT . '/includes/header.php';
             form.querySelectorAll('input[name="delivery_mode"]').forEach(function (r) { r.addEventListener('change', sync); });
             sync();
           }
+          // Keep create form above task list on dashboard (requested flow).
+          var yourTasksSection = document.getElementById('client-desk-updates');
+          var newTaskSection = document.querySelector('section[aria-labelledby="new-task-heading"]');
+          if (yourTasksSection && newTaskSection && yourTasksSection.parentNode === newTaskSection.parentNode) {
+            yourTasksSection.parentNode.insertBefore(newTaskSection, yourTasksSection);
+          }
           var nf = document.querySelector('input[name="task_action"][value="create_task"]');
           var createForm = nf ? nf.closest('form') : null;
           var launch = document.getElementById('new-task-launch');
