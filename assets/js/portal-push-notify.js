@@ -20,6 +20,7 @@
   var lastPool = typeof cfg.pool === 'number' ? cfg.pool : 0;
   var lastSig = typeof cfg.sig === 'string' ? cfg.sig : '';
   var pollReady = false;
+  var baseTitle = document.title;
 
   function postPoll() {
     var fd = new URLSearchParams();
@@ -109,6 +110,15 @@
     }
   }
 
+  function setTabBellBadge(n) {
+    var count = typeof n === 'number' ? n : 0;
+    if (count > 0) {
+      document.title = '🔔 ' + String(count) + ' · ' + baseTitle;
+    } else {
+      document.title = baseTitle;
+    }
+  }
+
   function mountDeskBellHub() {
     var wrap = document.querySelector('.desk-bell-wrap');
     if (!wrap) return null;
@@ -145,6 +155,7 @@
       }
       var b = typeof data.bell === 'number' ? data.bell : lastBell;
       setBellCount(btn, b);
+      setTabBellBadge(b);
     };
   }
 
@@ -250,6 +261,7 @@
 
   function boot() {
     mountPermissionPrompt();
+    setTabBellBadge(lastBell);
     setTimeout(pollTick, FIRST_POLL_MS);
     setInterval(pollTick, POLL_MS);
   }
