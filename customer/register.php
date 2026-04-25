@@ -12,6 +12,8 @@ $bodyClass = 'page-portal';
 
 $error = '';
 $dbError = '';
+$success = '';
+$mailInfo = '';
 try {
     akh_customer_accounts();
 } catch (Throwable $e) {
@@ -25,6 +27,13 @@ if (!AKH_ALLOW_CLIENT_REGISTRATION) {
 if (akh_customer_current() !== null) {
     header('Location: ' . base_path('customer/dashboard.php'));
     exit;
+}
+
+if (isset($_SESSION['akh_register_flash']) && is_array($_SESSION['akh_register_flash'])) {
+    $rf = $_SESSION['akh_register_flash'];
+    unset($_SESSION['akh_register_flash']);
+    $success = trim((string) ($rf['success'] ?? ''));
+    $mailInfo = trim((string) ($rf['mail_info'] ?? ''));
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && AKH_ALLOW_CLIENT_REGISTRATION) {
@@ -48,14 +57,31 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && AKH_ALLOW_CLIENT_REGISTRATI
                 } else {
                     require_once AKH_ROOT . '/includes/site-notify-mail.php';
                     $em = strtolower(trim($email));
-                    $smtpOk = akh_site_notify_smtp_enabled();
-                    if ($em !== '' && filter_var($em, FILTER_VALIDATE_EMAIL)) {
-                        if ($smtpOk) {
-                            akh_site_mail_client_registration_welcome($em, strtolower(trim($user)));
-                            akh_site_mail_studio_new_client(strtolower(trim($user)), $em);
+                    $u = strtolower(trim($user));
+                    $mailInfoText = 'Email notifications are currently disabled (SMTP not configured).';
+                    if ($em !== '' && filter_var($em, FILTER_VALIDATE_EMAIL) && akh_site_notify_smtp_enabled()) {
+                        $rClient = akh_site_mail_client_registration_welcome($em, $u);
+                        $rStudio = akh_site_mail_studio_new_client($u, $em);
+                        if ($rClient['ok'] && $rStudio['ok']) {
+                            $mailInfoText = 'Confirmation email sent to ' . $em . '.';
+                        } else {
+                            $errs = [];
+                            if (!$rClient['ok'] && !$rClient['skipped']) {
+                                $errs[] = 'client: ' . $rClient['error'];
+                            }
+                            if (!$rStudio['ok'] && !$rStudio['skipped']) {
+                                $errs[] = 'studio: ' . $rStudio['error'];
+                            }
+                            $mailInfoText = $errs === []
+                                ? 'Email could not be sent right now.'
+                                : 'Email send issue — ' . implode(' | ', $errs);
                         }
                     }
-                    header('Location: ' . base_path('customer/login.php'));
+                    $_SESSION['akh_register_flash'] = [
+                        'success' => 'Account created successfully. You can now sign in.',
+                        'mail_info' => $mailInfoText,
+                    ];
+                    header('Location: ' . base_path('customer/register.php'));
                     exit;
                 }
             } catch (Throwable $e) {
@@ -77,6 +103,13 @@ require_once AKH_ROOT . '/includes/header.php';
         <p class="portal-foot"><a class="text-link" href="<?php echo h(base_path('customer/login.php')); ?>">← Client login</a></p>
       <?php else: ?>
         <p class="portal-lead">Choose a username, your email for confirmations and editor updates, and a password. Usernames are lowercase letters, numbers, and underscores only.</p>
+
+        <?php if ($success !== ''): ?>
+          <p class="banner banner--ok" role="status"><?php echo h($success); ?></p>
+          <?php if ($mailInfo !== ''): ?>
+            <p class="banner banner--info" role="status"><?php echo h($mailInfo); ?></p>
+          <?php endif; ?>
+        <?php endif; ?>
 
         <?php if ($dbError !== ''): ?>
           <p class="banner banner--err" role="alert"><?php echo h($dbError); ?></p>

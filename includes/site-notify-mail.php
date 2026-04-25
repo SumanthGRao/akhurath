@@ -13,6 +13,23 @@ function akh_site_notify_smtp_enabled(): bool
         && AKH_SMTP_PASS !== '';
 }
 
+/**
+ * @return array{ok: bool, error: string, skipped: bool}
+ */
+function akh_site_notify_skip_result(string $error): array
+{
+    return ['ok' => false, 'error' => $error, 'skipped' => true];
+}
+
+/**
+ * @param array{ok: bool, error: string} $r
+ * @return array{ok: bool, error: string, skipped: bool}
+ */
+function akh_site_notify_sent_result(array $r): array
+{
+    return ['ok' => (bool) ($r['ok'] ?? false), 'error' => (string) ($r['error'] ?? ''), 'skipped' => false];
+}
+
 /** @param array{ok: bool, error: string} $r */
 function akh_site_notify_log_mail_failure(string $context, array $r): void
 {
@@ -72,10 +89,13 @@ function akh_site_mail_contact_notify_studio(
     akh_site_notify_log_mail_failure('contact_studio', akh_smtp_send($to, $subject, $body));
 }
 
-function akh_site_mail_client_registration_welcome(string $toEmail, string $username): void
+/**
+ * @return array{ok: bool, error: string, skipped: bool}
+ */
+function akh_site_mail_client_registration_welcome(string $toEmail, string $username): array
 {
     if (!akh_site_notify_smtp_enabled() || !filter_var($toEmail, FILTER_VALIDATE_EMAIL)) {
-        return;
+        return akh_site_notify_skip_result('SMTP disabled or invalid recipient address.');
     }
     $subject = 'Your ' . SITE_NAME . ' client portal account';
     $login = akh_absolute_url('customer/login.php');
@@ -85,17 +105,23 @@ function akh_site_mail_client_registration_welcome(string $toEmail, string $user
         . "We'll use this email for task updates when editors post progress.\n\n"
         . '— ' . SITE_NAME . "\n";
 
-    akh_site_notify_log_mail_failure('register_client', akh_smtp_send($toEmail, $subject, $body));
+    $r = akh_smtp_send($toEmail, $subject, $body);
+    akh_site_notify_log_mail_failure('register_client', $r);
+
+    return akh_site_notify_sent_result($r);
 }
 
-function akh_site_mail_studio_new_client(string $username, string $email): void
+/**
+ * @return array{ok: bool, error: string, skipped: bool}
+ */
+function akh_site_mail_studio_new_client(string $username, string $email): array
 {
     if (!akh_site_notify_smtp_enabled()) {
-        return;
+        return akh_site_notify_skip_result('SMTP disabled.');
     }
     $to = trim(LEADS_EMAIL);
     if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
-        return;
+        return akh_site_notify_skip_result('Invalid LEADS_EMAIL recipient.');
     }
     $subject = 'New client registration — ' . SITE_NAME;
     $body = "A new client registered on the website.\n\n"
@@ -103,7 +129,10 @@ function akh_site_mail_studio_new_client(string $username, string $email): void
         . 'Username: ' . $username . "\n"
         . 'Email: ' . $email . "\n";
 
-    akh_site_notify_log_mail_failure('register_studio', akh_smtp_send($to, $subject, $body));
+    $r = akh_smtp_send($to, $subject, $body);
+    akh_site_notify_log_mail_failure('register_studio', $r);
+
+    return akh_site_notify_sent_result($r);
 }
 
 function akh_site_mail_studio_new_task(array $task): void
