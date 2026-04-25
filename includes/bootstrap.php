@@ -27,10 +27,19 @@ if (is_file($akhConfig)) {
     exit(1);
 }
 
-/** When config/database.local.php exists, load MySQL (Hostinger, XAMPP with DB, etc.). Otherwise file-based JSON/tasks only. */
+/**
+ * Load MySQL mode when either:
+ * - config/database.local.php exists, OR
+ * - DB constants are already defined in includes/config.php.
+ *
+ * This prevents accidental fallback to file-based tasks on production when creds
+ * live in includes/config.php and database.local.php is intentionally absent.
+ */
 $dbLocal = AKH_ROOT . '/config/database.local.php';
 if (is_file($dbLocal)) {
     require_once $dbLocal;
+}
+if (defined('AKH_DB_DSN') && defined('AKH_DB_USER') && defined('AKH_DB_PASS')) {
     require_once __DIR__ . '/db.php';
     require_once __DIR__ . '/app-kv.php';
 }
