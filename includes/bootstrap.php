@@ -3,19 +3,29 @@
 declare(strict_types=1);
 
 $akhConfig = __DIR__ . '/config.php';
-if (!is_file($akhConfig)) {
-    $msg = 'Missing includes/config.php. Copy includes/config.example.php to includes/config.php and adjust for this server (not committed to git).';
+$akhConfigExample = __DIR__ . '/config.example.php';
+if (is_file($akhConfig)) {
+    require_once $akhConfig;
+} elseif (is_file($akhConfigExample)) {
+    // Fallback keeps production/site online if config.php is missing after deploy.
+    require_once $akhConfigExample;
+    $msg = 'includes/config.php is missing; using includes/config.example.php defaults. Copy includes/config.example.php to includes/config.php for environment-specific values.';
     if (PHP_SAPI === 'cli') {
         fwrite(STDERR, $msg . "\n");
-        exit(1);
+    } else {
+        error_log($msg);
     }
-    http_response_code(503);
-    header('Content-Type: text/plain; charset=utf-8');
-    echo $msg;
-
-    exit;
+} else {
+    $msg = 'Missing includes/config.php and includes/config.example.php.';
+    if (PHP_SAPI === 'cli') {
+        fwrite(STDERR, $msg . "\n");
+    } else {
+        http_response_code(503);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo $msg;
+    }
+    exit(1);
 }
-require_once $akhConfig;
 
 /** When config/database.local.php exists, load MySQL (Hostinger, XAMPP with DB, etc.). Otherwise file-based JSON/tasks only. */
 $dbLocal = AKH_ROOT . '/config/database.local.php';
