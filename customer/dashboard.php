@@ -36,6 +36,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim((string) ($_POST['ajax_action'
         }
         exit;
     }
+    if ($ajax === 'poll') {
+        try {
+            echo json_encode(akh_task_ajax_poll_client($user), JSON_THROW_ON_ERROR);
+        } catch (\Throwable $e) {
+            echo json_encode(['ok' => false]);
+        }
+        exit;
+    }
     http_response_code(400);
     echo json_encode(['ok' => false, 'error' => 'bad_ajax']);
     exit;
@@ -143,6 +151,8 @@ $displayTasks = array_values(array_filter($tasks, static function (array $t): bo
 }));
 $openTicketId = trim((string) ($_GET['ticket'] ?? ''));
 $clientBellCount = akh_task_client_unread_editor_count($user);
+$clientBoardSig = akh_task_poll_signature_client($user);
+$clientBellNotices = akh_task_client_notice_rows($user);
 $pageCsrf = akh_csrf_token();
 
 $editId = trim((string) ($_GET['edit'] ?? ''));
@@ -180,8 +190,14 @@ require_once AKH_ROOT . '/includes/header.php';
           <h1 class="portal-title">Welcome, <?php echo h($user); ?></h1>
           <p class="portal-lead">Submit footage with a <strong>Google Drive</strong> link, request <strong>NAS / Nextcloud</strong> space, or choose <strong>courier / hard drive</strong> if your partner will ship media to us. NAS opens our drive portal in a <strong>new tab</strong> after you submit. Track every task below.</p>
         </div>
-        <?php if ($clientBellCount > 0): ?>
-          <a class="desk-bell<?php echo $clientBellCount > 0 ? ' desk-bell--wiggle desk-bell--pop' : ''; ?>" href="#client-desk-updates" title="Editor updates on your tasks">
+        <div class="desk-bell-wrap">
+          <button
+            type="button"
+            class="desk-bell<?php echo $clientBellCount > 0 ? ' desk-bell--wiggle desk-bell--pop' : ' desk-bell--zero'; ?>"
+            aria-expanded="false"
+            aria-haspopup="true"
+            title="Notifications — jump to a task with editor updates"
+          >
             <span class="desk-bell__icon" aria-hidden="true">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M12 22a2 2 0 002-2H10a2 2 0 002 2zm6-6V11a6 6 0 10-12 0v5l-2 2v1h16v-1l-2-2z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
@@ -189,8 +205,9 @@ require_once AKH_ROOT . '/includes/header.php';
             </span>
             <span class="desk-bell__count"><?php echo (int) $clientBellCount; ?></span>
             <span class="visually-hidden"><?php echo (int) $clientBellCount; ?> tasks with unread editor updates</span>
-          </a>
-        <?php endif; ?>
+          </button>
+          <div class="desk-bell-dropdown" id="client-desk-bell-dropdown" hidden></div>
+        </div>
       </header>
 
       <?php if ($flash !== ''): ?>
@@ -205,7 +222,7 @@ require_once AKH_ROOT . '/includes/header.php';
         <p class="banner banner--err" role="alert"><?php echo h($error); ?></p>
       <?php endif; ?>
 
-      <section class="portal-section" aria-labelledby="your-tasks-heading"<?php echo $clientBellCount > 0 ? ' id="client-desk-updates"' : ''; ?>>
+      <section class="portal-section" aria-labelledby="your-tasks-heading" id="client-desk-updates">
         <h2 id="your-tasks-heading" class="portal-section__title">Your tasks</h2>
         <p class="portal-muted" style="margin-top:-0.5rem">Each row shows the <strong>task ID</strong> and a short <strong>headline</strong>. Open a task to see full notes, links, editor deliverables, and feedback. <strong>Multi-part jobs</strong> list each deliverable below the summary so you can track every editor.</p>
         <?php if ($displayTasks === []): ?>
@@ -673,18 +690,31 @@ require_once AKH_ROOT . '/includes/header.php';
           if (uf) bind(uf.closest('form'), { field: 'edit-drive-link-field', hint: 'edit-drive-link-hint', req: 'edit-drive-link-req' });
         })();
       </script>
+      <?php
+      $akhPushJs = AKH_ROOT . '/assets/js/portal-push-notify.js';
+      $akhPushVer = is_file($akhPushJs) ? (string) filemtime($akhPushJs) : '1';
+      ?>
+      <script>
+        window._akhPortalPush = {
+          mode: 'client',
+          siteName: <?php echo json_encode(SITE_NAME, JSON_THROW_ON_ERROR); ?>,
+          csrf: <?php echo json_encode($pageCsrf, JSON_THROW_ON_ERROR); ?>,
+          bell: <?php echo (int) $clientBellCount; ?>,
+          pool: 0,
+          sig: <?php echo json_encode($clientBoardSig, JSON_THROW_ON_ERROR); ?>,
+          notices: <?php echo json_encode($clientBellNotices, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES); ?>
+        };
+      </script>
+      <script defer src="<?php echo h(base_path('assets/js/portal-push-notify.js')); ?>?v=<?php echo h($akhPushVer); ?>"></script>
       <script>
         (function () {
           var csrf = <?php echo json_encode($pageCsrf, JSON_THROW_ON_ERROR); ?>;
           function setDeskBell(n) {
-            var b = document.querySelector('.desk-bell');
+            var b = document.querySelector('.desk-bell-wrap .desk-bell');
             if (!b) return;
             var c = b.querySelector('.desk-bell__count');
-            if (typeof n === 'number' && n < 1) {
-              b.remove();
-              return;
-            }
             if (c && typeof n === 'number') c.textContent = String(n);
+            b.classList.toggle('desk-bell--zero', typeof n === 'number' && n < 1);
             if (typeof n === 'number' && n > 0) {
               b.classList.add('desk-bell--wiggle', 'desk-bell--pop');
             } else {

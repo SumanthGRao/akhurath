@@ -2,7 +2,20 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/config.php';
+$akhConfig = __DIR__ . '/config.php';
+if (!is_file($akhConfig)) {
+    $msg = 'Missing includes/config.php. Copy includes/config.example.php to includes/config.php and adjust for this server (not committed to git).';
+    if (PHP_SAPI === 'cli') {
+        fwrite(STDERR, $msg . "\n");
+        exit(1);
+    }
+    http_response_code(503);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo $msg;
+
+    exit;
+}
+require_once $akhConfig;
 
 /** When config/database.local.php exists, load MySQL (Hostinger, XAMPP with DB, etc.). Otherwise file-based JSON/tasks only. */
 $dbLocal = AKH_ROOT . '/config/database.local.php';

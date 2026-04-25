@@ -25,6 +25,27 @@ $flash = '';
 $error = '';
 $adminPortalOpen = '';
 
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && trim((string) ($_POST['ajax_action'] ?? '')) !== '') {
+    header('Content-Type: application/json; charset=utf-8');
+    if (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
+        http_response_code(403);
+        echo json_encode(['ok' => false]);
+        exit;
+    }
+    $ajax = trim((string) ($_POST['ajax_action'] ?? ''));
+    if ($ajax === 'poll') {
+        try {
+            echo json_encode(akh_task_ajax_poll_admin(), JSON_THROW_ON_ERROR);
+        } catch (\Throwable $e) {
+            echo json_encode(['ok' => false]);
+        }
+        exit;
+    }
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'bad_ajax']);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
         $error = 'Security check failed. Refresh and try again.';
@@ -139,6 +160,11 @@ $tasks = array_values(array_filter($tasksAll, static function (array $t) use ($f
 $taskTotalAll = count($tasksAll);
 $taskFilteredCount = count($tasks);
 
+$adminBoardCsrf = akh_csrf_token();
+$adminBellNotices = akh_task_admin_notice_rows();
+$adminBellPool = count($adminBellNotices);
+$adminBoardSig = akh_task_poll_signature_all();
+
 $preserveHidden = array_filter([
     'view' => $rawView,
     'f_status' => $fStatus !== '' ? $fStatus : null,
@@ -157,13 +183,37 @@ require_once AKH_ROOT . '/includes/header.php';
           <h1 class="portal-title"><?php echo $rawView === 'create' ? 'Create task' : 'Tasks'; ?></h1>
           <p class="portal-lead admin-head__meta"><?php echo $rawView === 'create' ? 'Add a task for a client. Open the Console menu (top right) for the task list or account tools.' : 'Browse, filter, and update every job. Open the Console menu for create, clients, and editors.'; ?></p>
         </div>
-        <div class="admin-head__actions">
+        <div class="admin-head__actions" style="display:flex;flex-wrap:wrap;align-items:center;gap:0.75rem">
+          <?php if ($rawView === 'tasks'): ?>
+            <div class="desk-bell-wrap desk-bell-wrap--admin">
+              <button
+                type="button"
+                class="desk-bell<?php echo $adminBellPool > 0 ? ' desk-bell--wiggle desk-bell--pop' : ' desk-bell--zero'; ?>"
+                aria-expanded="false"
+                aria-haspopup="true"
+                title="Unassigned pool tasks — click for list"
+              >
+                <span class="desk-bell__icon" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 22a2 2 0 002-2H10a2 2 0 002 2zm6-6V11a6 6 0 10-12 0v5l-2 2v1h16v-1l-2-2z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                  </svg>
+                </span>
+                <span class="desk-bell__count"><?php echo (int) $adminBellPool; ?></span>
+                <span class="visually-hidden"><?php echo (int) $adminBellPool; ?> unassigned pool task(s)</span>
+              </button>
+              <div class="desk-bell-dropdown" id="admin-desk-bell-dropdown" hidden></div>
+            </div>
+          <?php endif; ?>
           <?php require __DIR__ . '/includes/admin-console-sidebar.php'; ?>
           <a class="btn btn--ghost btn--sm" href="<?php echo h(base_path('admin/logout.php')); ?>">Sign out</a>
         </div>
       </header>
 
       <?php require AKH_ROOT . '/includes/admin-nav.php'; ?>
+
+      <?php if ($rawView === 'tasks'): ?>
+        <p class="portal-muted" style="margin:0 0 0.75rem;font-size:0.88rem">Live: this page refreshes automatically when tasks change (~14s). Use the bell for a quick list of jobs still in the editor pool.</p>
+      <?php endif; ?>
 
       <?php if ($flash !== ''): ?>
         <p class="banner banner--ok" role="status"><?php echo h($flash); ?></p>
@@ -294,7 +344,7 @@ require_once AKH_ROOT . '/includes/header.php';
                   $st = (string) ($t['status'] ?? 'new');
                   $ed = (string) ($t['assigned_editor'] ?? '');
                   ?>
-                  <tr>
+                  <tr id="ticket-<?php echo h($tid); ?>">
                     <td>
                       <span class="admin-table__mono"><?php echo h($tid); ?></span>
                       <div><strong><?php echo h((string) ($t['title'] ?? '')); ?></strong><?php if (akh_task_is_bundle_parent($t)): ?> <span class="portal-muted" style="font-weight:400">(bundle overview)</span><?php elseif (akh_task_is_bundle_child($t)): ?> <span class="portal-muted" style="font-weight:400">(part of <?php echo h((string) ($t['parent_task_id'] ?? '')); ?>)</span><?php endif; ?></div>
@@ -407,5 +457,25 @@ require_once AKH_ROOT . '/includes/header.php';
 
     </div>
   </main>
+  <?php if ($rawView === 'tasks'): ?>
+    <?php
+    $akhPushJs = AKH_ROOT . '/assets/js/portal-push-notify.js';
+    $akhPushVer = is_file($akhPushJs) ? (string) filemtime($akhPushJs) : '1';
+    ?>
+    <script>
+      window._akhPortalPush = {
+        mode: 'admin_tasks',
+        siteName: <?php echo json_encode(SITE_NAME, JSON_THROW_ON_ERROR); ?>,
+        csrf: <?php echo json_encode($adminBoardCsrf, JSON_THROW_ON_ERROR); ?>,
+        pollUrl: <?php echo json_encode(base_path('admin/tasks.php'), JSON_THROW_ON_ERROR); ?>,
+        ticketQueryPrefix: 'view=tasks&',
+        bell: <?php echo (int) $adminBellPool; ?>,
+        pool: 0,
+        sig: <?php echo json_encode($adminBoardSig, JSON_THROW_ON_ERROR); ?>,
+        notices: <?php echo json_encode($adminBellNotices, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES); ?>
+      };
+    </script>
+    <script defer src="<?php echo h(base_path('assets/js/portal-push-notify.js')); ?>?v=<?php echo h($akhPushVer); ?>"></script>
+  <?php endif; ?>
 
 <?php require_once AKH_ROOT . '/includes/footer.php'; ?>

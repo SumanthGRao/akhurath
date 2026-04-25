@@ -1,5 +1,9 @@
 .env
 /*.log
+.DS_Store
+
+# Install-specific settings (SMTP, flags, etc.) — never commit; use includes/config.example.php as template
+includes/config.php
 
 # Local MySQL credentials (Hostinger / XAMPP) — never commit
 config/database.local.php

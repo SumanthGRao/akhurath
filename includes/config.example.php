@@ -3,6 +3,11 @@
 declare(strict_types=1);
 
 /**
+ * Example site config (tracked in git). Copy to includes/config.php on each environment.
+ * includes/config.php is gitignored so production credentials are never overwritten by git push.
+ */
+
+/**
  * Project root (parent of /includes).
  */
 define('AKH_ROOT', dirname(__DIR__));
@@ -106,7 +111,7 @@ const CONTACT_EMAIL = 'info@akhurathstudio.com';
 
 /**
  * Outbound mail (Zoho Mail, etc.).
- * Git ships with mail OFF and empty credentials. On Hostinger (or any production host), edit THIS file
+ * Git ships with mail OFF and empty credentials. On Hostinger (or any production host), edit includes/config.php
  * in File Manager: set AKH_SMTP_ENABLED true and AKH_SMTP_USER / AKH_SMTP_PASS (and host/port if not India Zoho).
  * Otherwise registration / contact / task emails are skipped with no error on the form.
  *

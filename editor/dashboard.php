@@ -42,6 +42,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim((string) ($_POST['ajax_action'
         }
         exit;
     }
+    if ($ajax === 'poll') {
+        try {
+            echo json_encode(akh_task_ajax_poll_editor($editor), JSON_THROW_ON_ERROR);
+        } catch (\Throwable $e) {
+            echo json_encode(['ok' => false]);
+        }
+        exit;
+    }
     http_response_code(400);
     echo json_encode(['ok' => false, 'error' => 'bad_ajax']);
     exit;
@@ -106,6 +114,8 @@ $mine = array_values(array_filter($all, static function (array $t) use ($editor)
 }));
 $seenNew = akh_task_editor_seen_load()[strtolower($editor)] ?? [];
 $editorBellCount = akh_task_editor_board_bell_count($editor);
+$editorBoardSig = akh_task_poll_signature_all();
+$editorBellNotices = akh_task_editor_notice_rows($editor);
 $pageCsrf = akh_csrf_token();
 
 $attendanceOn = AKH_EDITOR_ATTENDANCE_ENABLED && akh_editor_attendance_is_clocked_in($editor);
@@ -117,15 +127,21 @@ require_once AKH_ROOT . '/includes/header.php';
 ?>
 
   <main id="main" class="portal-main portal-main--board">
-    <div class="portal-card portal-card--tasks portal-card--ticketboard"<?php echo $editorBellCount > 0 ? ' id="editor-desk-updates"' : ''; ?>>
+    <div class="portal-card portal-card--tasks portal-card--ticketboard" id="editor-desk-updates">
       <header class="desk-head desk-head--editor">
         <div>
           <h1 class="portal-title" style="margin-bottom:0.35rem">Task board</h1>
           <p class="portal-lead" style="margin-bottom:0">Signed in as <strong><?php echo h($editor); ?></strong><?php if (AKH_EDITOR_ATTENDANCE_ENABLED): ?> — attendance: <?php echo $attendanceOn ? 'on shift since ' . h($attendanceSinceLabel) : 'not clocked in'; ?><?php endif; ?>. New jobs notify every editor until you open them; assigned tasks ring when the client replies or posts feedback.</p>
           <p class="portal-muted" style="margin:0.35rem 0 0;font-size:0.9rem"><a class="text-link" href="<?php echo h(base_path('editor/logout.php')); ?>">Sign out</a> ends your session<?php if (AKH_EDITOR_ATTENDANCE_ENABLED): ?> and clocks you out if you are still on shift<?php endif; ?>.</p>
         </div>
-        <?php if ($editorBellCount > 0): ?>
-          <a class="desk-bell desk-bell--editor<?php echo $editorBellCount > 0 ? ' desk-bell--wiggle desk-bell--pop' : ''; ?>" href="#editor-desk-updates" title="New tasks and client updates">
+        <div class="desk-bell-wrap">
+          <button
+            type="button"
+            class="desk-bell desk-bell--editor<?php echo $editorBellCount > 0 ? ' desk-bell--wiggle desk-bell--pop' : ' desk-bell--zero'; ?>"
+            aria-expanded="false"
+            aria-haspopup="true"
+            title="Notifications — new pool tasks or client updates on your jobs"
+          >
             <span class="desk-bell__icon" aria-hidden="true">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M12 22a2 2 0 002-2H10a2 2 0 002 2zm6-6V11a6 6 0 10-12 0v5l-2 2v1h16v-1l-2-2z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
@@ -133,8 +149,9 @@ require_once AKH_ROOT . '/includes/header.php';
             </span>
             <span class="desk-bell__count"><?php echo (int) $editorBellCount; ?></span>
             <span class="visually-hidden"><?php echo (int) $editorBellCount; ?> notifications (new pool or your tasks)</span>
-          </a>
-        <?php endif; ?>
+          </button>
+          <div class="desk-bell-dropdown" id="editor-desk-bell-dropdown" hidden></div>
+        </div>
       </header>
 
       <?php if ($flash !== ''): ?>
@@ -362,6 +379,22 @@ require_once AKH_ROOT . '/includes/header.php';
       </p>
     </div>
   </main>
+  <?php
+  $akhPushJs = AKH_ROOT . '/assets/js/portal-push-notify.js';
+  $akhPushVer = is_file($akhPushJs) ? (string) filemtime($akhPushJs) : '1';
+  ?>
+  <script>
+    window._akhPortalPush = {
+      mode: 'editor',
+      siteName: <?php echo json_encode(SITE_NAME, JSON_THROW_ON_ERROR); ?>,
+      csrf: <?php echo json_encode($pageCsrf, JSON_THROW_ON_ERROR); ?>,
+      bell: <?php echo (int) $editorBellCount; ?>,
+      pool: <?php echo (int) count($newTasks); ?>,
+      sig: <?php echo json_encode($editorBoardSig, JSON_THROW_ON_ERROR); ?>,
+      notices: <?php echo json_encode($editorBellNotices, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES); ?>
+    };
+  </script>
+  <script defer src="<?php echo h(base_path('assets/js/portal-push-notify.js')); ?>?v=<?php echo h($akhPushVer); ?>"></script>
   <script>
     (function () {
       var csrf = <?php echo json_encode($pageCsrf, JSON_THROW_ON_ERROR); ?>;
@@ -394,20 +427,14 @@ require_once AKH_ROOT . '/includes/header.php';
         sessionStorage.setItem(BellKey, String(n));
       })();
       function setDeskBell(n) {
-        var b = document.querySelector('.desk-bell');
+        var b = document.querySelector('.desk-bell-wrap .desk-bell');
         if (!b) return;
         var c = b.querySelector('.desk-bell__count');
-        if (typeof n === 'number' && n < 1) {
-          b.remove();
-          var card = document.querySelector('.portal-card--ticketboard');
-          if (card) card.removeAttribute('id');
-          sessionStorage.setItem(BellKey, '0');
-          return;
-        }
         if (c && typeof n === 'number') {
           c.textContent = String(n);
           sessionStorage.setItem(BellKey, String(n));
         }
+        b.classList.toggle('desk-bell--zero', typeof n === 'number' && n < 1);
         if (typeof n === 'number' && n > 0) {
           b.classList.add('desk-bell--wiggle', 'desk-bell--pop');
         } else {

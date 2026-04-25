@@ -55,8 +55,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && AKH_ALLOW_CLIENT_REGISTRATI
                             akh_site_mail_studio_new_client(strtolower(trim($user)), $em);
                         }
                     }
-                    $notice = $smtpOk ? '1' : '0';
-                    header('Location: ' . base_path('customer/login.php?registered=1&email_notice=' . $notice));
+                    header('Location: ' . base_path('customer/login.php'));
                     exit;
                 }
             } catch (Throwable $e) {

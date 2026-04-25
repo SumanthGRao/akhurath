@@ -269,6 +269,269 @@ function akh_task_editor_board_bell_count(string $editorUsername): int
 }
 
 /**
+ * Count of tasks currently in the editor pool (same rule as the “New” board list).
+ *
+ * @return int
+ */
+function akh_task_editor_pool_count(): int
+{
+    $n = 0;
+    foreach (akh_tasks_load() as $t) {
+        if (akh_task_editor_pool_eligible($t)) {
+            ++$n;
+        }
+    }
+
+    return $n;
+}
+
+/** Fingerprint of all tasks (for live refresh on editor / admin boards). */
+function akh_task_poll_signature_all(): string
+{
+    $parts = [];
+    foreach (akh_tasks_all_sorted() as $t) {
+        $parts[] =
+            (string) ($t['id'] ?? '')
+            . '|' . (string) ($t['updated_at'] ?? '')
+            . '|' . (string) ($t['status'] ?? '')
+            . '|' . strtolower(trim((string) ($t['client_username'] ?? '')))
+            . '|' . strtolower(trim((string) ($t['assigned_editor'] ?? '')))
+            . '|' . (($t['client_editor_notify'] ?? false) ? '1' : '0')
+            . '|' . (($t['editor_feedback_notify'] ?? false) ? '1' : '0')
+            . '|' . mb_substr((string) ($t['title'] ?? ''), 0, 120)
+            . '|' . mb_substr((string) ($t['client_notify_detail'] ?? ''), 0, 120)
+            . '|' . mb_substr((string) ($t['editor_notify_detail'] ?? ''), 0, 120)
+            . '|' . (string) count(akh_task_conversation_list($t));
+    }
+    sort($parts);
+
+    return sha1(implode("\n", $parts));
+}
+
+/** Fingerprint of one client’s tasks (for client dashboard refresh). */
+function akh_task_poll_signature_client(string $clientUsername): string
+{
+    $parts = [];
+    foreach (akh_tasks_for_client($clientUsername) as $t) {
+        $parts[] =
+            (string) ($t['id'] ?? '')
+            . '|' . (string) ($t['updated_at'] ?? '')
+            . '|' . (string) ($t['status'] ?? '')
+            . '|' . (($t['client_editor_notify'] ?? false) ? '1' : '0')
+            . '|' . strtolower(trim((string) ($t['assigned_editor'] ?? '')))
+            . '|' . mb_substr((string) ($t['title'] ?? ''), 0, 120)
+            . '|' . mb_substr((string) ($t['client_notify_detail'] ?? ''), 0, 200)
+            . '|' . (string) count(akh_task_conversation_list($t));
+    }
+    sort($parts);
+
+    return sha1(implode("\n", $parts));
+}
+
+/**
+ * @return list<array{task_id: string, anchor_id: string, title: string, label: string, detail: string}>
+ */
+function akh_task_client_notice_rows(string $clientUsername): array
+{
+    $clientUsername = strtolower(trim($clientUsername));
+    if ($clientUsername === '') {
+        return [];
+    }
+    $out = [];
+    foreach (akh_tasks_for_client($clientUsername) as $t) {
+        if (akh_task_is_bundle_parent($t)) {
+            continue;
+        }
+        if (!($t['client_editor_notify'] ?? false)) {
+            continue;
+        }
+        $tid = (string) ($t['id'] ?? '');
+        if ($tid === '') {
+            continue;
+        }
+        $anchor = $tid;
+        $pid = trim((string) ($t['parent_task_id'] ?? ''));
+        if ($pid !== '') {
+            $anchor = $pid;
+        }
+        $title = (string) ($t['title'] ?? $tid);
+        if (mb_strlen($title) > 100) {
+            $title = mb_substr($title, 0, 99) . '…';
+        }
+        $detail = trim((string) ($t['client_notify_detail'] ?? ''));
+        if (mb_strlen($detail) > 220) {
+            $detail = mb_substr($detail, 0, 219) . '…';
+        }
+        $out[] = [
+            'task_id' => $tid,
+            'anchor_id' => $anchor,
+            'title' => $title,
+            'label' => 'Editor update',
+            'detail' => $detail,
+        ];
+    }
+
+    return $out;
+}
+
+/**
+ * @return list<array{task_id: string, anchor_id: string, title: string, label: string, detail: string}>
+ */
+function akh_task_editor_notice_rows(string $editorUsername): array
+{
+    $editorUsername = strtolower(trim($editorUsername));
+    if ($editorUsername === '') {
+        return [];
+    }
+    $seen = akh_task_editor_seen_load()[$editorUsername] ?? [];
+    $all = akh_tasks_all_sorted();
+    $out = [];
+    $seenIds = [];
+    foreach ($all as $t) {
+        $tid = (string) ($t['id'] ?? '');
+        if ($tid === '' || in_array($tid, $seenIds, true)) {
+            continue;
+        }
+        if (strtolower(trim((string) ($t['assigned_editor'] ?? ''))) !== $editorUsername) {
+            continue;
+        }
+        if ($t['editor_feedback_notify'] ?? false) {
+            $title = (string) ($t['title'] ?? $tid);
+            if (mb_strlen($title) > 100) {
+                $title = mb_substr($title, 0, 99) . '…';
+            }
+            $detail = trim((string) ($t['editor_notify_detail'] ?? ''));
+            if (mb_strlen($detail) > 220) {
+                $detail = mb_substr($detail, 0, 219) . '…';
+            }
+            $out[] = [
+                'task_id' => $tid,
+                'anchor_id' => $tid,
+                'title' => $title,
+                'label' => 'Client / feedback',
+                'detail' => $detail,
+            ];
+            $seenIds[] = $tid;
+        }
+    }
+    foreach ($all as $t) {
+        $tid = (string) ($t['id'] ?? '');
+        if ($tid === '' || in_array($tid, $seenIds, true)) {
+            continue;
+        }
+        if (akh_task_editor_pool_eligible($t) && !in_array($tid, $seen, true)) {
+            $title = (string) ($t['title'] ?? $tid);
+            if (mb_strlen($title) > 100) {
+                $title = mb_substr($title, 0, 99) . '…';
+            }
+            $out[] = [
+                'task_id' => $tid,
+                'anchor_id' => $tid,
+                'title' => $title,
+                'label' => 'New in pool',
+                'detail' => 'Open the board to claim this task.',
+            ];
+            $seenIds[] = $tid;
+        }
+    }
+
+    return $out;
+}
+
+/**
+ * @return list<array{task_id: string, anchor_id: string, title: string, label: string, detail: string}>
+ */
+function akh_task_admin_notice_rows(): array
+{
+    $out = [];
+    foreach (akh_tasks_all_sorted() as $t) {
+        if (!akh_task_editor_pool_eligible($t)) {
+            continue;
+        }
+        $tid = (string) ($t['id'] ?? '');
+        if ($tid === '') {
+            continue;
+        }
+        $title = (string) ($t['title'] ?? $tid);
+        if (mb_strlen($title) > 100) {
+            $title = mb_substr($title, 0, 99) . '…';
+        }
+        $out[] = [
+            'task_id' => $tid,
+            'anchor_id' => $tid,
+            'title' => $title,
+            'label' => 'Unassigned (pool)',
+            'detail' => 'Awaiting editor claim',
+        ];
+    }
+
+    return $out;
+}
+
+/**
+ * @return array{ok: true, bell: int, pool: int, sig: string, notices: list<array{task_id: string, anchor_id: string, title: string, label: string, detail: string}>}
+ */
+function akh_task_ajax_poll_editor(string $editorUsername): array
+{
+    $editorUsername = strtolower(trim($editorUsername));
+
+    return [
+        'ok' => true,
+        'bell' => akh_task_editor_board_bell_count($editorUsername),
+        'pool' => akh_task_editor_pool_count(),
+        'sig' => akh_task_poll_signature_all(),
+        'notices' => akh_task_editor_notice_rows($editorUsername),
+    ];
+}
+
+/**
+ * @return array{ok: true, bell: int, sig: string, notices: list<array{task_id: string, anchor_id: string, title: string, label: string, detail: string}>}
+ */
+function akh_task_ajax_poll_client(string $clientUsername): array
+{
+    $u = strtolower(trim($clientUsername));
+
+    return [
+        'ok' => true,
+        'bell' => akh_task_client_unread_editor_count($u),
+        'sig' => akh_task_poll_signature_client($u),
+        'notices' => akh_task_client_notice_rows($u),
+    ];
+}
+
+/**
+ * @return array{ok: true, bell: int, sig: string, notices: list<array{task_id: string, anchor_id: string, title: string, label: string, detail: string}>}
+ */
+function akh_task_ajax_poll_admin(): array
+{
+    $notices = akh_task_admin_notice_rows();
+
+    return [
+        'ok' => true,
+        'bell' => count($notices),
+        'sig' => akh_task_poll_signature_all(),
+        'notices' => array_slice($notices, 0, 40),
+    ];
+}
+
+/**
+ * Normalize notify flags after JSON decode (DB / legacy files may use 1/0).
+ *
+ * @param array<string, mixed> $row
+ * @return array<string, mixed>
+ */
+function akh_task_normalize_row_from_storage(array $row): array
+{
+    foreach (['client_editor_notify', 'editor_feedback_notify'] as $k) {
+        $v = $row[$k] ?? false;
+        $row[$k] = $v === true || $v === 1 || $v === '1'
+            || (is_string($v) && strtolower($v) === 'true');
+    }
+
+    return $row;
+}
+
+/**
  * @return list<array{at: string, role: string, who: string, text: string}>
  */
 function akh_task_conversation_list(array $task): array
@@ -358,6 +621,8 @@ function akh_task_client_append_thread(string $taskId, string $clientUsername, s
         }
         $list[$i]['conversation'] = $conv;
         $list[$i]['editor_feedback_notify'] = true;
+        $snippet = mb_strlen($body) > 140 ? mb_substr($body, 0, 139) . '…' : $body;
+        $list[$i]['editor_notify_detail'] = 'Client message: ' . $snippet;
         $list[$i]['updated_at'] = gmdate('c');
         if (!akh_tasks_save_locked($list)) {
             return 'Could not save.';
@@ -394,14 +659,22 @@ function akh_task_editor_append_thread(string $taskId, string $editorUsername, s
         }
         $list[$i]['conversation'] = $conv;
         $list[$i]['client_editor_notify'] = true;
+        $snippet = mb_strlen($body) > 140 ? mb_substr($body, 0, 139) . '…' : $body;
+        $list[$i]['client_notify_detail'] = 'New message from editor: ' . $snippet;
         $list[$i]['updated_at'] = gmdate('c');
         if (!akh_tasks_save_locked($list)) {
             return 'Could not save.';
         }
         $cu = strtolower(trim((string) ($list[$i]['client_username'] ?? '')));
         if ($cu !== '') {
-            $snippet = mb_strlen($body) > 600 ? mb_substr($body, 0, 600) . '…' : $body;
-            akh_site_mail_client_editor_activity($cu, $list[$i], 'Your editor sent a message on your task.', $snippet);
+            $snippetMail = mb_strlen($body) > 600 ? mb_substr($body, 0, 600) . '…' : $body;
+            akh_site_mail_client_editor_activity($cu, $list[$i], 'Your editor sent a message on your task.', $snippetMail);
+        }
+        if (akh_task_is_bundle_child($list[$i])) {
+            $pid = trim((string) ($list[$i]['parent_task_id'] ?? ''));
+            if ($pid !== '') {
+                akh_task_bundle_flag_parent_client_notify($pid, (string) ($list[$i]['client_notify_detail'] ?? ''));
+            }
         }
 
         return null;
@@ -424,7 +697,7 @@ function akh_task_client_unread_editor_count(string $clientUsername): int
         if (akh_task_is_bundle_parent($t)) {
             continue;
         }
-        if (($t['client_editor_notify'] ?? false) === true) {
+        if ($t['client_editor_notify'] ?? false) {
             ++$n;
         }
     }
@@ -453,6 +726,7 @@ function akh_task_client_clear_editor_notify(string $taskId, string $clientUsern
                 foreach ($list as $j => $u) {
                     if (($u['id'] ?? '') === $cid) {
                         $list[$j]['client_editor_notify'] = false;
+                        $list[$j]['client_notify_detail'] = '';
                         $list[$j]['updated_at'] = gmdate('c');
                         $changed = true;
                         break;
@@ -461,6 +735,7 @@ function akh_task_client_clear_editor_notify(string $taskId, string $clientUsern
             }
         }
         $list[$i]['client_editor_notify'] = false;
+        $list[$i]['client_notify_detail'] = '';
         $list[$i]['updated_at'] = gmdate('c');
         $changed = true;
         break;
@@ -535,8 +810,14 @@ function akh_tasks_load(): array
         if (!is_array($decoded)) {
             return [];
         }
+        $out = [];
+        foreach ($decoded as $row) {
+            if (is_array($row)) {
+                $out[] = akh_task_normalize_row_from_storage($row);
+            }
+        }
 
-        return array_values(array_filter($decoded, 'is_array'));
+        return array_values($out);
     }
 
     $path = akh_tasks_file();
@@ -551,8 +832,14 @@ function akh_tasks_load(): array
     if (!is_array($decoded)) {
         return [];
     }
+    $out = [];
+    foreach ($decoded as $row) {
+        if (is_array($row)) {
+            $out[] = akh_task_normalize_row_from_storage($row);
+        }
+    }
 
-    return array_values(array_filter($decoded, 'is_array'));
+    return array_values($out);
 }
 
 /**
@@ -631,9 +918,10 @@ function akh_task_by_id(string $id): ?array
  */
 function akh_tasks_for_client(string $username): array
 {
+    $u = strtolower(trim($username));
     $out = [];
     foreach (akh_tasks_load() as $t) {
-        if (($t['client_username'] ?? '') === $username) {
+        if (strtolower(trim((string) ($t['client_username'] ?? ''))) === $u) {
             $out[] = $t;
         }
     }
@@ -820,7 +1108,7 @@ function akh_task_bundle_sync_parent(string $parentId): bool
 /**
  * When an editor or status change touches a child, mirror client bell to the bundle parent.
  */
-function akh_task_bundle_flag_parent_client_notify(string $parentId): bool
+function akh_task_bundle_flag_parent_client_notify(string $parentId, ?string $detail = null): bool
 {
     $parentId = trim($parentId);
     if ($parentId === '') {
@@ -833,6 +1121,14 @@ function akh_task_bundle_flag_parent_client_notify(string $parentId): bool
         }
         $list[$i]['client_editor_notify'] = true;
         $list[$i]['updated_at'] = gmdate('c');
+        $d = trim((string) ($detail ?? ''));
+        if ($d === '') {
+            $d = 'A deliverable in this multi-part job was updated.';
+        }
+        if (mb_strlen($d) > 220) {
+            $d = mb_substr($d, 0, 219) . '…';
+        }
+        $list[$i]['client_notify_detail'] = $d;
 
         return akh_tasks_save_locked($list);
     }
@@ -1003,73 +1299,19 @@ function akh_task_create_bundle(
     }
 
     $now = gmdate('c');
-    $path = akh_tasks_file();
-    $dir = dirname($path);
-    if (!is_dir($dir)) {
-        @mkdir($dir, 0755, true);
-    }
-    $fp = fopen($path, 'c+');
-    if ($fp === false) {
-        return null;
-    }
-    if (!flock($fp, LOCK_EX)) {
-        fclose($fp);
-
-        return null;
-    }
-    $parent = null;
     $childRows = [];
-    try {
-        rewind($fp);
-        $raw = stream_get_contents($fp);
-        $list = [];
-        if ($raw !== false && $raw !== '') {
-            $decoded = json_decode($raw, true);
-            if (is_array($decoded)) {
-                $list = array_values(array_filter($decoded, 'is_array'));
-            }
-        }
-
-        foreach ($editTypes as $i => $slug) {
-            $cid = $childIds[$i];
-            $cdesc = $childDescPreview[$i] . "\n\n— Bundle root: " . $parentId . ' — This is one part of a multi-type request; claim only this row for this deliverable.';
-            $childRows[] = [
-                'id' => $cid,
-                'task_role' => 'bundle_child',
-                'parent_task_id' => $parentId,
-                'client_username' => $clientUsername,
-                'title' => akh_task_build_title($coupleName, $slug),
-                'description' => $cdesc,
-                'couple_name' => $coupleName,
-                'edit_type' => $slug,
-                'project_details' => $projectDetails,
-                'reference_link' => $referenceLink,
-                'delivery_mode' => $deliveryMode,
-                'drive_link' => $deliveryMode === 'google_drive' ? $driveLink : '',
-                'deliverable_output' => '',
-                'client_feedback' => '',
-                'client_meeting_date' => '',
-                'client_meeting_link' => '',
-                'created_at' => $now,
-                'updated_at' => $now,
-                'status' => 'new',
-                'assigned_editor' => null,
-                'editor_feedback_notify' => false,
-                'client_editor_notify' => false,
-                'conversation' => [],
-            ];
-        }
-
-        $parent = [
-            'id' => $parentId,
-            'task_role' => 'bundle_parent',
-            'child_task_ids' => $childIds,
-            'bundle_edit_types' => $editTypes,
+    foreach ($editTypes as $i => $slug) {
+        $cid = $childIds[$i];
+        $cdesc = $childDescPreview[$i] . "\n\n— Bundle root: " . $parentId . ' — This is one part of a multi-type request; claim only this row for this deliverable.';
+        $childRows[] = [
+            'id' => $cid,
+            'task_role' => 'bundle_child',
+            'parent_task_id' => $parentId,
             'client_username' => $clientUsername,
-            'title' => $parentTitle,
-            'description' => $parentDesc,
+            'title' => akh_task_build_title($coupleName, $slug),
+            'description' => $cdesc,
             'couple_name' => $coupleName,
-            'edit_type' => 'bundle_parent',
+            'edit_type' => $slug,
             'project_details' => $projectDetails,
             'reference_link' => $referenceLink,
             'delivery_mode' => $deliveryMode,
@@ -1086,21 +1328,38 @@ function akh_task_create_bundle(
             'client_editor_notify' => false,
             'conversation' => [],
         ];
-
-        $list = array_merge($list, [$parent], $childRows);
-        $json = json_encode($list, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-        ftruncate($fp, 0);
-        rewind($fp);
-        if (fwrite($fp, $json) === false) {
-            $parent = null;
-        }
-        fflush($fp);
-    } finally {
-        flock($fp, LOCK_UN);
-        fclose($fp);
     }
 
-    if ($parent === null) {
+    $parent = [
+        'id' => $parentId,
+        'task_role' => 'bundle_parent',
+        'child_task_ids' => $childIds,
+        'bundle_edit_types' => $editTypes,
+        'client_username' => $clientUsername,
+        'title' => $parentTitle,
+        'description' => $parentDesc,
+        'couple_name' => $coupleName,
+        'edit_type' => 'bundle_parent',
+        'project_details' => $projectDetails,
+        'reference_link' => $referenceLink,
+        'delivery_mode' => $deliveryMode,
+        'drive_link' => $deliveryMode === 'google_drive' ? $driveLink : '',
+        'deliverable_output' => '',
+        'client_feedback' => '',
+        'client_meeting_date' => '',
+        'client_meeting_link' => '',
+        'created_at' => $now,
+        'updated_at' => $now,
+        'status' => 'new',
+        'assigned_editor' => null,
+        'editor_feedback_notify' => false,
+        'client_editor_notify' => false,
+        'conversation' => [],
+    ];
+
+    $list = akh_tasks_load();
+    $list = array_merge($list, [$parent], $childRows);
+    if (!akh_tasks_save_locked($list)) {
         return null;
     }
 
@@ -1332,41 +1591,10 @@ function akh_task_create(
         'conversation' => [],
     ];
 
-    $path = akh_tasks_file();
-    $dir = dirname($path);
-    if (!is_dir($dir)) {
-        @mkdir($dir, 0755, true);
-    }
-    $fp = fopen($path, 'c+');
-    if ($fp === false) {
+    $list = akh_tasks_load();
+    $list[] = $task;
+    if (!akh_tasks_save_locked($list)) {
         return null;
-    }
-    if (!flock($fp, LOCK_EX)) {
-        fclose($fp);
-
-        return null;
-    }
-    try {
-        rewind($fp);
-        $raw = stream_get_contents($fp);
-        $list = [];
-        if ($raw !== false && $raw !== '') {
-            $decoded = json_decode($raw, true);
-            if (is_array($decoded)) {
-                $list = array_values(array_filter($decoded, 'is_array'));
-            }
-        }
-        $list[] = $task;
-        $json = json_encode($list, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-        ftruncate($fp, 0);
-        rewind($fp);
-        if (fwrite($fp, $json) === false) {
-            return null;
-        }
-        fflush($fp);
-    } finally {
-        flock($fp, LOCK_UN);
-        fclose($fp);
     }
 
     akh_task_write_studio_notification($task);
@@ -1622,6 +1850,23 @@ function akh_task_client_save_post_delivery(
         }
         $list[$i]['status'] = 'reverted';
         $list[$i]['editor_feedback_notify'] = (($list[$i]['assigned_editor'] ?? null) !== null && (string) ($list[$i]['assigned_editor'] ?? '') !== '');
+        if (($list[$i]['editor_feedback_notify'] ?? false) === true) {
+            $dParts = [];
+            if ($feedback !== '') {
+                $fs = mb_strlen($feedback) > 140 ? mb_substr($feedback, 0, 139) . '…' : $feedback;
+                $dParts[] = 'Client feedback: ' . $fs;
+            }
+            if ($hasMeeting) {
+                $dParts[] = 'Meet scheduled: ' . $meetingDate;
+            }
+            $ed = $dParts !== [] ? implode(' · ', $dParts) : 'Client posted an update after delivery.';
+            if (mb_strlen($ed) > 220) {
+                $ed = mb_substr($ed, 0, 219) . '…';
+            }
+            $list[$i]['editor_notify_detail'] = $ed;
+        } else {
+            $list[$i]['editor_notify_detail'] = '';
+        }
         $list[$i]['updated_at'] = gmdate('c');
         $savedRow = $list[$i];
         break;
@@ -1689,7 +1934,7 @@ function akh_task_editor_unread_feedback_count(string $editorUsername): int
         if (strtolower((string) ($t['assigned_editor'] ?? '')) !== $e) {
             continue;
         }
-        if (($t['editor_feedback_notify'] ?? false) === true) {
+        if ($t['editor_feedback_notify'] ?? false) {
             ++$n;
         }
     }
@@ -1709,6 +1954,7 @@ function akh_task_editor_clear_feedback_notify(string $taskId, string $editorUse
             return false;
         }
         $list[$i]['editor_feedback_notify'] = false;
+        $list[$i]['editor_notify_detail'] = '';
         $list[$i]['updated_at'] = gmdate('c');
 
         return akh_tasks_save_locked($list);
@@ -1784,6 +2030,11 @@ function akh_task_claim(string $taskId, string $editorUsername): ?array
         $list[$i]['status'] = 'assigned';
         $list[$i]['updated_at'] = gmdate('c');
         $list[$i]['client_editor_notify'] = true;
+        $claimDetail = 'Editor ' . $editorUsername . ' claimed this task — now ' . akh_task_status_label('assigned') . '.';
+        if (mb_strlen($claimDetail) > 220) {
+            $claimDetail = mb_substr($claimDetail, 0, 219) . '…';
+        }
+        $list[$i]['client_notify_detail'] = $claimDetail;
         if (akh_task_is_bundle_child($t)) {
             $parentId = trim((string) ($t['parent_task_id'] ?? ''));
         }
@@ -1799,6 +2050,7 @@ function akh_task_claim(string $taskId, string $editorUsername): ?array
     }
     if ($parentId !== '') {
         akh_task_bundle_sync_parent($parentId);
+        akh_task_bundle_flag_parent_client_notify($parentId, (string) ($out['client_notify_detail'] ?? ''));
     }
 
     $cu = strtolower(trim((string) ($out['client_username'] ?? '')));
@@ -1829,6 +2081,7 @@ function akh_task_set_status(string $taskId, string $editorUsername, string $new
     }
     $list = akh_tasks_load();
     $out = null;
+    $notifyClient = false;
     foreach ($list as $i => $t) {
         if (($t['id'] ?? '') !== $taskId) {
             continue;
@@ -1843,10 +2096,28 @@ function akh_task_set_status(string $taskId, string $editorUsername, string $new
         $list[$i]['updated_at'] = gmdate('c');
         if ($newStatus === 'delivered') {
             $list[$i]['editor_feedback_notify'] = false;
+            $list[$i]['editor_notify_detail'] = '';
         }
         $notifyClient = ($prevSt !== $newStatus) || ($deliverableOutput !== $prevDel);
         if ($notifyClient) {
             $list[$i]['client_editor_notify'] = true;
+            $parts = [];
+            if ($prevSt !== $newStatus) {
+                $parts[] = 'Status: ' . akh_task_status_label($prevSt) . ' → ' . akh_task_status_label($newStatus);
+            }
+            if ($deliverableOutput !== $prevDel) {
+                if ($deliverableOutput !== '') {
+                    $sn = mb_strlen($deliverableOutput) > 140 ? mb_substr($deliverableOutput, 0, 139) . '…' : $deliverableOutput;
+                    $parts[] = 'Delivery / editor notes updated: ' . $sn;
+                } else {
+                    $parts[] = 'Delivery / editor notes cleared.';
+                }
+            }
+            $dline = $parts !== [] ? implode(' · ', $parts) : 'Task updated';
+            if (mb_strlen($dline) > 220) {
+                $dline = mb_substr($dline, 0, 219) . '…';
+            }
+            $list[$i]['client_notify_detail'] = $dline;
         }
         $out = $list[$i];
         break;
@@ -1861,16 +2132,25 @@ function akh_task_set_status(string $taskId, string $editorUsername, string $new
         $pid = trim((string) ($out['parent_task_id'] ?? ''));
         if ($pid !== '') {
             akh_task_bundle_sync_parent($pid);
+            if ($notifyClient) {
+                akh_task_bundle_flag_parent_client_notify($pid, (string) ($out['client_notify_detail'] ?? ''));
+            }
         }
     }
 
     $cuser = strtolower(trim((string) ($out['client_username'] ?? '')));
     if ($notifyClient && $cuser !== '') {
-        $detail = 'Status: ' . akh_task_status_label($prevSt) . ' → ' . akh_task_status_label($newStatus);
-        if ($deliverableOutput !== '') {
-            $snippet = mb_strlen($deliverableOutput) > 800 ? mb_substr($deliverableOutput, 0, 800) . '…' : $deliverableOutput;
-            $detail .= "\n\nLatest from your editor:\n" . $snippet;
+        $mailParts = [];
+        if ($prevSt !== $newStatus) {
+            $mailParts[] = 'Status: ' . akh_task_status_label($prevSt) . ' → ' . akh_task_status_label($newStatus);
         }
+        if ($deliverableOutput !== $prevDel && $deliverableOutput !== '') {
+            $snippet = mb_strlen($deliverableOutput) > 800 ? mb_substr($deliverableOutput, 0, 800) . '…' : $deliverableOutput;
+            $mailParts[] = "Latest from your editor:\n" . $snippet;
+        } elseif ($deliverableOutput !== $prevDel) {
+            $mailParts[] = 'Editor delivery notes were cleared.';
+        }
+        $detail = $mailParts !== [] ? implode("\n\n", $mailParts) : 'Your task was updated.';
         akh_site_mail_client_editor_activity($cuser, $out, 'Your task was updated.', $detail);
     }
 
@@ -1959,6 +2239,7 @@ function akh_task_admin_assign(string $taskId, ?string $editorUsername): ?string
             return 'Use the child task rows to assign editors for each deliverable.';
         }
         $found = true;
+        $prevEd = strtolower(trim((string) ($t['assigned_editor'] ?? '')));
         if ($editorUsername === '') {
             $list[$i]['assigned_editor'] = null;
             $list[$i]['status'] = 'new';
@@ -1967,6 +2248,20 @@ function akh_task_admin_assign(string $taskId, ?string $editorUsername): ?string
             $list[$i]['status'] = 'assigned';
         }
         $list[$i]['updated_at'] = gmdate('c');
+        $newEd = strtolower(trim((string) ($list[$i]['assigned_editor'] ?? '')));
+        $cu = strtolower(trim((string) ($list[$i]['client_username'] ?? '')));
+        if ($cu !== '' && $prevEd !== $newEd) {
+            $list[$i]['client_editor_notify'] = true;
+            if ($newEd !== '') {
+                $d = 'Studio assigned editor: ' . $newEd . '.';
+            } else {
+                $d = 'Editor unassigned — task returned to the pool.';
+            }
+            if (mb_strlen($d) > 220) {
+                $d = mb_substr($d, 0, 219) . '…';
+            }
+            $list[$i]['client_notify_detail'] = $d;
+        }
         if (akh_task_is_bundle_child($t)) {
             $parentForSync = trim((string) ($t['parent_task_id'] ?? ''));
         }
@@ -1980,6 +2275,10 @@ function akh_task_admin_assign(string $taskId, ?string $editorUsername): ?string
     }
     if ($parentForSync !== '') {
         akh_task_bundle_sync_parent($parentForSync);
+        $t2 = akh_task_by_id($taskId);
+        if ($t2 !== null && ($t2['client_editor_notify'] ?? false) === true) {
+            akh_task_bundle_flag_parent_client_notify($parentForSync, (string) ($t2['client_notify_detail'] ?? ''));
+        }
     }
 
     return null;
@@ -2005,14 +2304,23 @@ function akh_task_admin_set_status(string $taskId, string $newStatus): ?string
             return 'Use the child task rows to change status; the bundle row tracks children automatically.';
         }
         $found = true;
+        $prevSt = (string) ($t['status'] ?? '');
         $list[$i]['status'] = $newStatus;
         if ($newStatus === 'new') {
             $list[$i]['assigned_editor'] = null;
         }
         if ($newStatus === 'delivered') {
             $list[$i]['editor_feedback_notify'] = false;
+            $list[$i]['editor_notify_detail'] = '';
         }
-        $list[$i]['client_editor_notify'] = true;
+        if ($prevSt !== $newStatus) {
+            $list[$i]['client_editor_notify'] = true;
+            $d = 'Status (admin): ' . akh_task_status_label($prevSt) . ' → ' . akh_task_status_label($newStatus);
+            if (mb_strlen($d) > 220) {
+                $d = mb_substr($d, 0, 219) . '…';
+            }
+            $list[$i]['client_notify_detail'] = $d;
+        }
         $list[$i]['updated_at'] = gmdate('c');
         if (akh_task_is_bundle_child($t)) {
             $parentForSync = trim((string) ($t['parent_task_id'] ?? ''));
@@ -2027,6 +2335,10 @@ function akh_task_admin_set_status(string $taskId, string $newStatus): ?string
     }
     if ($parentForSync !== '') {
         akh_task_bundle_sync_parent($parentForSync);
+        $t2 = akh_task_by_id($taskId);
+        if ($t2 !== null && ($t2['client_editor_notify'] ?? false) === true) {
+            akh_task_bundle_flag_parent_client_notify($parentForSync, (string) ($t2['client_notify_detail'] ?? ''));
+        }
     }
 
     return null;

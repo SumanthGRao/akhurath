@@ -10,8 +10,6 @@ $metaDescription = 'Customer portal for ' . SITE_NAME . '.';
 $bodyClass = 'page-portal';
 
 $error = '';
-$registered = isset($_GET['registered']) && $_GET['registered'] === '1';
-$emailNotice = isset($_GET['email_notice']) ? (string) $_GET['email_notice'] : '';
 
 $dbError = '';
 try {
@@ -59,14 +57,6 @@ require_once AKH_ROOT . '/includes/header.php';
 
       <?php if ($dbError !== ''): ?>
         <p class="banner banner--err" role="alert"><?php echo h($dbError); ?></p>
-      <?php endif; ?>
-      <?php if ($registered && $dbError === ''): ?>
-        <p class="banner banner--ok" role="status">Account created. Sign in below with your new username and password.</p>
-        <?php if ($emailNotice === '0'): ?>
-          <p class="banner banner--info" role="status">No confirmation email was sent: outbound mail is not enabled or SMTP credentials are missing in <code class="text-link">includes/config.php</code> on this server. Ask the host to set <code>AKH_SMTP_ENABLED</code> to <code>true</code> and fill Zoho <code>AKH_SMTP_USER</code> / <code>AKH_SMTP_PASS</code> (same as working on localhost).</p>
-        <?php elseif ($emailNotice === '1'): ?>
-          <p class="banner banner--info" role="status">A welcome email should arrive at the address you used. Check spam or promotions. If nothing arrives, the server may still be blocking SMTP — see <code>data/mail-notify-errors.log</code> on hosting after a retry.</p>
-        <?php endif; ?>
       <?php endif; ?>
       <?php if ($error !== '' && $dbError === ''): ?>
         <p class="banner banner--err" role="alert"><?php echo h($error); ?></p>

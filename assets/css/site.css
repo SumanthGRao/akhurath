@@ -2832,6 +2832,112 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   border-radius: 0;
 }
 
+.portal-push-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.portal-push-prompt__text {
+  flex: 1 1 12rem;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.portal-push-prompt__btn {
+  flex-shrink: 0;
+}
+
+.desk-bell-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.desk-bell-wrap--admin {
+  margin-left: auto;
+}
+
+.desk-bell.desk-bell--zero {
+  opacity: 0.85;
+}
+
+.desk-bell-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 80;
+  min-width: min(20rem, calc(100vw - 2rem));
+  max-width: min(24rem, calc(100vw - 2rem));
+  max-height: min(22rem, 55vh);
+  overflow: auto;
+  padding: 0.35rem 0;
+  margin: 0;
+  list-style: none;
+  background: var(--surface, #fff);
+  border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+  border-radius: var(--radius);
+  box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.12);
+}
+
+.desk-bell-dropdown__empty {
+  padding: 0.65rem 1rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.desk-bell-dropdown__item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
+  padding: 0.55rem 0.85rem;
+  text-decoration: none;
+  color: inherit;
+  border-bottom: 1px solid var(--line, rgba(0, 0, 0, 0.06));
+}
+
+.desk-bell-dropdown__item:last-child {
+  border-bottom: none;
+}
+
+.desk-bell-dropdown__item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.desk-bell-dropdown__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.desk-bell-dropdown__id {
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  color: var(--muted);
+  order: 4;
+}
+
+.desk-bell-dropdown__title {
+  font-size: 0.88rem;
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+.desk-bell-dropdown__detail {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--muted, rgba(0, 0, 0, 0.62));
+}
+
 .desk-head {
   display: flex;
   flex-wrap: wrap;

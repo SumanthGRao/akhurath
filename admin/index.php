@@ -7,8 +7,24 @@ require_once AKH_ROOT . '/includes/admin-auth.php';
 require_once AKH_ROOT . '/includes/auth.php';
 require_once AKH_ROOT . '/includes/editor-auth.php';
 require_once AKH_ROOT . '/includes/tasks.php';
+require_once AKH_ROOT . '/includes/csrf.php';
 
 akh_require_admin();
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && trim((string) ($_POST['ajax_action'] ?? '')) === 'poll') {
+    header('Content-Type: application/json; charset=utf-8');
+    if (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
+        http_response_code(403);
+        echo json_encode(['ok' => false]);
+        exit;
+    }
+    try {
+        echo json_encode(['ok' => true, 'sig' => akh_task_poll_signature_all()], JSON_THROW_ON_ERROR);
+    } catch (\Throwable $e) {
+        echo json_encode(['ok' => false]);
+    }
+    exit;
+}
 
 $pageTitle = 'Admin overview — ' . SITE_NAME;
 $bodyClass = 'page-portal admin-page admin-page--board';
@@ -40,6 +56,9 @@ foreach ($allTasks as $t) {
 arsort($perClient);
 $topClients = array_slice($perClient, 0, 8, true);
 $maxClientBar = $topClients !== [] ? max($topClients) : 1;
+
+$adminOverviewCsrf = akh_csrf_token();
+$adminOverviewSig = akh_task_poll_signature_all();
 
 $perEditor = [];
 foreach ($allTasks as $t) {
@@ -352,6 +371,21 @@ require_once AKH_ROOT . '/includes/header.php';
       </div>
     </div>
   </main>
+  <?php
+  $akhPushJs = AKH_ROOT . '/assets/js/portal-push-notify.js';
+  $akhPushVer = is_file($akhPushJs) ? (string) filemtime($akhPushJs) : '1';
+  ?>
+  <script>
+    window._akhPortalPush = {
+      mode: 'admin_overview',
+      siteName: <?php echo json_encode(SITE_NAME, JSON_THROW_ON_ERROR); ?>,
+      csrf: <?php echo json_encode($adminOverviewCsrf, JSON_THROW_ON_ERROR); ?>,
+      bell: 0,
+      pool: 0,
+      sig: <?php echo json_encode($adminOverviewSig, JSON_THROW_ON_ERROR); ?>
+    };
+  </script>
+  <script defer src="<?php echo h(base_path('assets/js/portal-push-notify.js')); ?>?v=<?php echo h($akhPushVer); ?>"></script>
   <script>
     (function () {
       var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
