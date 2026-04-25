@@ -21,8 +21,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Security check failed. Refresh and try again.';
     } else {
         $date = trim((string) ($_POST['leave_date'] ?? ''));
+        $leavePart = trim((string) ($_POST['leave_part'] ?? 'full'));
         $note = trim((string) ($_POST['note'] ?? ''));
-        $err = akh_editor_leave_apply($editor, $date, $note);
+        $err = akh_editor_leave_apply($editor, $date, $note, $leavePart);
         if ($err !== null) {
             $error = $err;
         } else {
@@ -42,7 +43,7 @@ require_once AKH_ROOT . '/includes/header.php';
       <header class="desk-head desk-head--editor">
         <div>
           <h1 class="portal-title">Apply leave</h1>
-          <p class="portal-lead" style="margin-bottom:0">Request a full day off (Mon–Sat). Sundays are already off.</p>
+          <p class="portal-lead" style="margin-bottom:0">Request full-day or half-day leave (Mon–Sat). Sundays are already off.</p>
         </div>
         <p class="desk-head__actions">
           <a class="btn btn--ghost btn--sm" href="<?php echo h(base_path('editor/dashboard.php')); ?>">← Task board</a>
@@ -66,6 +67,14 @@ require_once AKH_ROOT . '/includes/header.php';
             <input type="date" name="leave_date" required value="<?php echo h(date('Y-m-d')); ?>" />
           </label>
           <label class="field">
+            <span>Leave type</span>
+            <select name="leave_part" required>
+              <option value="full">Full day</option>
+              <option value="first_half">Half day — first half</option>
+              <option value="second_half">Half day — second half</option>
+            </select>
+          </label>
+          <label class="field">
             <span>Note (optional)</span>
             <textarea name="note" rows="3" maxlength="500" placeholder="Reason or context for your admin"></textarea>
           </label>
@@ -82,6 +91,7 @@ require_once AKH_ROOT . '/includes/header.php';
             <?php foreach ($myLeaves as $r): ?>
               <li class="editor-leave-list__item">
                 <span class="editor-leave-list__date"><?php echo h((string) ($r['date'] ?? '')); ?></span>
+                <span class="editor-leave-list__part"><?php echo h(akh_editor_leave_part_label((string) ($r['leave_part'] ?? 'full'))); ?></span>
                 <span class="editor-leave-list__st editor-leave-list__st--<?php echo h(preg_replace('/[^a-z]/', '', (string) ($r['status'] ?? ''))); ?>"><?php echo h((string) ($r['status'] ?? '')); ?></span>
                 <?php if (trim((string) ($r['note'] ?? '')) !== ''): ?>
                   <span class="editor-leave-list__note"><?php echo h((string) ($r['note'] ?? '')); ?></span>

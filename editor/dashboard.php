@@ -132,7 +132,7 @@ require_once AKH_ROOT . '/includes/header.php';
         <div>
           <h1 class="portal-title" style="margin-bottom:0.35rem">Task board</h1>
           <p class="portal-lead" style="margin-bottom:0">Signed in as <strong><?php echo h($editor); ?></strong><?php if (AKH_EDITOR_ATTENDANCE_ENABLED): ?> — attendance: <?php echo $attendanceOn ? 'on shift since ' . h($attendanceSinceLabel) : 'not clocked in'; ?><?php endif; ?>. New jobs notify every editor until you open them; assigned tasks ring when the client replies or posts feedback.</p>
-          <p class="portal-muted" style="margin:0.35rem 0 0;font-size:0.9rem"><a class="text-link" href="<?php echo h(base_path('editor/logout.php')); ?>">Sign out</a> ends your session<?php if (AKH_EDITOR_ATTENDANCE_ENABLED): ?> and clocks you out if you are still on shift<?php endif; ?>.</p>
+          <p class="portal-muted" style="margin:0.35rem 0 0;font-size:0.9rem"><a class="text-link" href="<?php echo h(base_path('editor/logout.php')); ?>">Sign out</a> ends your session.</p>
         </div>
         <div class="desk-bell-wrap">
           <button
@@ -164,7 +164,7 @@ require_once AKH_ROOT . '/includes/header.php';
       <?php if (AKH_EDITOR_ATTENDANCE_ENABLED): ?>
         <section class="portal-section" aria-labelledby="att-heading" style="margin-top:0.5rem">
           <h2 id="att-heading" class="portal-section__title">Attendance</h2>
-          <p class="portal-muted" style="margin-top:-0.35rem">Clock in when you start working and clock out when you finish (signing out also records clock-out if you are still on shift).</p>
+          <p class="portal-muted" style="margin-top:-0.35rem">Clock in when you start working and clock out when you finish. Attendance changes only when you click these buttons.</p>
           <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-top:0.5rem">
             <?php if (!$attendanceOn): ?>
               <form method="post" action="">

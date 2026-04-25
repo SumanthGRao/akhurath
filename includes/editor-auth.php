@@ -269,11 +269,6 @@ function akh_editor_login(string $username, string $password): bool
 
 function akh_editor_logout(): void
 {
-    $u = akh_editor_current();
-    if ($u !== null && AKH_EDITOR_ATTENDANCE_ENABLED) {
-        require_once AKH_ROOT . '/includes/editor-attendance.php';
-        akh_editor_attendance_auto_clock_out_on_logout($u);
-    }
     unset($_SESSION['akh_editor']);
 }
 

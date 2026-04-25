@@ -4,6 +4,7 @@
       "id": "lv_example",
       "editor": "editor_username",
       "date": "2026-04-22",
+      "leave_part": "full",
       "note": "Example note",
       "status": "pending",
       "created_at": 1710000000

@@ -43,15 +43,16 @@ $barP = $ed['bars'];
             </div>
             <div class="admin-attendance-stat admin-attendance-stat--pop<?php echo $ed['days_under_8h'] > 0 ? ' admin-attendance-stat--warn' : ''; ?>">
               <span class="admin-attendance-stat__value"><?php echo (int) $ed['days_under_8h']; ?></span>
-              <span class="admin-attendance-stat__label">Under target</span>
+              <span class="admin-attendance-stat__label">Below target days</span>
               <span class="admin-attendance-stat__hint">Mon–Fri &lt;<?php echo (int) AKH_ATTENDANCE_EXPECTED_HOURS; ?>h · Sat &lt;<?php echo (int) AKH_ATTENDANCE_EXPECTED_HOURS / 2; ?>h</span>
             </div>
             <div class="admin-attendance-stat admin-attendance-stat--pop<?php echo $ed['leave_days'] > 0 ? ' admin-attendance-stat--warn' : ''; ?>">
               <span class="admin-attendance-stat__value"><?php echo (int) $ed['leave_days']; ?></span>
-              <span class="admin-attendance-stat__label">Absent (no leave)</span>
+              <span class="admin-attendance-stat__label">Absent (unapproved)</span>
+              <span class="admin-attendance-stat__hint">No punch and no approved leave</span>
             </div>
             <div class="admin-attendance-stat admin-attendance-stat--pop">
-              <span class="admin-attendance-stat__value"><?php echo (int) ($ed['excused_leave_days'] ?? 0); ?></span>
+              <span class="admin-attendance-stat__value"><?php echo h(akh_editor_attendance_format_leave_units((float) ($ed['excused_leave_days'] ?? 0))); ?></span>
               <span class="admin-attendance-stat__label">Approved leave</span>
             </div>
             <div class="admin-attendance-stat admin-attendance-stat--pop admin-attendance-stat--muted">
@@ -99,6 +100,9 @@ $barP = $ed['bars'];
                           $classes[] = 'atd--future';
                       } elseif (!empty($c['pleave'])) {
                           $classes[] = 'atd--pleave';
+                          if (($c['leave_part'] ?? 'full') !== 'full') {
+                              $classes[] = 'atd--pleave-half';
+                          }
                       } elseif ($c['leave']) {
                           $classes[] = 'atd--leave';
                       } elseif ($c['under8']) {
@@ -140,7 +144,20 @@ $barP = $ed['bars'];
                     <?php endif; ?>
                   </div>
                 <?php endif; ?>
-                <span class="atd__hrs"><?php echo h(!empty($c['pleave']) ? 'Leave' : $hrs); ?></span>
+                <span class="atd__hrs"><?php
+                    if (!empty($c['pleave'])) {
+                        $lp = (string) ($c['leave_part'] ?? 'full');
+                        if ($lp === 'first_half') {
+                            echo 'Leave 1st half';
+                        } elseif ($lp === 'second_half') {
+                            echo 'Leave 2nd half';
+                        } else {
+                            echo 'Leave';
+                        }
+                    } else {
+                        echo h($hrs);
+                    }
+                ?></span>
               </div>
                   <?php endif;
               endfor; ?>

@@ -8,7 +8,7 @@ function akh_editor_leave_file(): string
 }
 
 /**
- * @return array{requests: list<array{id: string, editor: string, date: string, note: string, status: string, created_at: int}>}
+ * @return array{requests: list<array{id: string, editor: string, date: string, leave_part: string, note: string, status: string, created_at: int}>}
  */
 function akh_editor_leave_read(): array
 {
@@ -43,6 +43,7 @@ function akh_editor_leave_read(): array
             'id' => $id,
             'editor' => $ed,
             'date' => $dt,
+            'leave_part' => akh_editor_leave_part_normalize((string) ($r['leave_part'] ?? 'full')),
             'note' => trim((string) ($r['note'] ?? '')),
             'status' => (string) ($r['status'] ?? 'pending'),
             'created_at' => (int) ($r['created_at'] ?? 0),
@@ -50,6 +51,29 @@ function akh_editor_leave_read(): array
     }
 
     return ['requests' => $out];
+}
+
+function akh_editor_leave_part_normalize(string $part): string
+{
+    $p = trim(strtolower($part));
+    if ($p !== 'first_half' && $p !== 'second_half') {
+        return 'full';
+    }
+
+    return $p;
+}
+
+function akh_editor_leave_part_label(string $part): string
+{
+    $p = akh_editor_leave_part_normalize($part);
+    if ($p === 'first_half') {
+        return 'Half day — first half';
+    }
+    if ($p === 'second_half') {
+        return 'Half day — second half';
+    }
+
+    return 'Full day';
 }
 
 function akh_editor_leave_write(array $doc): bool
@@ -121,14 +145,14 @@ function akh_editor_leave_pending_list(): array
 }
 
 /**
- * Approved full-day leave dates for editor in month (Y-m-d => true).
+ * Approved leave map for editor in month (Y-m-d => full|first_half|second_half).
  *
- * @return array<string, true>
+ * @return array<string, string>
  */
-function akh_editor_leave_approved_dates_in_month(string $editor, int $year, int $month): array
+function akh_editor_leave_approved_map_in_month(string $editor, int $year, int $month): array
 {
     $key = strtolower(trim($editor));
-    $set = [];
+    $map = [];
     $pfx = sprintf('%04d-%02d-', $year, $month);
     foreach (akh_editor_leave_read()['requests'] as $r) {
         if (($r['editor'] ?? '') !== $key || ($r['status'] ?? '') !== 'approved') {
@@ -136,14 +160,17 @@ function akh_editor_leave_approved_dates_in_month(string $editor, int $year, int
         }
         $d = (string) ($r['date'] ?? '');
         if (str_starts_with($d, $pfx)) {
-            $set[$d] = true;
+            $part = akh_editor_leave_part_normalize((string) ($r['leave_part'] ?? 'full'));
+            if (!isset($map[$d]) || $part === 'full') {
+                $map[$d] = $part;
+            }
         }
     }
 
-    return $set;
+    return $map;
 }
 
-function akh_editor_leave_apply(string $editor, string $ymd, string $note): ?string
+function akh_editor_leave_apply(string $editor, string $ymd, string $note, string $leavePart = 'full'): ?string
 {
     if (!AKH_EDITOR_ATTENDANCE_ENABLED) {
         return 'Attendance is disabled.';
@@ -164,6 +191,7 @@ function akh_editor_leave_apply(string $editor, string $ymd, string $note): ?str
     if (mb_strlen($note) > 500) {
         return 'Note is too long.';
     }
+    $leavePart = akh_editor_leave_part_normalize($leavePart);
 
     $path = akh_editor_leave_file();
     $dir = dirname($path);
@@ -195,6 +223,7 @@ function akh_editor_leave_apply(string $editor, string $ymd, string $note): ?str
                             'id' => (string) ($r['id'] ?? ''),
                             'editor' => strtolower(trim((string) ($r['editor'] ?? ''))),
                             'date' => (string) ($r['date'] ?? ''),
+                            'leave_part' => akh_editor_leave_part_normalize((string) ($r['leave_part'] ?? 'full')),
                             'note' => trim((string) ($r['note'] ?? '')),
                             'status' => (string) ($r['status'] ?? 'pending'),
                             'created_at' => (int) ($r['created_at'] ?? 0),
@@ -215,6 +244,7 @@ function akh_editor_leave_apply(string $editor, string $ymd, string $note): ?str
             'id' => $id,
             'editor' => $key,
             'date' => $ymd,
+            'leave_part' => $leavePart,
             'note' => $note,
             'status' => 'pending',
             'created_at' => time(),
@@ -270,6 +300,7 @@ function akh_editor_leave_set_status(string $id, string $status): bool
                         'id' => (string) ($r['id'] ?? ''),
                         'editor' => strtolower(trim((string) ($r['editor'] ?? ''))),
                         'date' => (string) ($r['date'] ?? ''),
+                            'leave_part' => akh_editor_leave_part_normalize((string) ($r['leave_part'] ?? 'full')),
                         'note' => trim((string) ($r['note'] ?? '')),
                         'status' => (string) ($r['status'] ?? 'pending'),
                         'created_at' => (int) ($r['created_at'] ?? 0),
@@ -305,7 +336,7 @@ function akh_editor_leave_set_status(string $id, string $status): bool
 }
 
 /**
- * @return list<array{id: string, editor: string, date: string, note: string, status: string, created_at: int}>
+ * @return list<array{id: string, editor: string, date: string, leave_part: string, note: string, status: string, created_at: int}>
  */
 function akh_editor_leave_for_editor(string $editor): array
 {

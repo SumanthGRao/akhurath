@@ -99,7 +99,7 @@ require_once AKH_ROOT . '/includes/header.php';
       <header class="admin-head">
         <div>
           <h1 class="portal-title">Editor attendance</h1>
-          <p class="portal-lead admin-head__meta">One line per editor — open a name for the full calendar. <strong class="atd-legend atd-legend--leave">Red</strong> absent · <strong class="atd-legend atd-legend--pleave">Purple</strong> approved leave · Saturday half-day. <span class="admin-attendance-tz">All times <?php echo h(AKH_SITE_TIMEZONE === 'Asia/Kolkata' ? 'IST (Asia/Kolkata)' : AKH_SITE_TIMEZONE); ?>.</span></p>
+          <p class="portal-lead admin-head__meta">One line per editor — open a name for the full calendar. <strong class="atd-legend atd-legend--leave">Red</strong> absent · <strong class="atd-legend atd-legend--pleave">Purple</strong> approved leave (full/half day) · Saturday half-day. <span class="admin-attendance-tz">All times <?php echo h(AKH_SITE_TIMEZONE === 'Asia/Kolkata' ? 'IST (Asia/Kolkata)' : AKH_SITE_TIMEZONE); ?>.</span></p>
         </div>
         <div class="admin-head__actions">
           <?php $adminConsoleActive = ''; require __DIR__ . '/includes/admin-console-sidebar.php'; ?>
@@ -159,6 +159,7 @@ require_once AKH_ROOT . '/includes/header.php';
                 <div>
                   <strong><?php echo h((string) ($req['editor'] ?? '')); ?></strong>
                   <span class="admin-attendance-leavequeue__date"><?php echo h((string) ($req['date'] ?? '')); ?></span>
+                  <span class="admin-attendance-leavequeue__part"><?php echo h(akh_editor_leave_part_label((string) ($req['leave_part'] ?? 'full'))); ?></span>
                   <?php if (trim((string) ($req['note'] ?? '')) !== ''): ?>
                     <span class="admin-attendance-leavequeue__note"><?php echo h((string) ($req['note'] ?? '')); ?></span>
                   <?php endif; ?>
@@ -186,7 +187,7 @@ require_once AKH_ROOT . '/includes/header.php';
           $brief = (int) ($ed['present_working_days'] ?? 0) . ' pres · '
               . (int) ($ed['days_under_8h'] ?? 0) . ' short · '
               . (int) ($ed['leave_days'] ?? 0) . ' absent · '
-              . (int) ($ed['excused_leave_days'] ?? 0) . ' leave ok';
+              . akh_editor_attendance_format_leave_units((float) ($ed['excused_leave_days'] ?? 0)) . ' leave ok';
           if (($ed['leave_pending_in_month'] ?? 0) > 0) {
               $brief .= ' · ' . (int) $ed['leave_pending_in_month'] . ' leave pending';
           }

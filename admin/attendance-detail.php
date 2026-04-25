@@ -50,7 +50,7 @@ require_once AKH_ROOT . '/includes/header.php';
       <header class="admin-head">
         <div>
           <h1 class="portal-title">Attendance — <?php echo h($editorKey); ?></h1>
-          <p class="portal-lead admin-head__meta">Calendar and monthly totals. <strong class="atd-legend atd-legend--pleave">Purple</strong> = approved leave. <strong class="atd-legend atd-legend--leave">Red</strong> = absent. Saturday uses half-day targets. <span class="admin-attendance-tz">All times <?php echo h(AKH_SITE_TIMEZONE === 'Asia/Kolkata' ? 'IST (Asia/Kolkata)' : AKH_SITE_TIMEZONE); ?>.</span></p>
+          <p class="portal-lead admin-head__meta">Calendar and monthly totals. <strong class="atd-legend atd-legend--pleave">Purple</strong> = approved leave (full/half day). <strong class="atd-legend atd-legend--leave">Red</strong> = absent. Saturday uses half-day targets. <span class="admin-attendance-tz">All times <?php echo h(AKH_SITE_TIMEZONE === 'Asia/Kolkata' ? 'IST (Asia/Kolkata)' : AKH_SITE_TIMEZONE); ?>.</span></p>
         </div>
         <div class="admin-head__actions">
           <?php $adminConsoleActive = ''; require __DIR__ . '/includes/admin-console-sidebar.php'; ?>

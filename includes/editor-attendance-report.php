@@ -212,9 +212,9 @@ function akh_editor_attendance_day_punch_labels(string $editor, string $ymd, arr
  *     days_9h_plus: int,
  *     days_under_8h: int,
  *     leave_days: int,
- *     excused_leave_days: int,
+ *     excused_leave_days: float,
  *     leave_pending_in_month: int,
- *     cells: list<array{ymd: string, dom: int, w: int, label: string, seconds: int, clock_in: bool, sunday: bool, leave: bool, under8: bool, nine_plus: bool, future: bool, today: bool, expected_sec: int, full_shift_sec: int, pleave: bool, punch_in: ?string, punch_out: ?string}>,
+ *     cells: list<array{ymd: string, dom: int, w: int, label: string, seconds: int, clock_in: bool, sunday: bool, leave: bool, under8: bool, nine_plus: bool, future: bool, today: bool, expected_sec: int, full_shift_sec: int, pleave: bool, leave_part: string, punch_in: ?string, punch_out: ?string}>,
  *     bars: array{present_pct: float, clock_pct: float, nine_pct: float}
  *   }>
  * }
@@ -246,7 +246,7 @@ function akh_editor_attendance_month_report(int $year, int $month): array
     ];
 
     foreach ($editors as $editor) {
-        $approvedSet = akh_editor_leave_approved_dates_in_month($editor, $year, $month);
+        $approvedMap = akh_editor_leave_approved_map_in_month($editor, $year, $month);
         $leaveMonthCounts = akh_editor_leave_counts_for_month_editor($editor, $year, $month);
         $intervals = akh_editor_attendance_work_intervals($editor, $events);
         $secondsByDay = akh_editor_attendance_seconds_by_day($intervals, $monthStart, $monthEnd);
@@ -256,6 +256,7 @@ function akh_editor_attendance_month_report(int $year, int $month): array
         $workingDays = 0;
         $sundays = 0;
         $leaveDays = 0;
+        $excusedLeaveUnits = 0.0;
         $under8 = 0;
         $ninePlus = 0;
         $presentWorkingDays = 0;
@@ -281,7 +282,11 @@ function akh_editor_attendance_month_report(int $year, int $month): array
                 ++$workingDays;
             }
 
-            $pleave = isset($approvedSet[$ymd]);
+            $pleave = isset($approvedMap[$ymd]);
+            $leavePart = $pleave ? akh_editor_leave_part_normalize((string) ($approvedMap[$ymd] ?? 'full')) : 'full';
+            if ($pleave) {
+                $excusedLeaveUnits += $leavePart === 'full' ? 1.0 : 0.5;
+            }
 
             $leave = false;
             if ($isWorkingDay && !$isFuture && $ymd < $todayYmd) {
@@ -292,7 +297,11 @@ function akh_editor_attendance_month_report(int $year, int $month): array
             }
 
             $under = false;
-            if (!$pleave && $isWorkingDay && $expectedSec > 0 && $seconds > 0 && $seconds < $expectedSec) {
+            $expectedForUnderTarget = $expectedSec;
+            if ($pleave && $leavePart !== 'full') {
+                $expectedForUnderTarget = (int) floor($expectedSec / 2);
+            }
+            if (!$leave && $isWorkingDay && $expectedForUnderTarget > 0 && $seconds > 0 && $seconds < $expectedForUnderTarget) {
                 if ($ymd < $todayYmd) {
                     $under = true;
                     ++$under8;
@@ -329,6 +338,7 @@ function akh_editor_attendance_month_report(int $year, int $month): array
                 'expected_sec' => $expectedSec,
                 'full_shift_sec' => $fullShiftSec,
                 'pleave' => $pleave,
+                'leave_part' => $leavePart,
                 'punch_in' => $punch['in'],
                 'punch_out' => $punch['out'],
             ];
@@ -350,7 +360,7 @@ function akh_editor_attendance_month_report(int $year, int $month): array
             'days_9h_plus' => $ninePlus,
             'days_under_8h' => $under8,
             'leave_days' => $leaveDays,
-            'excused_leave_days' => count($approvedSet),
+            'excused_leave_days' => round($excusedLeaveUnits, 1),
             'leave_pending_in_month' => $leaveMonthCounts['pending'],
             'cells' => $cells,
             'bars' => $bars,
@@ -358,6 +368,16 @@ function akh_editor_attendance_month_report(int $year, int $month): array
     }
 
     return $out;
+}
+
+function akh_editor_attendance_format_leave_units(float $units): string
+{
+    $v = round($units, 1);
+    if (abs($v - round($v)) < 0.001) {
+        return (string) (int) round($v);
+    }
+
+    return number_format($v, 1, '.', '');
 }
 
 function akh_editor_attendance_format_hours(int $sec): string
