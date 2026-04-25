@@ -12,6 +12,53 @@ $bodyClass = $bodyClass ?? '';
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="description" content="<?php echo h($metaDescription ?? SITE_TAGLINE); ?>" />
   <title><?php echo h($pageTitle); ?></title>
+  <?php
+    $akhBrandDir = AKH_ROOT . '/assets/images/brand';
+    $akhFav192 = $akhBrandDir . '/akhurath-favicon-192.png';
+    $akhFav48 = $akhBrandDir . '/akhurath-favicon-48.png';
+    $akhApple = $akhBrandDir . '/apple-touch-icon.png';
+    if (is_file($akhFav192) && is_file($akhFav48)) {
+        $v192 = (string) filemtime($akhFav192);
+        $v48 = (string) filemtime($akhFav48);
+        $href192 = base_path('assets/images/brand/akhurath-favicon-192.png') . '?v=' . rawurlencode($v192);
+        $href48 = base_path('assets/images/brand/akhurath-favicon-48.png') . '?v=' . rawurlencode($v48);
+        ?>
+  <link rel="icon" type="image/png" sizes="48x48" href="<?php echo h($href48); ?>" />
+  <link rel="icon" type="image/png" sizes="192x192" href="<?php echo h($href192); ?>" />
+        <?php
+        if (is_file($akhApple)) {
+            $va = (string) filemtime($akhApple);
+            $hrefApple = base_path('assets/images/brand/apple-touch-icon.png') . '?v=' . rawurlencode($va);
+            ?>
+  <link rel="apple-touch-icon" href="<?php echo h($hrefApple); ?>" />
+            <?php
+        }
+        $akhHome = rtrim(akh_absolute_url(''), '/');
+        $akhLogoAbs = rtrim(akh_absolute_url('assets/images/brand/akhurath-favicon-192.png'), '/');
+        $akhLd = [
+            '@context' => 'https://schema.org',
+            '@graph' => [
+                [
+                    '@type' => 'Organization',
+                    '@id' => $akhHome . '#organization',
+                    'name' => SITE_NAME,
+                    'url' => $akhHome,
+                    'logo' => $akhLogoAbs,
+                ],
+                [
+                    '@type' => 'WebSite',
+                    '@id' => $akhHome . '#website',
+                    'url' => $akhHome,
+                    'name' => SITE_NAME,
+                    'publisher' => ['@id' => $akhHome . '#organization'],
+                ],
+            ],
+        ];
+        ?>
+  <script type="application/ld+json"><?php echo json_encode($akhLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR); ?></script>
+        <?php
+    }
+  ?>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Source+Sans+3:wght@300;400;500;600&display=swap" rel="stylesheet" />
