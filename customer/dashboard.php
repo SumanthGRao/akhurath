@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
         $error = 'Security check failed. Refresh the page and try again.';
     } else {
-        $action = trim((string) ($_POST['task_action'] ?? 'create_task'));
+        $action = trim((string) ($_POST['task_action'] ?? ''));
 
         if ($action === 'thread_message') {
             $tid = trim((string) ($_POST['task_id'] ?? ''));
@@ -98,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $flash = 'Task updated.';
                 }
             }
-        } else {
+        } elseif ($action === 'create_task') {
             $coupleName = trim((string) ($_POST['couple_name'] ?? ''));
             $projectDetails = trim((string) ($_POST['project_details'] ?? ''));
             $referenceLink = trim((string) ($_POST['reference_link'] ?? ''));
@@ -141,6 +141,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
+        } elseif ($action === '') {
+            $error = 'Invalid request. Please use the task forms on this page.';
+        } else {
+            $error = 'Unknown request action.';
         }
     }
 }
