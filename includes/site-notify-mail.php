@@ -90,6 +90,57 @@ function akh_site_mail_contact_notify_studio(
 }
 
 /**
+ * Notify studio of a custom package build from /packages (line amounts for internal reference only).
+ *
+ * @param array<string, array{label: string, qty: int, unit_inr: int, line_inr: int}> $lines
+ */
+function akh_site_mail_custom_package_studio(
+    string $name,
+    string $email,
+    string $phone,
+    string $notes,
+    array $lines,
+    int $totalInr
+): void {
+    if (!akh_site_notify_smtp_enabled()) {
+        return;
+    }
+    $to = trim(LEADS_EMAIL);
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
+        return;
+    }
+    $subject = 'Custom package quote request — ' . SITE_NAME;
+    $bodyLines = [
+        'Custom package builder (/packages)',
+        'When (UTC): ' . gmdate('c'),
+        '',
+        'Client',
+        'Name: ' . $name,
+        'Email: ' . $email,
+        'Phone: ' . $phone,
+        '',
+        'Selections (internal reference totals):',
+    ];
+    foreach ($lines as $row) {
+        $label = (string) ($row['label'] ?? '');
+        $qty = (int) ($row['qty'] ?? 0);
+        $unit = (int) ($row['unit_inr'] ?? 0);
+        $line = (int) ($row['line_inr'] ?? 0);
+        $bodyLines[] = "  • {$label} × {$qty} @ ₹{$unit} = ₹{$line}";
+    }
+    $bodyLines[] = '';
+    $bodyLines[] = 'Reference list build total: ₹' . (string) $totalInr;
+    $bodyLines[] = '';
+    $bodyLines[] = 'Notes from client:';
+    $bodyLines[] = ($notes !== '' ? $notes : '—');
+
+    akh_site_notify_log_mail_failure(
+        'custom_package_studio',
+        akh_smtp_send($to, $subject, implode("\n", $bodyLines))
+    );
+}
+
+/**
  * @return array{ok: bool, error: string, skipped: bool}
  */
 function akh_site_mail_client_registration_welcome(string $toEmail, string $username): array

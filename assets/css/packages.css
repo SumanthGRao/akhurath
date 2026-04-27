@@ -14,6 +14,7 @@
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --offer-cta: #1f6f45;
   --offer-cta-hover: #185a38;
+  --accent: #c9a227;
 
   min-height: 100dvh;
   min-height: 100vh;
@@ -160,14 +161,35 @@
 }
 
 .page-packages__tier {
-  font-family: var(--sans);
-  font-size: 0.82rem;
+  font-family: var(--serif);
+  font-size: 1.05rem;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.08em;
   text-align: center;
   text-transform: uppercase;
   color: var(--ink);
   margin: 0 0 1rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+
+.page-packages__tier--standard {
+  background: linear-gradient(135deg, rgba(31, 111, 69, 0.12) 0%, rgba(31, 111, 69, 0.04) 100%);
+  border-color: rgba(31, 111, 69, 0.22);
+  color: #143d28;
+}
+
+.page-packages__tier--premium {
+  background: linear-gradient(135deg, rgba(201, 162, 39, 0.18) 0%, rgba(201, 162, 39, 0.06) 100%);
+  border-color: rgba(201, 162, 39, 0.35);
+  color: var(--ink);
+}
+
+.page-packages__tier--elite {
+  background: linear-gradient(135deg, rgba(26, 23, 21, 0.07) 0%, rgba(26, 23, 21, 0.02) 100%);
+  border-color: var(--line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 .page-packages__list {
@@ -436,12 +458,262 @@
   text-decoration: underline;
 }
 
+/* --- Build your own (custom package) --- */
+.page-packages__custom {
+  margin-top: 2.5rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--line);
+}
+
+.page-packages__custom-title {
+  font-family: var(--serif);
+  font-size: clamp(1.5rem, 3.5vw, 2rem);
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.04em;
+  margin: 0 0 0.5rem;
+}
+
+.page-packages__custom-lead {
+  font-family: var(--sans);
+  font-size: 0.98rem;
+  color: var(--muted);
+  text-align: center;
+  max-width: 38rem;
+  margin: 0 auto 1.5rem;
+  line-height: 1.55;
+}
+
+.page-packages__banner {
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  margin-bottom: 1.25rem;
+  text-align: center;
+}
+
+.page-packages__banner--ok {
+  background: rgba(31, 111, 69, 0.1);
+  border: 1px solid rgba(31, 111, 69, 0.25);
+  color: #143d28;
+}
+
+.page-packages__banner--err {
+  background: rgba(180, 40, 40, 0.08);
+  border: 1px solid rgba(180, 40, 40, 0.2);
+  color: #6b1c1c;
+}
+
+.page-packages__banner--err p {
+  margin: 0.25rem 0;
+}
+
+.page-packages__hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.page-packages__custom-form {
+  position: relative;
+  max-width: 32rem;
+  margin: 0 auto;
+}
+
+.page-packages__custom-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.page-packages__custom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.85rem;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--sans);
+  font-size: 0.95rem;
+}
+
+.page-packages__custom-label {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.page-packages__custom-qty {
+  width: 4.25rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: var(--sans);
+  font-size: 1rem;
+  text-align: center;
+  background: #fff;
+  color: var(--ink);
+}
+
+.page-packages__custom-actions {
+  margin-top: 1.25rem;
+  text-align: center;
+}
+
+.page-packages__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.75rem 1.35rem;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.2s var(--ease), box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.page-packages__btn--secondary {
+  background: #fff;
+  color: var(--ink);
+  border: 2px solid var(--line);
+  box-shadow: 0 2px 8px rgba(26, 23, 21, 0.04);
+}
+
+.page-packages__btn--secondary:hover {
+  border-color: rgba(26, 23, 21, 0.2);
+  transform: translateY(-1px);
+}
+
+.page-packages__btn--primary {
+  background: var(--offer-cta);
+  color: #fff;
+  width: 100%;
+  margin-top: 0.25rem;
+  box-shadow: 0 4px 14px rgba(31, 111, 69, 0.3);
+}
+
+.page-packages__btn--primary:hover {
+  background: var(--offer-cta-hover);
+  transform: translateY(-1px);
+}
+
+.page-packages__custom-reveal {
+  margin-top: 1.75rem;
+  padding: 1.25rem 1rem 1.5rem;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  animation: page-packages-reveal-in 0.45s var(--ease) both;
+}
+
+.page-packages__custom-reveal[hidden] {
+  display: none;
+}
+
+@keyframes page-packages-reveal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-packages__custom-total-label {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  text-align: center;
+  margin: 0 0 0.35rem;
+}
+
+.page-packages__custom-total {
+  font-family: var(--serif);
+  font-size: clamp(2rem, 5vw, 2.65rem);
+  font-weight: 600;
+  text-align: center;
+  margin: 0 0 0.5rem;
+  color: var(--ink);
+}
+
+.page-packages__custom-total-note {
+  font-family: var(--sans);
+  font-size: 0.88rem;
+  color: var(--muted);
+  text-align: center;
+  margin: 0 0 1.25rem;
+  line-height: 1.5;
+}
+
+.page-packages__custom-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.page-packages__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-family: var(--sans);
+  font-size: 0.88rem;
+}
+
+.page-packages__field span {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.page-packages__req {
+  color: #8a6f18;
+}
+
+.page-packages__opt {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.page-packages__field input,
+.page-packages__field textarea {
+  font-family: var(--sans);
+  font-size: 1rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.page-packages__field textarea {
+  resize: vertical;
+  min-height: 5rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .page-packages__card,
   .page-packages__row,
   .page-packages__price-new,
   .page-packages__cta,
-  .page-packages__cta--contact {
+  .page-packages__cta--contact,
+  .page-packages__custom-reveal,
+  .page-packages__btn {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
   }
