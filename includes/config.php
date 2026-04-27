@@ -117,7 +117,7 @@ const CONTACT_EMAIL = 'info@akhurathstudio.com';
  *
  * Zoho India: smtp.zoho.in, port 465, encryption ssl. Other regions may use smtp.zoho.com:587 + tls.
  */
-const AKH_SMTP_ENABLED = false;
+const AKH_SMTP_ENABLED = true;
 const AKH_SMTP_HOST = 'smtp.zoho.in';
 const AKH_SMTP_PORT = 465;
 /** 'ssl' (e.g. port 465) or 'tls' (STARTTLS, e.g. port 587) */
