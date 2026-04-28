@@ -114,6 +114,36 @@
   position: relative;
 }
 
+.page-packages__promo {
+  margin: 1.15rem 0 0;
+  padding: 0.75rem 1rem;
+  border: 1px dashed rgba(201, 162, 39, 0.55);
+  border-radius: var(--radius);
+  background: rgba(201, 162, 39, 0.1);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  text-align: center;
+  line-height: 1.45;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.page-packages__promo-track {
+  display: inline-block;
+  padding-left: 100%;
+  animation: page-packages-promo-scroll 16s linear infinite;
+}
+
+@keyframes page-packages-promo-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
 .page-packages__card {
   --card-lift: 0px;
   --card-scale: 1;
@@ -713,7 +743,8 @@
   .page-packages__cta,
   .page-packages__cta--contact,
   .page-packages__custom-reveal,
-  .page-packages__btn {
+  .page-packages__btn,
+  .page-packages__promo-track {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
   }

@@ -6,11 +6,11 @@ require __DIR__ . '/includes/bootstrap.php';
 
 /** Internal list rates for custom builder (server recalculates; never shown per line on the page). */
 $customRates = [
-    'teaser' => ['label' => 'Cinematic teaser', 'inr' => 5000],
-    'highlights_5' => ['label' => '5 min highlights film', 'inr' => 10000],
-    'highlights_7' => ['label' => '7 min highlights film', 'inr' => 15000],
-    'reel' => ['label' => 'Instagram / social reel', 'inr' => 1200],
-    'traditional' => ['label' => 'Traditional video (up to 1 hr)', 'inr' => 5000],
+    'teaser' => ['label' => 'Cinematic teaser', 'inr' => 3000],
+    'highlights_5' => ['label' => '5 min highlights film', 'inr' => 8000],
+    'highlights_7' => ['label' => '7 min highlights film', 'inr' => 10000],
+    'reel' => ['label' => 'Instagram / social reel', 'inr' => 1000],
+    'traditional' => ['label' => 'Traditional video (up to 1 hr)', 'inr' => 3000],
 ];
 $customRateKeys = array_keys($customRates);
 
@@ -169,11 +169,11 @@ $customReopenAfterError = $customErrors !== [] && (string) ($_POST['estimate_con
             </li>
             <li class="page-packages__row" data-line>
               <svg class="page-packages__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
-              <span>1 free re-work</span>
+              <span>1 Instagram reel</span>
             </li>
             <li class="page-packages__row page-packages__row--excluded" data-line>
               <svg class="page-packages__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
-              <span>Instagram reel</span>
+              <span>1 free re-work</span>
             </li>
             <li class="page-packages__row page-packages__row--excluded" data-line>
               <svg class="page-packages__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -188,11 +188,11 @@ $customReopenAfterError = $customErrors !== [] && (string) ($_POST['estimate_con
             <span class="page-packages__rate-hint">List rate</span>
             <div class="page-packages__price-old" data-price-old>
               <span class="page-packages__price-old-inner">
-                ₹ 20K
+                ₹ 14K
                 <span class="page-packages__strike" data-strike aria-hidden="true"></span>
               </span>
             </div>
-            <div class="page-packages__price-new" data-price-new>₹ 14K</div>
+            <div class="page-packages__price-new" data-price-new>₹ 12K</div>
           </div>
           <div class="page-packages__cta-stack">
             <button type="button" class="page-packages__cta page-packages__cta--offer" data-offer-btn aria-expanded="false">Get offer</button>
@@ -219,11 +219,11 @@ $customReopenAfterError = $customErrors !== [] && (string) ($_POST['estimate_con
             </li>
             <li class="page-packages__row" data-line>
               <svg class="page-packages__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
-              <span>2 free re-works</span>
+              <span>2 Instagram reels</span>
             </li>
             <li class="page-packages__row" data-line>
               <svg class="page-packages__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
-              <span>2 Instagram reels</span>
+              <span>2 free re-works</span>
             </li>
             <li class="page-packages__row page-packages__row--excluded" data-line>
               <svg class="page-packages__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -238,11 +238,11 @@ $customReopenAfterError = $customErrors !== [] && (string) ($_POST['estimate_con
             <span class="page-packages__rate-hint">List rate</span>
             <div class="page-packages__price-old" data-price-old>
               <span class="page-packages__price-old-inner">
-                ₹ 32K
+                ₹ 30K
                 <span class="page-packages__strike" data-strike aria-hidden="true"></span>
               </span>
             </div>
-            <div class="page-packages__price-new" data-price-new>₹ 25K</div>
+            <div class="page-packages__price-new" data-price-new>₹ 22K</div>
           </div>
           <div class="page-packages__cta-stack">
             <button type="button" class="page-packages__cta page-packages__cta--offer" data-offer-btn aria-expanded="false">Get offer</button>
@@ -269,11 +269,11 @@ $customReopenAfterError = $customErrors !== [] && (string) ($_POST['estimate_con
             </li>
             <li class="page-packages__row" data-line>
               <svg class="page-packages__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
-              <span>3 free re-works</span>
+              <span>3 Instagram reels</span>
             </li>
             <li class="page-packages__row" data-line>
               <svg class="page-packages__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
-              <span>3 Instagram reels</span>
+              <span>3 free re-works</span>
             </li>
             <li class="page-packages__row" data-line>
               <svg class="page-packages__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
@@ -288,11 +288,11 @@ $customReopenAfterError = $customErrors !== [] && (string) ($_POST['estimate_con
             <span class="page-packages__rate-hint">List rate</span>
             <div class="page-packages__price-old" data-price-old>
               <span class="page-packages__price-old-inner">
-                ₹ 45K
+                ₹ 40K
                 <span class="page-packages__strike" data-strike aria-hidden="true"></span>
               </span>
             </div>
-            <div class="page-packages__price-new" data-price-new>₹ 35K</div>
+            <div class="page-packages__price-new" data-price-new>₹ 30K</div>
           </div>
           <div class="page-packages__cta-stack">
             <button type="button" class="page-packages__cta page-packages__cta--offer" data-offer-btn aria-expanded="false">Get offer</button>
@@ -301,6 +301,10 @@ $customReopenAfterError = $customErrors !== [] && (string) ($_POST['estimate_con
         </article>
       </div>
     </div>
+
+    <p class="page-packages__promo" aria-label="Special discount offer">
+      <span class="page-packages__promo-track">Special discount applicable for Premium and Elite packages having 5+ orders every month. Hurry to avail this offer.</span>
+    </p>
 
     <section class="page-packages__custom" id="build-your-own" aria-labelledby="custom-heading">
       <h2 class="page-packages__custom-title" id="custom-heading">Build your own</h2>
