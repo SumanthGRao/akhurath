@@ -24,8 +24,41 @@ $waPrefill = $topicLabel !== null
 
 $errors = [];
 $sent = false;
-$captchaSessionKey = 'contact_captcha_v1';
-$makeCaptcha = static function (): array {
+$captchaSessionKey = 'contact_captcha_pool_v2';
+$captchaRotateSeconds = 24;
+$captchaTokenTtlSeconds = 150;
+
+/** @return array{question: string, answer: string} */
+$makeCaptchaChallenge = static function (): array {
+    try {
+        $kind = random_int(1, 3);
+    } catch (Throwable $e) {
+        $kind = 1;
+    }
+
+    if ($kind === 2) {
+        try {
+            $a = random_int(6, 18);
+            $b = random_int(1, 6);
+        } catch (Throwable $e) {
+            $a = 12;
+            $b = 4;
+        }
+
+        return ['question' => $a . ' - ' . $b, 'answer' => (string) ($a - $b)];
+    }
+    if ($kind === 3) {
+        try {
+            $a = random_int(2, 9);
+            $b = random_int(2, 4);
+        } catch (Throwable $e) {
+            $a = 4;
+            $b = 3;
+        }
+
+        return ['question' => $a . ' × ' . $b, 'answer' => (string) ($a * $b)];
+    }
+
     try {
         $a = random_int(2, 9);
         $b = random_int(1, 9);
@@ -34,22 +67,78 @@ $makeCaptcha = static function (): array {
         $b = 4;
     }
 
+    return ['question' => $a . ' + ' . $b, 'answer' => (string) ($a + $b)];
+};
+
+/** @return array{token: string, question: string, rotate_seconds: int} */
+$issueCaptcha = static function () use ($captchaSessionKey, $captchaTokenTtlSeconds, $captchaRotateSeconds, $makeCaptchaChallenge): array {
+    $now = time();
+    $pool = $_SESSION[$captchaSessionKey] ?? [];
+    if (!is_array($pool)) {
+        $pool = [];
+    }
+    foreach ($pool as $tok => $meta) {
+        if (!is_array($meta) || (int) ($meta['expires'] ?? 0) < $now) {
+            unset($pool[$tok]);
+        }
+    }
+    while (count($pool) > 12) {
+        $firstKey = array_key_first($pool);
+        if ($firstKey === null) {
+            break;
+        }
+        unset($pool[$firstKey]);
+    }
+
+    $challenge = $makeCaptchaChallenge();
+    try {
+        $token = bin2hex(random_bytes(16));
+    } catch (Throwable $e) {
+        $token = sha1((string) microtime(true) . ':' . (string) mt_rand());
+    }
+    $pool[$token] = [
+        'answer' => (string) $challenge['answer'],
+        'expires' => $now + $captchaTokenTtlSeconds,
+    ];
+    $_SESSION[$captchaSessionKey] = $pool;
+
     return [
-        'question' => $a . ' + ' . $b,
-        'answer' => (string) ($a + $b),
+        'token' => $token,
+        'question' => (string) $challenge['question'],
+        'rotate_seconds' => $captchaRotateSeconds,
     ];
 };
 
-if (
-    !isset($_SESSION[$captchaSessionKey])
-    || !is_array($_SESSION[$captchaSessionKey])
-    || !isset($_SESSION[$captchaSessionKey]['question'], $_SESSION[$captchaSessionKey]['answer'])
-) {
-    $_SESSION[$captchaSessionKey] = $makeCaptcha();
-}
+$validateCaptcha = static function (string $token, string $answer) use ($captchaSessionKey): bool {
+    $now = time();
+    $pool = $_SESSION[$captchaSessionKey] ?? [];
+    if (!is_array($pool)) {
+        return false;
+    }
+    foreach ($pool as $tok => $meta) {
+        if (!is_array($meta) || (int) ($meta['expires'] ?? 0) < $now) {
+            unset($pool[$tok]);
+        }
+    }
+    if (!isset($pool[$token]) || !is_array($pool[$token])) {
+        $_SESSION[$captchaSessionKey] = $pool;
 
-$captchaQuestion = (string) ($_SESSION[$captchaSessionKey]['question'] ?? '2 + 2');
-$captchaExpected = (string) ($_SESSION[$captchaSessionKey]['answer'] ?? '4');
+        return false;
+    }
+    $expected = (string) ($pool[$token]['answer'] ?? '');
+    unset($pool[$token]); // one-time token; invalidate whether success/failure
+    $_SESSION[$captchaSessionKey] = $pool;
+
+    return $expected !== '' && hash_equals($expected, $answer);
+};
+
+$currentCaptcha = $issueCaptcha();
+
+if (($_GET['captcha'] ?? '') === 'refresh') {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($currentCaptcha, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
 
 /** One .txt file per submission (created on first use). */
 $enquiriesDir = AKH_ROOT . '/data/contact-enquiries';
@@ -65,6 +154,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $phone = trim((string) ($_POST['phone'] ?? ''));
     $email = strtolower(trim((string) ($_POST['email'] ?? '')));
     $project = trim((string) ($_POST['project'] ?? ''));
+    $humanConfirmed = (string) ($_POST['human_confirm'] ?? '') === '1';
+    $captchaToken = trim((string) ($_POST['captcha_token'] ?? ''));
     $captchaInputRaw = trim((string) ($_POST['captcha_answer'] ?? ''));
     $captchaInput = ltrim($captchaInputRaw, '+');
 
@@ -88,9 +179,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if ($project === '' || mb_strlen($project) > 8000) {
         $errors[] = 'Please describe your project (max 8000 characters).';
     }
-    if ($captchaInput === '' || !preg_match('/^[0-9-]{1,12}$/', $captchaInput)) {
+    if (!$humanConfirmed) {
+        $errors[] = 'Please confirm you are human.';
+    }
+    if ($captchaToken === '' || !preg_match('/^[a-f0-9]{32,64}$/', $captchaToken)) {
+        $errors[] = 'Captcha expired. Please try again.';
+    } elseif ($captchaInput === '' || !preg_match('/^[0-9-]{1,12}$/', $captchaInput)) {
         $errors[] = 'Please solve the human verification question.';
-    } elseif ($captchaExpected === '' || $captchaInput !== $captchaExpected) {
+    } elseif (!$validateCaptcha($captchaToken, $captchaInput)) {
         $errors[] = 'Human verification failed. Please try again.';
     }
 
@@ -140,9 +236,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
     }
 
-    // Rotate captcha after every submit attempt to prevent replay.
-    $_SESSION[$captchaSessionKey] = $makeCaptcha();
-    $captchaQuestion = (string) ($_SESSION[$captchaSessionKey]['question'] ?? '2 + 2');
+    // Always refresh captcha after submit attempt.
+    $currentCaptcha = $issueCaptcha();
 }
 
 require_once AKH_ROOT . '/includes/header.php';
@@ -174,7 +269,7 @@ require_once AKH_ROOT . '/includes/header.php';
           </ul>
         <?php endif; ?>
 
-        <form class="contact-form" method="post" action="" novalidate>
+        <form class="contact-form" method="post" action="" novalidate data-captcha-endpoint="<?php echo h(base_path('contact.php')); ?>" data-captcha-rotate="<?php echo h((string) $captchaRotateSeconds); ?>">
           <p class="honeypot" aria-hidden="true">
             <label>Leave blank <input type="text" name="website" tabindex="-1" autocomplete="off" /></label>
           </p>
@@ -203,8 +298,13 @@ require_once AKH_ROOT . '/includes/header.php';
           </label>
           <label class="field">
             <span>Verify human <span class="req">*</span></span>
-            <span class="field-hint">Solve this: <strong><?php echo h($captchaQuestion); ?></strong></span>
+            <span class="field-hint">Solve this: <strong id="contact-captcha-question"><?php echo h($currentCaptcha['question']); ?></strong></span>
+            <input type="hidden" name="captcha_token" id="contact-captcha-token" value="<?php echo h($currentCaptcha['token']); ?>" />
             <input type="text" name="captcha_answer" required maxlength="12" inputmode="numeric" autocomplete="off" placeholder="Your answer" value="<?php echo h($_POST['captcha_answer'] ?? ''); ?>" />
+          </label>
+          <label class="field field--inline-check">
+            <input type="checkbox" name="human_confirm" value="1" <?php echo ((string) ($_POST['human_confirm'] ?? '') === '1') ? 'checked' : ''; ?> />
+            <span>I confirm I am human.</span>
           </label>
           <button type="submit" class="btn btn--primary">Send message</button>
         </form>
@@ -213,5 +313,49 @@ require_once AKH_ROOT . '/includes/header.php';
       <?php endif; ?>
     </div>
   </main>
+
+  <script>
+    (function () {
+      var form = document.querySelector('.contact-form');
+      if (!form) return;
+      var endpoint = form.getAttribute('data-captcha-endpoint') || '';
+      var rotate = parseInt(form.getAttribute('data-captcha-rotate') || '24', 10);
+      if (!endpoint || !Number.isFinite(rotate) || rotate < 8) {
+        rotate = 24;
+      }
+
+      var qEl = document.getElementById('contact-captcha-question');
+      var tEl = document.getElementById('contact-captcha-token');
+      var aEl = form.querySelector('input[name="captcha_answer"]');
+      if (!qEl || !tEl || !aEl) return;
+      var refreshing = false;
+
+      function refreshCaptcha() {
+        if (refreshing) return;
+        refreshing = true;
+        fetch(endpoint + (endpoint.indexOf('?') === -1 ? '?' : '&') + 'captcha=refresh', {
+          method: 'GET',
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          cache: 'no-store'
+        })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) {
+            if (!data || typeof data.question !== 'string' || typeof data.token !== 'string') return;
+            qEl.textContent = data.question;
+            tEl.value = data.token;
+            aEl.value = '';
+          })
+          .catch(function () {})
+          .finally(function () {
+            refreshing = false;
+          });
+      }
+
+      window.setInterval(function () {
+        refreshCaptcha();
+      }, rotate * 1000);
+    })();
+  </script>
 
 <?php require_once AKH_ROOT . '/includes/footer.php'; ?>
