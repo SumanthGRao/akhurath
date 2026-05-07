@@ -24,6 +24,32 @@ $waPrefill = $topicLabel !== null
 
 $errors = [];
 $sent = false;
+$captchaSessionKey = 'contact_captcha_v1';
+$makeCaptcha = static function (): array {
+    try {
+        $a = random_int(2, 9);
+        $b = random_int(1, 9);
+    } catch (Throwable $e) {
+        $a = 3;
+        $b = 4;
+    }
+
+    return [
+        'question' => $a . ' + ' . $b,
+        'answer' => (string) ($a + $b),
+    ];
+};
+
+if (
+    !isset($_SESSION[$captchaSessionKey])
+    || !is_array($_SESSION[$captchaSessionKey])
+    || !isset($_SESSION[$captchaSessionKey]['question'], $_SESSION[$captchaSessionKey]['answer'])
+) {
+    $_SESSION[$captchaSessionKey] = $makeCaptcha();
+}
+
+$captchaQuestion = (string) ($_SESSION[$captchaSessionKey]['question'] ?? '2 + 2');
+$captchaExpected = (string) ($_SESSION[$captchaSessionKey]['answer'] ?? '4');
 
 /** One .txt file per submission (created on first use). */
 $enquiriesDir = AKH_ROOT . '/data/contact-enquiries';
@@ -39,6 +65,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $phone = trim((string) ($_POST['phone'] ?? ''));
     $email = strtolower(trim((string) ($_POST['email'] ?? '')));
     $project = trim((string) ($_POST['project'] ?? ''));
+    $captchaInputRaw = trim((string) ($_POST['captcha_answer'] ?? ''));
+    $captchaInput = ltrim($captchaInputRaw, '+');
 
     $postTopicKey = strtolower(trim((string) ($_POST['topic'] ?? '')));
     $postTopicLabel = $serviceTopics[$postTopicKey] ?? null;
@@ -59,6 +87,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     }
     if ($project === '' || mb_strlen($project) > 8000) {
         $errors[] = 'Please describe your project (max 8000 characters).';
+    }
+    if ($captchaInput === '' || !preg_match('/^[0-9-]{1,12}$/', $captchaInput)) {
+        $errors[] = 'Please solve the human verification question.';
+    } elseif ($captchaExpected === '' || $captchaInput !== $captchaExpected) {
+        $errors[] = 'Human verification failed. Please try again.';
     }
 
     if ($errors === []) {
@@ -106,6 +139,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $sent = true;
         }
     }
+
+    // Rotate captcha after every submit attempt to prevent replay.
+    $_SESSION[$captchaSessionKey] = $makeCaptcha();
+    $captchaQuestion = (string) ($_SESSION[$captchaSessionKey]['question'] ?? '2 + 2');
 }
 
 require_once AKH_ROOT . '/includes/header.php';
@@ -163,6 +200,11 @@ require_once AKH_ROOT . '/includes/header.php';
           <label class="field">
             <span>Project details <span class="req">*</span></span>
             <textarea name="project" rows="8" required maxlength="8000" placeholder="Timeline, deliverables, references, dates…"><?php echo h($_POST['project'] ?? ''); ?></textarea>
+          </label>
+          <label class="field">
+            <span>Verify human <span class="req">*</span></span>
+            <span class="field-hint">Solve this: <strong><?php echo h($captchaQuestion); ?></strong></span>
+            <input type="text" name="captcha_answer" required maxlength="12" inputmode="numeric" autocomplete="off" placeholder="Your answer" value="<?php echo h($_POST['captcha_answer'] ?? ''); ?>" />
           </label>
           <button type="submit" class="btn btn--primary">Send message</button>
         </form>
