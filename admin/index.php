@@ -8,6 +8,7 @@ require_once AKH_ROOT . '/includes/auth.php';
 require_once AKH_ROOT . '/includes/editor-auth.php';
 require_once AKH_ROOT . '/includes/tasks.php';
 require_once AKH_ROOT . '/includes/csrf.php';
+require_once AKH_ROOT . '/includes/admin-charts.php';
 
 akh_require_admin();
 
@@ -55,7 +56,6 @@ foreach ($allTasks as $t) {
 }
 arsort($perClient);
 $topClients = array_slice($perClient, 0, 8, true);
-$maxClientBar = $topClients !== [] ? max($topClients) : 1;
 
 $adminOverviewCsrf = akh_csrf_token();
 $adminOverviewSig = akh_task_poll_signature_all();
@@ -70,7 +70,6 @@ foreach ($allTasks as $t) {
 }
 arsort($perEditor);
 $topEditors = array_slice($perEditor, 0, 8, true);
-$maxEditorBar = $topEditors !== [] ? max($topEditors) : 1;
 
 $editorCount = count($editors);
 $flowAwaiting = 0;
@@ -132,7 +131,47 @@ foreach ($allTasks as $t) {
     $perEditType[$et] = ($perEditType[$et] ?? 0) + 1;
 }
 arsort($perEditType);
-$maxEditTypeBar = $perEditType !== [] ? max($perEditType) : 1;
+
+$statusChartKeys = ['new', 'assigned', 'in_progress', 'review', 'delivered', 'reverted', 'closed', 'other'];
+$chartStatus = ['labels' => [], 'data' => [], 'colors' => [], 'urls' => []];
+foreach ($statusChartKeys as $sk) {
+    $n = (int) ($counts[$sk] ?? 0);
+    if ($n === 0) {
+        continue;
+    }
+    $chartStatus['labels'][] = $sk === 'other' ? 'Other' : akh_task_status_label($sk);
+    $chartStatus['data'][] = $n;
+    $chartStatus['colors'][] = akh_admin_chart_status_color($sk);
+    $chartStatus['urls'][] = $sk === 'other' ? $tasksBase : $tasksBase . '?f_status=' . rawurlencode($sk);
+}
+
+$chartEditTypes = ['labels' => [], 'data' => [], 'colors' => []];
+foreach ($perEditType as $slug => $num) {
+    $chartEditTypes['labels'][] = akh_task_edit_type_label($slug);
+    $chartEditTypes['data'][] = (int) $num;
+}
+$chartEditTypes['colors'] = akh_admin_chart_palette(count($chartEditTypes['labels']));
+
+$chartClients = ['labels' => [], 'data' => [], 'urls' => []];
+foreach ($topClients as $cn => $num) {
+    $chartClients['labels'][] = (string) $cn;
+    $chartClients['data'][] = (int) $num;
+    $chartClients['urls'][] = $tasksBase . '?f_client=' . rawurlencode((string) $cn);
+}
+
+$chartEditors = ['labels' => [], 'data' => [], 'urls' => []];
+foreach ($topEditors as $en => $num) {
+    $chartEditors['labels'][] = (string) $en;
+    $chartEditors['data'][] = (int) $num;
+    $chartEditors['urls'][] = $tasksBase . '?f_editor=' . rawurlencode((string) $en);
+}
+
+$adminChartPayload = [
+    'status' => $chartStatus,
+    'editTypes' => $chartEditTypes,
+    'clients' => $chartClients,
+    'editors' => $chartEditors,
+];
 
 require_once AKH_ROOT . '/includes/header.php';
 ?>
@@ -309,106 +348,65 @@ require_once AKH_ROOT . '/includes/header.php';
         </div>
       </section>
 
-      <section class="admin-panel admin-fade-stagger" aria-labelledby="edit-types-h">
-        <h2 id="edit-types-h" class="admin-panel__title">Edit types (chart)</h2>
-        <p class="admin-panel__lead">How many editor tasks exist for each deliverable type.</p>
-        <?php if ($perEditType === []): ?>
-          <p class="portal-muted">No typed tasks yet.</p>
-        <?php else: ?>
-          <ul class="admin-barlist">
-            <?php foreach ($perEditType as $slug => $num): ?>
-              <li>
-                <div class="admin-barlist__row admin-barlist__row--static">
-                  <span class="admin-barlist__name"><?php echo h(akh_task_edit_type_label($slug)); ?></span>
-                  <span class="admin-barlist__track"><span class="admin-barlist__fill admin-barlist__fill--type" style="width: <?php echo (int) round($num / $maxEditTypeBar * 100); ?>%;"></span></span>
-                  <span class="admin-barlist__n"><?php echo (int) $num; ?></span>
-                </div>
-              </li>
-            <?php endforeach; ?>
-          </ul>
-        <?php endif; ?>
+      <section class="admin-charts-grid admin-fade-stagger" aria-label="Task analytics charts">
+        <article class="admin-chart-card admin-panel">
+          <h2 class="admin-panel__title">Tasks by status</h2>
+          <p class="admin-panel__lead">Doughnut chart — click a slice to open the filtered task board.</p>
+          <?php if ($chartStatus['data'] === []): ?>
+            <p class="portal-muted admin-chart-card__empty">No tasks to chart yet.</p>
+          <?php else: ?>
+            <div class="admin-chart-canvas-wrap admin-chart-canvas-wrap--doughnut">
+              <canvas id="akh-chart-status" role="img" aria-label="Task counts by status"></canvas>
+            </div>
+          <?php endif; ?>
+        </article>
+        <article class="admin-chart-card admin-panel">
+          <h2 class="admin-panel__title">Edit types</h2>
+          <p class="admin-panel__lead">Vertical bar chart of tasks per deliverable type.</p>
+          <?php if ($chartEditTypes['data'] === []): ?>
+            <p class="portal-muted admin-chart-card__empty">No typed tasks yet.</p>
+          <?php else: ?>
+            <div class="admin-chart-canvas-wrap admin-chart-canvas-wrap--bar">
+              <canvas id="akh-chart-edit-types" role="img" aria-label="Task counts by edit type"></canvas>
+            </div>
+          <?php endif; ?>
+        </article>
+        <article class="admin-chart-card admin-panel">
+          <h2 class="admin-panel__title">Top clients</h2>
+          <p class="admin-panel__lead">Horizontal bars — click a row to filter by client.</p>
+          <?php if ($chartClients['data'] === []): ?>
+            <p class="portal-muted admin-chart-card__empty">No client-scoped tasks yet.</p>
+          <?php else: ?>
+            <div class="admin-chart-canvas-wrap admin-chart-canvas-wrap--hbar">
+              <canvas id="akh-chart-clients" role="img" aria-label="Top clients by task count"></canvas>
+            </div>
+          <?php endif; ?>
+        </article>
+        <article class="admin-chart-card admin-panel">
+          <h2 class="admin-panel__title">Editor workload</h2>
+          <p class="admin-panel__lead">Assigned task count per editor — click to filter.</p>
+          <?php if ($chartEditors['data'] === []): ?>
+            <p class="portal-muted admin-chart-card__empty">No assigned editors yet.</p>
+          <?php else: ?>
+            <div class="admin-chart-canvas-wrap admin-chart-canvas-wrap--hbar">
+              <canvas id="akh-chart-editors" role="img" aria-label="Editors by assigned task count"></canvas>
+            </div>
+          <?php endif; ?>
+        </article>
       </section>
-
-      <div class="admin-overview__split admin-fade-stagger">
-        <section class="admin-panel" aria-labelledby="status-breakdown-h">
-          <h2 id="status-breakdown-h" class="admin-panel__title">Status mix</h2>
-          <p class="admin-panel__lead">Click a segment to open the task list filtered by that status.</p>
-          <div class="admin-stackbar" role="list">
-            <?php
-            $statusKeys = ['new', 'assigned', 'in_progress', 'review', 'delivered', 'reverted', 'closed', 'other'];
-            foreach ($statusKeys as $sk):
-                $n = (int) ($counts[$sk] ?? 0);
-                if ($totalTasks === 0) {
-                    $w = 0;
-                } else {
-                    $w = max(0.5, (int) round($n / $totalTasks * 10000) / 100);
-                }
-                if ($n === 0) {
-                    continue;
-                }
-                $lab = $sk === 'other' ? 'Other' : akh_task_status_label($sk);
-                $href = $sk === 'other' ? $tasksBase : $tasksBase . '?f_status=' . rawurlencode($sk);
-                ?>
-            <a class="admin-stackbar__seg admin-stackbar__seg--<?php echo h(preg_replace('/[^a-z_]/', '', $sk)); ?>" style="width: <?php echo $w; ?>%;" href="<?php echo h($href); ?>" title="<?php echo h($lab); ?>: <?php echo $n; ?>">
-              <span class="admin-stackbar__label"><?php echo h($lab); ?></span>
-              <span class="admin-stackbar__n"><?php echo $n; ?></span>
-            </a>
-            <?php endforeach; ?>
-            <?php if ($totalTasks === 0): ?>
-              <p class="portal-muted">No tasks to chart yet.</p>
-            <?php endif; ?>
-          </div>
-          <ul class="admin-mini-legend">
-            <?php foreach (['new', 'assigned', 'in_progress', 'review', 'delivered', 'reverted', 'closed'] as $sk): ?>
-              <li><a href="<?php echo h($tasksBase . '?f_status=' . rawurlencode($sk)); ?>"><?php echo h(akh_task_status_label($sk)); ?> — <?php echo (int) ($counts[$sk] ?? 0); ?></a></li>
-            <?php endforeach; ?>
-            <?php if (($counts['other'] ?? 0) > 0): ?>
-              <li><span class="portal-muted">Other — <?php echo (int) $counts['other']; ?></span></li>
-            <?php endif; ?>
-          </ul>
-        </section>
-        <section class="admin-panel" aria-labelledby="workload-h">
-          <h2 id="workload-h" class="admin-panel__title">Workload</h2>
-          <h3 class="admin-panel__sub">Top clients by task count</h3>
-          <?php if ($topClients === []): ?>
-            <p class="portal-muted">No client-scoped tasks yet.</p>
-          <?php else: ?>
-            <ul class="admin-barlist">
-              <?php foreach ($topClients as $cn => $num): ?>
-                <li>
-                  <a class="admin-barlist__row" href="<?php echo h($tasksBase . '?f_client=' . rawurlencode((string) $cn)); ?>">
-                    <span class="admin-barlist__name"><?php echo h((string) $cn); ?></span>
-                    <span class="admin-barlist__track"><span class="admin-barlist__fill" style="width: <?php echo (int) round($num / $maxClientBar * 100); ?>%;"></span></span>
-                    <span class="admin-barlist__n"><?php echo (int) $num; ?></span>
-                  </a>
-                </li>
-              <?php endforeach; ?>
-            </ul>
-          <?php endif; ?>
-          <h3 class="admin-panel__sub">Editors by assigned tasks</h3>
-          <?php if ($topEditors === []): ?>
-            <p class="portal-muted">No assigned editors yet.</p>
-          <?php else: ?>
-            <ul class="admin-barlist">
-              <?php foreach ($topEditors as $en => $num): ?>
-                <li>
-                  <a class="admin-barlist__row" href="<?php echo h($tasksBase . '?f_editor=' . rawurlencode((string) $en)); ?>">
-                    <span class="admin-barlist__name"><?php echo h((string) $en); ?></span>
-                    <span class="admin-barlist__track"><span class="admin-barlist__fill admin-barlist__fill--ed" style="width: <?php echo (int) round($num / $maxEditorBar * 100); ?>%;"></span></span>
-                    <span class="admin-barlist__n"><?php echo (int) $num; ?></span>
-                  </a>
-                </li>
-              <?php endforeach; ?>
-            </ul>
-          <?php endif; ?>
-        </section>
-      </div>
     </div>
   </main>
   <?php
   $akhPushJs = AKH_ROOT . '/assets/js/portal-push-notify.js';
   $akhPushVer = is_file($akhPushJs) ? (string) filemtime($akhPushJs) : '1';
+  $akhChartsJs = AKH_ROOT . '/assets/js/admin-overview-charts.js';
+  $akhChartsVer = is_file($akhChartsJs) ? (string) filemtime($akhChartsJs) : '1';
   ?>
+  <script>
+    window._akhAdminCharts = <?php echo json_encode($adminChartPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE); ?>;
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <script defer src="<?php echo h(base_path('assets/js/admin-overview-charts.js')); ?>?v=<?php echo h($akhChartsVer); ?>"></script>
   <script>
     window._akhPortalPush = {
       mode: 'admin_overview',

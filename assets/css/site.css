@@ -4718,16 +4718,49 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   margin-right: 0.25rem;
 }
 
-.admin-attendance-charts {
+.admin-charts-grid {
   display: grid;
   gap: 1.25rem;
-  margin: 0 0 1.5rem;
+  margin: 0 0 1.75rem;
 }
 
-@media (min-width: 900px) {
-  .admin-attendance-charts {
+@media (min-width: 960px) {
+  .admin-charts-grid {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+.admin-chart-card {
+  margin: 0;
+  min-height: 0;
+}
+
+.admin-chart-card__empty {
+  margin: 1rem 0 0.5rem;
+  min-height: 8rem;
+  display: flex;
+  align-items: center;
+}
+
+.admin-chart-canvas-wrap {
+  position: relative;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.admin-chart-canvas-wrap--doughnut {
+  height: min(320px, 52vw);
+  min-height: 240px;
+}
+
+.admin-chart-canvas-wrap--bar {
+  height: min(340px, 58vw);
+  min-height: 260px;
+}
+
+.admin-chart-canvas-wrap--hbar {
+  height: min(280px, 42vw);
+  min-height: 200px;
 }
 
 .admin-barlist__n {

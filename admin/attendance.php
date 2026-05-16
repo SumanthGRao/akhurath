@@ -73,27 +73,6 @@ $monthLabel = date('F Y', strtotime(sprintf('%04d-%02d-01', $report['year'], $re
 $exportQs = http_build_query(['year' => $report['year'], 'month' => $report['month']]);
 $exportBase = base_path('admin/attendance-export.php?' . $exportQs);
 
-$teamPresent = 0;
-$teamWorking = 0;
-$teamShort = 0;
-$teamAbsent = 0;
-$attChartEditors = [];
-foreach ($report['editors'] as $ed) {
-    $teamPresent += (int) ($ed['present_working_days'] ?? 0);
-    $teamWorking += (int) ($ed['working_days'] ?? 0);
-    $teamShort += (int) ($ed['days_under_8h'] ?? 0);
-    $teamAbsent += (int) ($ed['leave_days'] ?? 0);
-    $wd = max(1, (int) ($ed['working_days'] ?? 0));
-    $attChartEditors[] = [
-        'name' => (string) ($ed['username'] ?? ''),
-        'present_pct' => (int) round((int) ($ed['present_working_days'] ?? 0) / $wd * 100),
-        'short' => (int) ($ed['days_under_8h'] ?? 0),
-        'absent' => (int) ($ed['leave_days'] ?? 0),
-    ];
-}
-$teamPresentPct = $teamWorking > 0 ? (int) round($teamPresent / $teamWorking * 100) : 0;
-$maxTeamBar = max($teamPresent, $teamShort, $teamAbsent, 1);
-
 $pendingLeaves = akh_editor_leave_pending_list();
 $okBanner = (string) ($_GET['ok'] ?? '') === '1';
 $dataClearFlash = '';
@@ -123,7 +102,7 @@ require_once AKH_ROOT . '/includes/header.php';
       <header class="admin-head">
         <div>
           <h1 class="portal-title">Editor attendance</h1>
-          <p class="portal-lead admin-head__meta">Charts summarise the month; open an editor for the full calendar. <strong class="atd-legend atd-legend--leave">Red</strong> absent · <strong class="atd-legend atd-legend--pleave">Purple</strong> approved leave · Saturday half-day. <span class="admin-attendance-tz">All times <?php echo h(AKH_SITE_TIMEZONE === 'Asia/Kolkata' ? 'IST (Asia/Kolkata)' : AKH_SITE_TIMEZONE); ?>.</span></p>
+          <p class="portal-lead admin-head__meta">One line per editor — open a name for the full calendar. Export the month as Excel or PDF below. <strong class="atd-legend atd-legend--leave">Red</strong> absent · <strong class="atd-legend atd-legend--pleave">Purple</strong> approved leave · Saturday half-day. <span class="admin-attendance-tz">All times <?php echo h(AKH_SITE_TIMEZONE === 'Asia/Kolkata' ? 'IST (Asia/Kolkata)' : AKH_SITE_TIMEZONE); ?>.</span></p>
         </div>
         <div class="admin-head__actions">
           <?php $adminConsoleActive = ''; require __DIR__ . '/includes/admin-console-sidebar.php'; ?>
@@ -159,53 +138,6 @@ require_once AKH_ROOT . '/includes/header.php';
           <a class="btn btn--ghost btn--sm" href="<?php echo h($exportBase . '&format=csv'); ?>">Excel (CSV)</a>
           <a class="btn btn--ghost btn--sm" href="<?php echo h($exportBase . '&format=excel'); ?>">Excel (.xls)</a>
           <a class="btn btn--ghost btn--sm" href="<?php echo h($exportBase . '&format=pdf'); ?>" target="_blank" rel="noopener">PDF</a>
-        </div>
-      <?php endif; ?>
-
-      <?php if ($report['editors'] !== []): ?>
-        <div class="admin-attendance-charts">
-          <section class="admin-panel" aria-labelledby="att-team-chart-h">
-            <h2 id="att-team-chart-h" class="admin-panel__title">Team month (chart)</h2>
-            <p class="admin-panel__lead">All editors combined — <?php echo (int) $teamPresentPct; ?>% of working days had a full present day (<?php echo (int) $teamPresent; ?> / <?php echo (int) $teamWorking; ?>).</p>
-            <ul class="admin-barlist">
-              <li>
-                <div class="admin-barlist__row admin-barlist__row--static">
-                  <span class="admin-barlist__name">Present days</span>
-                  <span class="admin-barlist__track"><span class="admin-barlist__fill admin-barlist__fill--att-present" style="width: <?php echo (int) round($teamPresent / $maxTeamBar * 100); ?>%;"></span></span>
-                  <span class="admin-barlist__n"><?php echo (int) $teamPresent; ?></span>
-                </div>
-              </li>
-              <li>
-                <div class="admin-barlist__row admin-barlist__row--static">
-                  <span class="admin-barlist__name">Short-hour days</span>
-                  <span class="admin-barlist__track"><span class="admin-barlist__fill admin-barlist__fill--att-short" style="width: <?php echo (int) round($teamShort / $maxTeamBar * 100); ?>%;"></span></span>
-                  <span class="admin-barlist__n"><?php echo (int) $teamShort; ?></span>
-                </div>
-              </li>
-              <li>
-                <div class="admin-barlist__row admin-barlist__row--static">
-                  <span class="admin-barlist__name">Absent days</span>
-                  <span class="admin-barlist__track"><span class="admin-barlist__fill admin-barlist__fill--att-absent" style="width: <?php echo (int) round($teamAbsent / $maxTeamBar * 100); ?>%;"></span></span>
-                  <span class="admin-barlist__n"><?php echo (int) $teamAbsent; ?></span>
-                </div>
-              </li>
-            </ul>
-          </section>
-          <section class="admin-panel" aria-labelledby="att-editor-chart-h">
-            <h2 id="att-editor-chart-h" class="admin-panel__title">By editor (chart)</h2>
-            <p class="admin-panel__lead">Bar = share of working days present. Right column: short-hour and absent day counts.</p>
-            <ul class="admin-barlist">
-              <?php foreach ($attChartEditors as $row): ?>
-                <li>
-                  <div class="admin-barlist__row admin-barlist__row--static">
-                    <span class="admin-barlist__name"><?php echo h($row['name']); ?></span>
-                    <span class="admin-barlist__track"><span class="admin-barlist__fill admin-barlist__fill--att-present" style="width: <?php echo (int) $row['present_pct']; ?>%;"></span></span>
-                    <span class="admin-barlist__n"><?php echo (int) $row['present_pct']; ?>% · <?php echo (int) $row['short']; ?> short · <?php echo (int) $row['absent']; ?> absent</span>
-                  </div>
-                </li>
-              <?php endforeach; ?>
-            </ul>
-          </section>
         </div>
       <?php endif; ?>
 
