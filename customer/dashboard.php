@@ -103,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $referenceLink = trim((string) ($_POST['reference_link'] ?? ''));
             $mode = (string) ($_POST['delivery_mode'] ?? '');
             $link = trim((string) ($_POST['drive_link'] ?? ''));
-            $task = akh_task_client_update($tid, $user, $coupleName, $editType, $projectDetails, $referenceLink, $mode, $link, false);
+            $task = akh_task_client_update($tid, $user, $coupleName, $editType, $projectDetails, $referenceLink, $mode, $link, true);
             if ($task === null) {
                 $error = 'Could not update the task. Check all required fields, or this task may no longer be editable (after an editor is assigned).';
             } else {
@@ -130,9 +130,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($editTypes === []) {
                 $error = 'Pick at least one type of edit.';
             } elseif (count($editTypes) >= 2) {
-                $task = akh_task_create_bundle($user, $coupleName, $editTypes, $projectDetails, $referenceLink, $mode, $link, false);
+                $task = akh_task_create_bundle($user, $coupleName, $editTypes, $projectDetails, $referenceLink, $mode, $link, true);
                 if ($task === null) {
-                    $error = 'Could not create the job. Check couple name, at least two edit types, project details, a valid https reference link, and footage options (Drive link when required).';
+                    $error = 'Could not create the job. Check couple name, at least two edit types, project details, and footage options (Drive link when required).';
                 } else {
                     $params = [
                         'ticket' => (string) ($task['id'] ?? ''),
@@ -146,9 +146,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     exit;
                 }
             } else {
-                $task = akh_task_create($user, $coupleName, $editTypes[0], $projectDetails, $referenceLink, $mode, $link, false);
+                $task = akh_task_create($user, $coupleName, $editTypes[0], $projectDetails, $referenceLink, $mode, $link, true);
                 if ($task === null) {
-                    $error = 'Could not create the task. Fill every required field: couple name, type of edit, project details, reference link (https), and either a Google Drive link or a storage/courier option as described.';
+                    $error = 'Could not create the task. Fill every required field: couple name, type of edit, project details, and either a Google Drive link or a storage/courier option as described.';
                 } else {
                     $params = [
                         'ticket' => (string) ($task['id'] ?? ''),
@@ -508,8 +508,8 @@ require_once AKH_ROOT . '/includes/header.php';
               <textarea name="project_details" rows="6" required maxlength="8000"><?php echo h($edProj); ?></textarea>
             </label>
             <label class="field">
-              <span>Reference video / style link <span class="req">*</span></span>
-              <input type="url" name="reference_link" required maxlength="2000" value="<?php echo h($edRef); ?>" />
+              <span>Reference video / style link <span class="portal-opt">(optional)</span></span>
+              <input type="url" name="reference_link" maxlength="2000" value="<?php echo h($edRef); ?>" placeholder="https://…" />
             </label>
             <fieldset class="field field--fieldset">
               <legend>Footage <span class="req">*</span></legend>
@@ -583,8 +583,8 @@ require_once AKH_ROOT . '/includes/header.php';
               <textarea name="project_details" rows="6" required maxlength="8000" placeholder="Deliverables, pacing, music, deadlines, and for “Other” describe exactly what you need…"></textarea>
             </label>
             <label class="field">
-              <span>Reference video / style link <span class="req">*</span></span>
-              <input type="url" name="reference_link" required maxlength="2000" placeholder="https://…" inputmode="url" />
+              <span>Reference video / style link <span class="portal-opt">(optional)</span></span>
+              <input type="url" name="reference_link" maxlength="2000" placeholder="https://…" inputmode="url" />
             </label>
             <fieldset class="field field--fieldset">
               <legend>Footage: Drive, cloud upload, or courier <span class="req">*</span></legend>

@@ -120,6 +120,20 @@ $avgLivePerEditor = $editorCount > 0 ? round($activePipeline / $editorCount, 2) 
 
 $tasksBase = base_path('admin/tasks.php');
 
+$perEditType = [];
+foreach ($allTasks as $t) {
+    if (akh_task_is_bundle_parent($t)) {
+        continue;
+    }
+    $et = (string) ($t['edit_type'] ?? '');
+    if ($et === '' || $et === 'bundle_parent') {
+        continue;
+    }
+    $perEditType[$et] = ($perEditType[$et] ?? 0) + 1;
+}
+arsort($perEditType);
+$maxEditTypeBar = $perEditType !== [] ? max($perEditType) : 1;
+
 require_once AKH_ROOT . '/includes/header.php';
 ?>
 
@@ -128,7 +142,7 @@ require_once AKH_ROOT . '/includes/header.php';
       <header class="admin-head">
         <div>
           <h1 class="portal-title">Overview</h1>
-          <p class="portal-lead admin-head__meta">Signed in as <strong><?php echo h(akh_admin_current() ?? ''); ?></strong> — live snapshot of accounts and the task pipeline.</p>
+          <p class="portal-lead admin-head__meta">Signed in as <strong><?php echo h(akh_admin_current() ?? ''); ?></strong> — charts below summarise clients, editors, tasks, and pipeline health at a glance.</p>
         </div>
         <div class="admin-head__actions">
           <?php $adminConsoleActive = ''; require __DIR__ . '/includes/admin-console-sidebar.php'; ?>
@@ -293,6 +307,26 @@ require_once AKH_ROOT . '/includes/header.php';
             </ul>
           </div>
         </div>
+      </section>
+
+      <section class="admin-panel admin-fade-stagger" aria-labelledby="edit-types-h">
+        <h2 id="edit-types-h" class="admin-panel__title">Edit types (chart)</h2>
+        <p class="admin-panel__lead">How many editor tasks exist for each deliverable type.</p>
+        <?php if ($perEditType === []): ?>
+          <p class="portal-muted">No typed tasks yet.</p>
+        <?php else: ?>
+          <ul class="admin-barlist">
+            <?php foreach ($perEditType as $slug => $num): ?>
+              <li>
+                <div class="admin-barlist__row admin-barlist__row--static">
+                  <span class="admin-barlist__name"><?php echo h(akh_task_edit_type_label($slug)); ?></span>
+                  <span class="admin-barlist__track"><span class="admin-barlist__fill admin-barlist__fill--type" style="width: <?php echo (int) round($num / $maxEditTypeBar * 100); ?>%;"></span></span>
+                  <span class="admin-barlist__n"><?php echo (int) $num; ?></span>
+                </div>
+              </li>
+            <?php endforeach; ?>
+          </ul>
+        <?php endif; ?>
       </section>
 
       <div class="admin-overview__split admin-fade-stagger">

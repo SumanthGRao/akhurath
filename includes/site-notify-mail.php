@@ -321,6 +321,7 @@ function akh_site_mail_delivery_sentence(string $mode): string
 function akh_site_mail_edit_type_label(string $slug): string
 {
     $map = [
+        'instagram_reel' => 'Instagram reel',
         'teaser_1min' => '1 min teaser',
         'doc_teaser_2_3min' => '2–3 min documentary teaser',
         'highlights_3_5min' => '3–5 min highlights / film',

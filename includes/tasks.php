@@ -968,6 +968,7 @@ function akh_task_status_label(string $status): string
 function akh_task_client_edit_types(): array
 {
     return [
+        'instagram_reel' => 'Instagram reel',
         'teaser_1min' => '1 min teaser',
         'doc_teaser_2_3min' => '2–3 min documentary teaser',
         'highlights_3_5min' => '3–5 min highlights / film',

@@ -3906,6 +3906,12 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   margin: 1.5rem 0;
 }
 
+.portal-opt {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 0.88em;
+}
+
 .portal-note {
   margin: 1rem 0 0;
   font-size: 0.9rem;
@@ -4671,6 +4677,57 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
 
 .admin-barlist__fill--ed {
   background: rgba(90, 120, 160, 0.55);
+}
+
+.admin-barlist__fill--type {
+  background: rgba(120, 90, 160, 0.55);
+}
+
+.admin-barlist__row--static .admin-barlist__fill {
+  animation: none;
+}
+
+.admin-barlist__fill--att-present {
+  background: rgba(72, 140, 95, 0.6);
+}
+
+.admin-barlist__fill--att-short {
+  background: rgba(200, 130, 50, 0.6);
+}
+
+.admin-barlist__fill--att-absent {
+  background: rgba(180, 70, 70, 0.55);
+}
+
+.admin-attendance-export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0 0 1.25rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  background: rgba(26, 23, 21, 0.04);
+  border: 1px solid rgba(26, 23, 21, 0.08);
+}
+
+.admin-attendance-export__label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-right: 0.25rem;
+}
+
+.admin-attendance-charts {
+  display: grid;
+  gap: 1.25rem;
+  margin: 0 0 1.5rem;
+}
+
+@media (min-width: 900px) {
+  .admin-attendance-charts {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .admin-barlist__n {
