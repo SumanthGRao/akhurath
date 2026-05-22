@@ -89,8 +89,8 @@ const AKH_EDITOR_OFFICE_ONLY = false;
 /** Office public IPv4 and IPv6 /64 range — copy from editor login page at the studio (covers all PCs). */
 const AKH_EDITOR_OFFICE_NETWORKS = '';
 
-/** true on Hostinger (proxy headers). false on local XAMPP. */
-const AKH_EDITOR_TRUST_PROXY_IP = false;
+/** Legacy flag; forwarded headers are always read for office matching. Keep true on Hostinger. */
+const AKH_EDITOR_TRUST_PROXY_IP = true;
 
 /** Allow 127.0.0.1 for local XAMPP; set false on production. */
 const AKH_EDITOR_OFFICE_ALLOW_LOOPBACK = true;

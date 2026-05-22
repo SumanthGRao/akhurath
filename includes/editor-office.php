@@ -12,8 +12,20 @@ function akh_editor_office_only_enabled(): bool
     return defined('AKH_EDITOR_OFFICE_ONLY') && AKH_EDITOR_OFFICE_ONLY;
 }
 
+function akh_editor_ip_normalize(string $ip): string
+{
+    $ip = trim($ip);
+    if (str_contains($ip, '%')) {
+        $ip = explode('%', $ip, 2)[0];
+    }
+
+    return strtolower($ip);
+}
+
 function akh_editor_ip_valid(string $ip): bool
 {
+    $ip = akh_editor_ip_normalize($ip);
+
     return $ip !== '' && filter_var($ip, FILTER_VALIDATE_IP) !== false;
 }
 
@@ -38,7 +50,7 @@ function akh_editor_request_ip_candidates(): array
     $seen = [];
 
     $add = static function (string $ip) use (&$seen): void {
-        $ip = trim($ip);
+        $ip = akh_editor_ip_normalize($ip);
         if (akh_editor_ip_valid($ip)) {
             $seen[$ip] = true;
         }
@@ -46,23 +58,21 @@ function akh_editor_request_ip_candidates(): array
 
     $add((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
 
-    $trustProxy = defined('AKH_EDITOR_TRUST_PROXY_IP') && AKH_EDITOR_TRUST_PROXY_IP;
-    $remote = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
-    if ($trustProxy || ($remote !== '' && !akh_editor_ip_is_public($remote))) {
-        foreach ([
-            'HTTP_CF_CONNECTING_IP',
-            'HTTP_TRUE_CLIENT_IP',
-            'HTTP_X_REAL_IP',
-            'HTTP_X_FORWARDED_FOR',
-            'HTTP_CLIENT_IP',
-        ] as $key) {
-            $raw = (string) ($_SERVER[$key] ?? '');
-            if ($raw === '') {
-                continue;
-            }
-            foreach (explode(',', $raw) as $part) {
-                $add($part);
-            }
+    // Hostinger/CDN: real client IP is often only in forwarded headers, not REMOTE_ADDR.
+    foreach ([
+        'HTTP_CF_CONNECTING_IP',
+        'HTTP_TRUE_CLIENT_IP',
+        'HTTP_X_REAL_IP',
+        'HTTP_X_FORWARDED_FOR',
+        'HTTP_FORWARDED_FOR',
+        'HTTP_CLIENT_IP',
+    ] as $key) {
+        $raw = (string) ($_SERVER[$key] ?? '');
+        if ($raw === '') {
+            continue;
+        }
+        foreach (explode(',', $raw) as $part) {
+            $add($part);
         }
     }
 
@@ -130,13 +140,23 @@ function akh_editor_ip_matches_network(string $ip, string $network): bool
     if ($network === '' || !akh_editor_ip_valid($ip)) {
         return false;
     }
+    $ip = akh_editor_ip_normalize($ip);
+
     if (!str_contains($network, '/')) {
-        return $ip === $network;
+        $netHost = akh_editor_ip_normalize($network);
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
+            $ipBin = inet_pton($ip);
+            $netBin = inet_pton($netHost);
+
+            return $ipBin !== false && $netBin !== false && $ipBin === $netBin;
+        }
+
+        return $ip === $netHost;
     }
 
     [$subnet, $bitsStr] = explode('/', $network, 2);
     $bits = (int) $bitsStr;
-    $subnet = trim($subnet);
+    $subnet = akh_editor_ip_normalize(trim($subnet));
     if ($subnet === '' || !akh_editor_ip_valid($subnet)) {
         return false;
     }
@@ -296,6 +316,9 @@ function akh_editor_require_office_network(): void
     $home = h(base_path('index.php'));
     $site = h(SITE_NAME);
     $suggest = akh_editor_office_networks_suggested();
+    $candidates = akh_editor_request_ip_candidates();
+    $configured = akh_editor_office_network_list();
+    $remote = h((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
 
     echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />';
     echo '<title>Studio network required — ' . $site . '</title>';
@@ -303,10 +326,16 @@ function akh_editor_require_office_network(): void
     echo '<body class="page-portal"><main id="main" class="portal-main"><div class="portal-card">';
     echo '<h1 class="portal-title">Editor login — studio only</h1>';
     echo '<p class="portal-lead">Sign-in is only allowed from the Akhurath office internet connection, not from home or personal mobile data.</p>';
-    echo '<p class="portal-note">Connect to <strong>office Wi‑Fi</strong> and open editor login again. Employees do not need to register devices — one config covers every PC on that network.</p>';
+    echo '<p class="portal-note">Connect to <strong>office Wi‑Fi</strong> and open editor login again.</p>';
+    echo '<div class="editor-office-status" style="margin:1rem 0">';
+    echo '<p class="portal-note editor-office-status__line"><strong>Server REMOTE_ADDR:</strong> ' . ($remote !== '' ? $remote : 'unknown') . '</p>';
+    echo '<p class="portal-note editor-office-status__line"><strong>IPs we checked:</strong> ' . h($candidates !== [] ? implode(', ', $candidates) : '(none)') . '</p>';
+    echo '<p class="portal-note editor-office-status__line"><strong>Allowed in config:</strong> ' . h($configured !== [] ? implode(', ', $configured) : '(empty — add AKH_EDITOR_OFFICE_NETWORKS)') . '</p>';
     if ($suggest !== '') {
-        echo '<p class="portal-muted">If you are already on office Wi‑Fi and still see this, ask admin to set:<br /><code>AKH_EDITOR_OFFICE_NETWORKS = \'' . h($suggest) . '\'</code></p>';
+        echo '<p class="portal-note editor-office-status__line"><strong>Use this line in includes/config.php:</strong><br /><code>AKH_EDITOR_OFFICE_NETWORKS = \'' . h($suggest) . '\'</code></p>';
     }
+    echo '<p class="portal-muted">Include both IPv4 and IPv6 if shown. On Hostinger set <code>AKH_EDITOR_TRUST_PROXY_IP = true</code>. After editing config, wait 1 minute and hard-refresh.</p>';
+    echo '</div>';
     echo '<p class="portal-foot"><a class="text-link" href="' . $home . '">← Website home</a></p>';
     echo '</div></main></body></html>';
     exit;
