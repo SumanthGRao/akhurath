@@ -60,13 +60,21 @@ require_once AKH_ROOT . '/includes/header.php';
   <main id="main" class="portal-main">
     <div class="portal-card">
       <h1 class="portal-title">Editor login</h1>
-      <p class="portal-lead">Assign incoming client tasks to yourself and update status. Sign-in is limited to the studio office network when enabled in config.</p>
+      <p class="portal-lead">Assign incoming client tasks to yourself and update status. This is separate from the client portal.</p>
 
-      <div class="editor-office-status" role="status" aria-label="Office network">
-        <?php foreach (akh_editor_office_status_lines() as $line): ?>
-          <p class="portal-note editor-office-status__line"><?php echo h($line); ?></p>
-        <?php endforeach; ?>
-      </div>
+      <?php
+      $showOfficeSetup = !akh_editor_office_only_enabled() || (isset($_GET['setup']) && (string) $_GET['setup'] === '1');
+      if ($showOfficeSetup):
+          ?>
+        <details class="editor-office-setup">
+          <summary class="editor-office-setup__summary">Office network setup (admin)</summary>
+          <div class="editor-office-status" role="status" aria-label="Office network configuration">
+            <?php foreach (akh_editor_office_status_lines() as $line): ?>
+              <p class="portal-note editor-office-status__line"><?php echo h($line); ?></p>
+            <?php endforeach; ?>
+          </div>
+        </details>
+      <?php endif; ?>
 
       <?php if ($dbError !== ''): ?>
         <p class="banner banner--err" role="alert"><?php echo h($dbError); ?></p>
