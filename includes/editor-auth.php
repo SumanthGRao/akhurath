@@ -274,6 +274,9 @@ function akh_editor_logout(): void
 
 function akh_require_editor(): void
 {
+    require_once __DIR__ . '/editor-network.php';
+    akh_editor_require_office_network();
+
     if (akh_editor_current() === null) {
         header('Location: ' . base_path('editor/login.php'));
         exit;

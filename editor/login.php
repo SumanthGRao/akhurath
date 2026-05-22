@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once AKH_ROOT . '/includes/editor-auth.php';
+require_once AKH_ROOT . '/includes/editor-network.php';
 require_once AKH_ROOT . '/includes/csrf.php';
+
+akh_editor_require_office_network();
 
 $pageTitle = 'Editor login — ' . SITE_NAME;
 $metaDescription = 'Staff task board for ' . SITE_NAME . '.';
