@@ -81,27 +81,16 @@ const AKH_SESSION_LIFETIME_SECONDS = 9 * 3600;
 const AKH_EDITOR_ATTENDANCE_ENABLED = true;
 
 /**
- * When true, /editor/login.php, dashboard, and leave pages only respond on office LAN / VPN IPs
- * listed in AKH_EDITOR_ALLOWED_NETWORKS. Clients and admin are not affected.
+ * When true, only browsers whose Device ID is listed in AKH_EDITOR_ALLOWED_DEVICES can use
+ * the editor login and dashboard. Open editor/login.php on each studio PC and copy the ID shown.
  */
-const AKH_EDITOR_OFFICE_NETWORK_ONLY = false;
+const AKH_EDITOR_DEVICE_LOCK = false;
 
 /**
- * Comma-separated IPv4/IPv6 addresses or CIDR blocks allowed to use the editor portal.
- * On Hostinger/production use your office **public** IP (https://ifconfig.me on office Wi‑Fi).
- * LAN ranges like 192.168.0.0/24 only apply to local XAMPP, not the live website.
- * If blocked, the editor page shows the IP the server sees — add that exact value here.
+ * Comma-separated Device IDs from editor/login.php (one per computer/browser), e.g.
+ * 'edv_a1b2c3d4-e5f6-7890-abcd-ef1234567890,edv_…'
  */
-const AKH_EDITOR_ALLOWED_NETWORKS = '106.51.207.42,2406:7400:10a:19a0::/64';
-
-/** Allow 127.0.0.1 / ::1 (local XAMPP). Set false on production if editors never use localhost. */
-const AKH_EDITOR_OFFICE_NETWORK_ALLOW_LOOPBACK = true;
-
-/**
- * When the site sits behind nginx/Cloudflare/Hostinger proxy, set true so X-Forwarded-For is used
- * for the office IP check. Leave false on plain Apache/XAMPP unless you know the proxy is trusted.
- */
-const AKH_EDITOR_TRUST_PROXY_IP = false;
+const AKH_EDITOR_ALLOWED_DEVICES = '';
 
 /**
  * When true (local only): client and editor portals accept username `test` / password `test` without account files.

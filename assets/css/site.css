@@ -3912,28 +3912,40 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   font-size: 0.88em;
 }
 
-.editor-net-status {
+.editor-device-status {
   margin: 0 0 1.25rem;
-  padding: 0.75rem 0.9rem;
+  padding: 0.85rem 1rem;
   border-radius: var(--radius);
   background: rgba(26, 23, 21, 0.04);
   border: 1px solid rgba(26, 23, 21, 0.08);
 }
 
-.editor-net-status__line {
-  margin: 0.2rem 0;
-  font-size: 0.82rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+.editor-device-status__line {
+  margin: 0.35rem 0;
+  font-size: 0.88rem;
   color: var(--muted);
-  word-break: break-word;
 }
 
-.editor-net-status__line:first-child {
-  margin-top: 0;
+.editor-device-status__id {
+  margin: 0.5rem 0;
+  padding: 0.55rem 0.65rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.82rem;
+  word-break: break-all;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--text);
 }
 
-.editor-net-status__line:last-child {
-  margin-bottom: 0;
+.editor-device-status__meta {
+  margin-left: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.editor-device-status__hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
 }
 
 .portal-note {
