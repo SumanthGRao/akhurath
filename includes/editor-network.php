@@ -202,6 +202,37 @@ function akh_editor_request_ip_allowed(): bool
     return false;
 }
 
+/**
+ * Status lines for editor login (verify office lock and which IP Hostinger sees).
+ *
+ * @return list<string>
+ */
+function akh_editor_network_status_lines(): array
+{
+    $lines = [];
+    $on = akh_editor_office_network_required();
+    $lines[] = 'Office-only lock: ' . ($on ? 'ON' : 'OFF (any network can open this page)');
+
+    if (!$on) {
+        return $lines;
+    }
+
+    $primary = akh_editor_request_client_ip();
+    $lines[] = 'IP your server sees: ' . ($primary !== '' ? $primary : 'unknown');
+
+    $candidates = akh_editor_request_ip_candidates();
+    if (count($candidates) > 1) {
+        $lines[] = 'All IPs checked: ' . implode(', ', $candidates);
+    }
+
+    $allow = akh_editor_allowed_network_list();
+    $lines[] = 'Allowed in config: ' . ($allow !== [] ? implode(', ', $allow) : '(empty — everyone blocked except loopback)');
+
+    $lines[] = 'Your access: ' . (akh_editor_request_ip_allowed() ? 'allowed' : 'blocked');
+
+    return $lines;
+}
+
 function akh_editor_require_office_network(): void
 {
     if (akh_editor_request_ip_allowed()) {

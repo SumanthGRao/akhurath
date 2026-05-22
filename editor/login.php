@@ -62,6 +62,12 @@ require_once AKH_ROOT . '/includes/header.php';
       <h1 class="portal-title">Editor login</h1>
       <p class="portal-lead">Assign incoming client tasks to yourself and update status. This is separate from the client portal.</p>
 
+      <div class="editor-net-status" role="status" aria-label="Office network check">
+        <?php foreach (akh_editor_network_status_lines() as $line): ?>
+          <p class="portal-note editor-net-status__line"><?php echo h($line); ?></p>
+        <?php endforeach; ?>
+      </div>
+
       <?php if ($dbError !== ''): ?>
         <p class="banner banner--err" role="alert"><?php echo h($dbError); ?></p>
       <?php elseif ($error !== ''): ?>
