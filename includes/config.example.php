@@ -81,16 +81,19 @@ const AKH_SESSION_LIFETIME_SECONDS = 9 * 3600;
 const AKH_EDITOR_ATTENDANCE_ENABLED = true;
 
 /**
- * When true, only browsers whose Device ID is listed in AKH_EDITOR_ALLOWED_DEVICES can use
- * the editor login and dashboard. Open editor/login.php on each studio PC and copy the ID shown.
+ * When true, editor login/dashboard only work on the studio office internet (not home or mobile data).
+ * Set AKH_EDITOR_OFFICE_NETWORKS once using the line shown on editor/login.php while on office Wi‑Fi.
  */
-const AKH_EDITOR_DEVICE_LOCK = false;
+const AKH_EDITOR_OFFICE_ONLY = false;
 
-/**
- * Comma-separated Device IDs from editor/login.php (one per computer/browser), e.g.
- * 'edv_a1b2c3d4-e5f6-7890-abcd-ef1234567890,edv_…'
- */
-const AKH_EDITOR_ALLOWED_DEVICES = '';
+/** Office public IPv4 and IPv6 /64 range — copy from editor login page at the studio (covers all PCs). */
+const AKH_EDITOR_OFFICE_NETWORKS = '';
+
+/** true on Hostinger (proxy headers). false on local XAMPP. */
+const AKH_EDITOR_TRUST_PROXY_IP = false;
+
+/** Allow 127.0.0.1 for local XAMPP; set false on production. */
+const AKH_EDITOR_OFFICE_ALLOW_LOOPBACK = true;
 
 /**
  * When true (local only): client and editor portals accept username `test` / password `test` without account files.

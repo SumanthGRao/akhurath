@@ -241,23 +241,11 @@ function akh_editor_current(): ?string
     return is_string($u) && $u !== '' ? $u : null;
 }
 
-function akh_editor_login(string $username, string $password, ?string $deviceId = null): bool
+function akh_editor_login(string $username, string $password): bool
 {
-    require_once __DIR__ . '/editor-device.php';
-
-    if (akh_editor_device_lock_enabled()) {
-        $deviceId = $deviceId ?? akh_editor_device_from_request();
-        if (!akh_editor_device_is_allowed($deviceId)) {
-            return false;
-        }
-    }
-
     if (AKH_DEV_TEST_LOGIN && $username === 'test' && $password === 'test') {
         session_regenerate_id(true);
         $_SESSION['akh_editor'] = 'test';
-        if (akh_editor_device_lock_enabled() && $deviceId !== null) {
-            akh_editor_bind_device($deviceId);
-        }
 
         return true;
     }
@@ -275,32 +263,21 @@ function akh_editor_login(string $username, string $password, ?string $deviceId 
 
     session_regenerate_id(true);
     $_SESSION['akh_editor'] = $key;
-    if (akh_editor_device_lock_enabled() && $deviceId !== null) {
-        akh_editor_bind_device($deviceId);
-    }
 
     return true;
 }
 
 function akh_editor_logout(): void
 {
-    unset($_SESSION['akh_editor'], $_SESSION['akh_editor_device']);
-    require_once __DIR__ . '/editor-device.php';
-    akh_editor_clear_device_cookie();
+    unset($_SESSION['akh_editor']);
 }
 
 function akh_require_editor(): void
 {
-    require_once __DIR__ . '/editor-device.php';
-    akh_editor_require_allowed_device();
+    require_once __DIR__ . '/editor-office.php';
+    akh_editor_require_office_network();
 
     if (akh_editor_current() === null) {
-        header('Location: ' . base_path('editor/login.php'));
-        exit;
-    }
-
-    if (!akh_editor_session_device_valid()) {
-        akh_editor_logout();
         header('Location: ' . base_path('editor/login.php'));
         exit;
     }
