@@ -88,10 +88,11 @@ const AKH_EDITOR_OFFICE_NETWORK_ONLY = false;
 
 /**
  * Comma-separated IPv4/IPv6 addresses or CIDR blocks allowed to use the editor portal.
- * Examples: office LAN `192.168.1.0/24`, VPN `10.8.0.0/24`, studio public IP `203.0.113.50`.
- * Find your office public IP: open https://ifconfig.me from a machine on office Wi‑Fi.
+ * On Hostinger/production use your office **public** IP (https://ifconfig.me on office Wi‑Fi).
+ * LAN ranges like 192.168.0.0/24 only apply to local XAMPP, not the live website.
+ * If blocked, the editor page shows the IP the server sees — add that exact value here.
  */
-const AKH_EDITOR_ALLOWED_NETWORKS = '192.168.0.0/24,106.51.207.42';
+const AKH_EDITOR_ALLOWED_NETWORKS = '106.51.207.42';
 
 /** Allow 127.0.0.1 / ::1 (local XAMPP). Set false on production if editors never use localhost. */
 const AKH_EDITOR_OFFICE_NETWORK_ALLOW_LOOPBACK = true;

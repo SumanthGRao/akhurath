@@ -11,34 +11,93 @@ function akh_editor_office_network_required(): bool
     return defined('AKH_EDITOR_OFFICE_NETWORK_ONLY') && AKH_EDITOR_OFFICE_NETWORK_ONLY;
 }
 
-/**
- * Client IP for access checks. Uses REMOTE_ADDR unless proxy trust is enabled.
- */
-function akh_editor_request_client_ip(): string
+function akh_editor_ip_string_valid(string $ip): bool
 {
-    $trustProxy = defined('AKH_EDITOR_TRUST_PROXY_IP') && AKH_EDITOR_TRUST_PROXY_IP;
-    if ($trustProxy) {
-        $xff = (string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? '');
-        if ($xff !== '') {
-            $first = trim(explode(',', $xff)[0]);
-            if ($first !== '' && filter_var($first, FILTER_VALIDATE_IP) !== false) {
-                return $first;
-            }
+    return $ip !== '' && filter_var($ip, FILTER_VALIDATE_IP) !== false;
+}
+
+function akh_editor_ip_is_public(string $ip): bool
+{
+    if (!akh_editor_ip_string_valid($ip)) {
+        return false;
+    }
+
+    return filter_var(
+        $ip,
+        FILTER_VALIDATE_IP,
+        FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+    ) !== false;
+}
+
+/**
+ * All plausible client IPs (REMOTE_ADDR plus trusted proxy headers).
+ *
+ * @return list<string>
+ */
+function akh_editor_request_ip_candidates(): array
+{
+    $seen = [];
+
+    $add = static function (string $ip) use (&$seen): void {
+        $ip = trim($ip);
+        if (akh_editor_ip_string_valid($ip)) {
+            $seen[$ip] = true;
         }
-        $real = (string) ($_SERVER['HTTP_X_REAL_IP'] ?? '');
-        if ($real !== '' && filter_var($real, FILTER_VALIDATE_IP) !== false) {
-            return $real;
+    };
+
+    $add((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+
+    $trustProxy = defined('AKH_EDITOR_TRUST_PROXY_IP') && AKH_EDITOR_TRUST_PROXY_IP;
+    $remote = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+    $needForwarded = $trustProxy || ($remote !== '' && !akh_editor_ip_is_public($remote));
+
+    if ($needForwarded) {
+        $headerKeys = [
+            'HTTP_CF_CONNECTING_IP',
+            'HTTP_TRUE_CLIENT_IP',
+            'HTTP_X_REAL_IP',
+            'HTTP_X_FORWARDED_FOR',
+            'HTTP_CLIENT_IP',
+            'HTTP_FORWARDED_FOR',
+        ];
+        foreach ($headerKeys as $key) {
+            $raw = (string) ($_SERVER[$key] ?? '');
+            if ($raw === '') {
+                continue;
+            }
+            foreach (explode(',', $raw) as $part) {
+                $add($part);
+            }
         }
     }
 
-    return (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+    return array_keys($seen);
+}
+
+/**
+ * Primary IP shown in messages (first public IPv4, else first candidate).
+ */
+function akh_editor_request_client_ip(): string
+{
+    $candidates = akh_editor_request_ip_candidates();
+    foreach ($candidates as $ip) {
+        if (akh_editor_ip_is_public($ip) && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+            return $ip;
+        }
+    }
+
+    return $candidates[0] ?? '';
 }
 
 function akh_editor_request_is_loopback(): bool
 {
-    $ip = akh_editor_request_client_ip();
+    foreach (akh_editor_request_ip_candidates() as $ip) {
+        if ($ip === '127.0.0.1' || $ip === '::1') {
+            return true;
+        }
+    }
 
-    return $ip === '127.0.0.1' || $ip === '::1';
+    return false;
 }
 
 /**
@@ -61,7 +120,7 @@ function akh_editor_allowed_network_list(): array
 function akh_editor_ip_matches_network(string $ip, string $network): bool
 {
     $network = trim($network);
-    if ($network === '' || filter_var($ip, FILTER_VALIDATE_IP) === false) {
+    if ($network === '' || !akh_editor_ip_string_valid($ip)) {
         return false;
     }
     if (!str_contains($network, '/')) {
@@ -71,7 +130,7 @@ function akh_editor_ip_matches_network(string $ip, string $network): bool
     [$subnet, $bitsStr] = explode('/', $network, 2);
     $bits = (int) $bitsStr;
     $subnet = trim($subnet);
-    if ($subnet === '' || filter_var($subnet, FILTER_VALIDATE_IP) === false) {
+    if ($subnet === '' || !akh_editor_ip_string_valid($subnet)) {
         return false;
     }
 
@@ -132,14 +191,11 @@ function akh_editor_request_ip_allowed(): bool
         return true;
     }
 
-    $ip = akh_editor_request_client_ip();
-    if ($ip === '') {
-        return false;
-    }
-
-    foreach (akh_editor_allowed_network_list() as $network) {
-        if (akh_editor_ip_matches_network($ip, $network)) {
-            return true;
+    foreach (akh_editor_request_ip_candidates() as $ip) {
+        foreach (akh_editor_allowed_network_list() as $network) {
+            if (akh_editor_ip_matches_network($ip, $network)) {
+                return true;
+            }
         }
     }
 
@@ -158,6 +214,11 @@ function akh_editor_require_office_network(): void
 
     $home = h(base_path('index.php'));
     $site = h(SITE_NAME);
+    $candidates = akh_editor_request_ip_candidates();
+    $primary = akh_editor_request_client_ip();
+    $candidateLine = $candidates !== []
+        ? implode(', ', array_map(static fn (string $ip): string => h($ip), $candidates))
+        : '(none detected)';
 
     echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />';
     echo '<title>Editor access restricted — ' . $site . '</title>';
@@ -165,7 +226,13 @@ function akh_editor_require_office_network(): void
     echo '<body class="page-portal"><main id="main" class="portal-main"><div class="portal-card">';
     echo '<h1 class="portal-title">Editor portal not available here</h1>';
     echo '<p class="portal-lead">The editor login and task board can only be opened from the studio office network (or VPN). Connect to office Wi‑Fi or VPN and try again.</p>';
-    echo '<p class="portal-muted">If you are already at the studio, ask admin to add this location’s public IP to <code>AKH_EDITOR_ALLOWED_NETWORKS</code> in <code>includes/config.php</code>.</p>';
+    echo '<p class="portal-note"><strong>IP your server sees:</strong> ';
+    echo $primary !== '' ? '<code>' . h($primary) . '</code>' : '<span class="portal-muted">unknown</span>';
+    if (count($candidates) > 1) {
+        echo '<br /><span class="portal-muted">All addresses checked: ' . $candidateLine . '</span>';
+    }
+    echo '</p>';
+    echo '<p class="portal-muted">On the live site, <code>192.168.x.x</code> in config does not apply (that is only for local XAMPP). Add the <strong>public IPv4</strong> above to <code>AKH_EDITOR_ALLOWED_NETWORKS</code> in <code>includes/config.php</code> on the server, then reload. Keep <code>AKH_EDITOR_TRUST_PROXY_IP = true</code> on Hostinger.</p>';
     echo '<p class="portal-foot"><a class="text-link" href="' . $home . '">← Website home</a></p>';
     echo '</div></main></body></html>';
     exit;
