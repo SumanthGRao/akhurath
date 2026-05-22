@@ -203,6 +203,40 @@ function akh_editor_request_ip_allowed(): bool
 }
 
 /**
+ * Office Wi‑Fi IPv6 /64 prefix from a full address (all devices on same LAN share the prefix).
+ */
+function akh_editor_ipv6_prefix64_cidr(string $ip): ?string
+{
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false) {
+        return null;
+    }
+    $bin = inet_pton($ip);
+    if ($bin === false || strlen($bin) !== 16) {
+        return null;
+    }
+    $prefixBin = substr($bin, 0, 8) . str_repeat("\0", 8);
+    $prefixIp = inet_ntop($prefixBin);
+    if ($prefixIp === false) {
+        return null;
+    }
+    $hextets = explode(':', $prefixIp);
+    $short = [];
+    foreach (array_slice($hextets, 0, 4) as $h) {
+        if ($h === '' && $short !== []) {
+            break;
+        }
+        if ($h !== '') {
+            $short[] = $h;
+        }
+    }
+    if (count($short) < 4) {
+        return null;
+    }
+
+    return implode(':', $short) . '::/64';
+}
+
+/**
  * Status lines for editor login (verify office lock and which IP Hostinger sees).
  *
  * @return list<string>
@@ -219,6 +253,14 @@ function akh_editor_network_status_lines(): array
 
     $primary = akh_editor_request_client_ip();
     $lines[] = 'IP your server sees: ' . ($primary !== '' ? $primary : 'unknown');
+
+    foreach (akh_editor_request_ip_candidates() as $cand) {
+        $v6range = akh_editor_ipv6_prefix64_cidr($cand);
+        if ($v6range !== null) {
+            $lines[] = 'Add to config (office Wi‑Fi IPv6 range): ' . $v6range;
+            break;
+        }
+    }
 
     $candidates = akh_editor_request_ip_candidates();
     if (count($candidates) > 1) {
