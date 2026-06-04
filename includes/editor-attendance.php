@@ -176,6 +176,7 @@ function akh_editor_attendance_append(string $editor, string $type): bool
 
         return false;
     }
+    $recorded = false;
     try {
         rewind($fp);
         $raw = stream_get_contents($fp);
@@ -193,28 +194,33 @@ function akh_editor_attendance_append(string $editor, string $type): bool
 
         $events = $doc['events'];
         if ($type === 'clock_in' && akh_editor_attendance_is_clocked_in_from_events($editor, $events)) {
-            return true;
+            // already on shift — no new punch
+        } elseif ($type === 'clock_out' && !akh_editor_attendance_is_clocked_in_from_events($editor, $events)) {
+            // not on shift — no new punch
+        } else {
+            $events[] = ['editor' => $editor, 'type' => $type, 'at' => time()];
+            $max = 8000;
+            if (count($events) > $max) {
+                $events = array_slice($events, -$max);
+            }
+            $doc['events'] = $events;
+            $out = json_encode($doc, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, $out);
+            fflush($fp);
+            $recorded = true;
         }
-        if ($type === 'clock_out' && !akh_editor_attendance_is_clocked_in_from_events($editor, $events)) {
-            return true;
-        }
-
-        $events[] = ['editor' => $editor, 'type' => $type, 'at' => time()];
-        $max = 8000;
-        if (count($events) > $max) {
-            $events = array_slice($events, -$max);
-        }
-        $doc['events'] = $events;
-        $out = json_encode($doc, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        ftruncate($fp, 0);
-        rewind($fp);
-        fwrite($fp, $out);
-        fflush($fp);
     } catch (\Throwable $e) {
         return false;
     } finally {
         flock($fp, LOCK_UN);
         fclose($fp);
+    }
+
+    if (!empty($recorded)) {
+        require_once __DIR__ . '/site-notify-mail.php';
+        akh_site_mail_studio_editor_attendance($editor, $type);
     }
 
     return true;
