@@ -79,6 +79,8 @@ $barP = $ed['bars'];
             </div>
           </div>
 
+          <div class="admin-attendance-detail__split">
+          <div class="admin-attendance-detail__calendar">
           <div class="admin-attendance-cal" role="grid" aria-label="Calendar for <?php echo h($ed['username']); ?>">
             <div class="admin-attendance-cal__dow" role="row">
               <?php foreach (['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as $dow): ?>
@@ -163,5 +165,8 @@ $barP = $ed['bars'];
               endfor; ?>
             </div>
             <?php endfor; ?>
+          </div>
+          </div>
+          <?php require __DIR__ . '/attendance-salary-panel.php'; ?>
           </div>
         </article>

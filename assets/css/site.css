@@ -5829,6 +5829,174 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   box-sizing: border-box;
 }
 
+.admin-attendance-detail__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+  gap: 1.25rem 1.5rem;
+  align-items: start;
+  margin-top: 0.25rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.admin-attendance-detail__calendar {
+  min-width: 0;
+}
+
+.admin-salary-calc {
+  padding: 1rem 1.05rem 1.15rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  top: 1rem;
+}
+
+.admin-salary-calc__head {
+  margin-bottom: 0.85rem;
+}
+
+.admin-salary-calc__title {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+}
+
+.admin-salary-calc__sub {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.admin-salary-calc__inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+.admin-salary-calc__field {
+  margin: 0;
+}
+
+.admin-salary-calc__input {
+  width: 100%;
+}
+
+.admin-salary-calc__attendance {
+  margin: 0 0 0.85rem;
+  padding: 0.65rem 0.7rem;
+  border-radius: calc(var(--radius) - 2px);
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 0.82rem;
+}
+
+.admin-salary-calc__att-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.2rem 0;
+}
+
+.admin-salary-calc__att-row + .admin-salary-calc__att-row {
+  border-top: 1px solid var(--line);
+  margin-top: 0.2rem;
+  padding-top: 0.35rem;
+}
+
+.admin-salary-calc__att-row dt {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.admin-salary-calc__att-row dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.admin-salary-calc__breakdown {
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+.admin-salary-calc__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.28rem 0;
+}
+
+.admin-salary-calc__row + .admin-salary-calc__row {
+  border-top: 1px dashed var(--line);
+}
+
+.admin-salary-calc__row dt {
+  margin: 0;
+  color: var(--muted);
+}
+
+.admin-salary-calc__row dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.admin-salary-calc__row--warn dd {
+  color: #c66;
+}
+
+.admin-salary-calc__net {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.85rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.admin-salary-calc__net-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.admin-salary-calc__net-value {
+  font-size: 1.55rem;
+  font-weight: 700;
+  color: #5cb87a;
+  line-height: 1.1;
+}
+
+.admin-salary-calc__note {
+  margin: 0.55rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.admin-salary-calc__empty {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+@media (max-width: 960px) {
+  .admin-attendance-detail__split {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-salary-calc {
+    position: static;
+  }
+}
+
 .editor-leave-list {
   list-style: none;
   margin: 0;

@@ -6,6 +6,7 @@ require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once AKH_ROOT . '/includes/admin-auth.php';
 require_once AKH_ROOT . '/includes/editor-auth.php';
 require_once AKH_ROOT . '/includes/editor-attendance-report.php';
+require_once AKH_ROOT . '/includes/admin-attendance-salary.php';
 
 akh_require_admin();
 
@@ -87,5 +88,7 @@ require_once AKH_ROOT . '/includes/header.php';
       </div>
     </div>
   </main>
+
+  <script src="<?php echo h(base_path('assets/js/admin-attendance-salary.js')); ?>" defer></script>
 
 <?php require_once AKH_ROOT . '/includes/footer.php'; ?>
