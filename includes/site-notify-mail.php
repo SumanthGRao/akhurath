@@ -198,25 +198,6 @@ function akh_site_mail_studio_new_client(string $username, string $email): array
     return akh_site_notify_sent_result($r);
 }
 
-function akh_site_mail_studio_editor_login(string $editor): void
-{
-    if (!akh_site_notify_smtp_enabled()) {
-        return;
-    }
-    $to = trim(LEADS_EMAIL);
-    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
-        return;
-    }
-    $editor = strtolower(trim($editor));
-    $subject = 'Editor signed in (' . $editor . ') — ' . SITE_NAME;
-    $body = "An editor opened the task board.\n\n"
-        . 'When: ' . akh_site_mail_format_when() . "\n"
-        . 'Editor: ' . $editor . "\n"
-        . 'Portal: ' . akh_absolute_url('editor/dashboard.php') . "\n";
-
-    akh_site_notify_log_mail_failure('editor_login_studio', akh_smtp_send($to, $subject, $body));
-}
-
 function akh_site_mail_studio_editor_attendance(string $editor, string $type): void
 {
     if (!akh_site_notify_smtp_enabled() || !AKH_EDITOR_ATTENDANCE_ENABLED) {

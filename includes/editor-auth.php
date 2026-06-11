@@ -246,8 +246,6 @@ function akh_editor_login(string $username, string $password): bool
     if (AKH_DEV_TEST_LOGIN && $username === 'test' && $password === 'test') {
         session_regenerate_id(true);
         $_SESSION['akh_editor'] = 'test';
-        require_once __DIR__ . '/site-notify-mail.php';
-        akh_site_mail_studio_editor_login('test');
 
         return true;
     }
@@ -265,8 +263,6 @@ function akh_editor_login(string $username, string $password): bool
 
     session_regenerate_id(true);
     $_SESSION['akh_editor'] = $key;
-    require_once __DIR__ . '/site-notify-mail.php';
-    akh_site_mail_studio_editor_login($key);
 
     return true;
 }
