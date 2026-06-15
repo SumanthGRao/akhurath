@@ -13,6 +13,7 @@ $year = (int) date('Y');
       <div class="site-footer__links">
         <a href="<?php echo h(base_path('index.php')); ?>">Home</a>
         <a href="<?php echo h(base_path('contact.php')); ?>">Contact</a>
+        <a href="<?php echo h(base_path('privacy-policy')); ?>">Privacy</a>
         <a href="<?php echo h(base_path('customer/login.php')); ?>">Client login</a>
         <?php if (defined('AKH_ALLOW_CLIENT_REGISTRATION') && AKH_ALLOW_CLIENT_REGISTRATION): ?>
           <a href="<?php echo h(base_path('customer/register.php')); ?>">Client register</a>

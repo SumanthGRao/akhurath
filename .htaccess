@@ -2,4 +2,5 @@
   RewriteEngine On
   # If the app lives in a subfolder, set e.g. RewriteBase /subfolder/
   RewriteRule ^packages/?$ packages.php [L,QSA]
+  RewriteRule ^privacy-policy/?$ privacy-policy.php [L,QSA]
 </IfModule>
