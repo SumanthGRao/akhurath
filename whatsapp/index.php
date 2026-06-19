@@ -58,7 +58,7 @@ $userLabel = akh_wa_dashboard_current() ?? '';
   <title><?php echo h($pageTitle); ?></title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Source+Sans+3:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="<?php echo h(base_path('assets/css/whatsapp-dashboard.css') . ($waCssVer !== '' ? '?v=' . rawurlencode($waCssVer) : '')); ?>" />
 </head>
 <body class="<?php echo h($bodyClass); ?>">
@@ -110,7 +110,7 @@ $userLabel = akh_wa_dashboard_current() ?? '';
     <section class="wa-toolbar">
       <label class="wa-search">
         <span class="visually-hidden">Search tasks</span>
-        <input type="search" id="wa-search" placeholder="Search code, project, customer, phone…" value="<?php echo h($fQ); ?>" autocomplete="off" />
+        <input type="search" id="wa-search" placeholder="Search code, project, customer…" value="<?php echo h($fQ); ?>" autocomplete="off" />
       </label>
       <button type="button" class="wa-btn wa-btn--ghost" id="wa-clear-filters">Clear filters</button>
     </section>
@@ -137,10 +137,7 @@ $userLabel = akh_wa_dashboard_current() ?? '';
               <tr data-task-id="<?php echo (int) $t['id']; ?>">
                 <td><code class="wa-code"><?php echo h((string) $t['task_code']); ?></code></td>
                 <td>
-                  <span class="wa-cell-main"><?php echo h((string) $t['customer_name']); ?></span>
-                  <?php if ((string) $t['phone'] !== ''): ?>
-                    <span class="wa-cell-sub"><?php echo h((string) $t['phone']); ?></span>
-                  <?php endif; ?>
+                  <span class="wa-cell-main"><?php echo h((string) ($t['customer_name'] !== '' ? $t['customer_name'] : '—')); ?></span>
                 </td>
                 <td><?php echo h((string) $t['project_name']); ?></td>
                 <td><?php echo h((string) $t['task_type']); ?></td>
@@ -193,10 +190,6 @@ $userLabel = akh_wa_dashboard_current() ?? '';
             <input type="number" name="customer_id" id="wa-field-customer_id" min="0" step="1" />
           </label>
           <label class="wa-field">
-            <span>Phone</span>
-            <input type="text" name="phone" id="wa-field-phone" maxlength="20" />
-          </label>
-          <label class="wa-field">
             <span>Project name</span>
             <input type="text" name="project_name" id="wa-field-project_name" maxlength="255" />
           </label>
@@ -222,12 +215,12 @@ $userLabel = akh_wa_dashboard_current() ?? '';
             <textarea name="instructions" id="wa-field-instructions" rows="4"></textarea>
           </label>
           <label class="wa-field wa-field--full">
-            <span>Drive link</span>
-            <input type="url" name="drive_link" id="wa-field-drive_link" inputmode="url" />
+            <span>Drive link <span class="wa-field__optional">(optional)</span></span>
+            <input type="text" name="drive_link" id="wa-field-drive_link" inputmode="url" placeholder="https://…" />
           </label>
           <label class="wa-field wa-field--full">
-            <span>Reference link</span>
-            <input type="url" name="reference_link" id="wa-field-reference_link" inputmode="url" />
+            <span>Reference link <span class="wa-field__optional">(optional)</span></span>
+            <input type="text" name="reference_link" id="wa-field-reference_link" inputmode="url" placeholder="https://…" />
           </label>
           <label class="wa-field wa-field--full">
             <span>Comments</span>

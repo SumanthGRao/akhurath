@@ -93,9 +93,9 @@ function akh_wa_tasks_list(array $filters = []): array
 
     $q = strtolower(trim((string) ($filters['q'] ?? '')));
     if ($q !== '') {
-        $where[] = '(LOWER(task_code) LIKE ? OR LOWER(project_name) LIKE ? OR LOWER(customer_name) LIKE ? OR phone LIKE ?)';
+        $where[] = '(LOWER(task_code) LIKE ? OR LOWER(project_name) LIKE ? OR LOWER(customer_name) LIKE ?)';
         $like = '%' . $q . '%';
-        array_push($params, $like, $like, $like, '%' . trim((string) ($filters['q'] ?? '')) . '%');
+        array_push($params, $like, $like, $like);
     }
 
     $sql = 'SELECT * FROM whatsapp_tasks WHERE ' . implode(' AND ', $where) . ' ORDER BY updated_at DESC, id DESC';
@@ -254,8 +254,262 @@ function akh_wa_task_update(int $id, array $fields): array
     akh_db()->prepare($sql)->execute($params);
 
     $task = akh_wa_task_by_id($id);
+    if ($task === null) {
+        return ['ok' => false, 'error' => 'Update failed.'];
+    }
 
-    return $task !== null ? ['ok' => true, 'task' => $task] : ['ok' => false, 'error' => 'Update failed.'];
+    $syncErr = akh_wa_sync_to_studio($task);
+    if ($syncErr !== null && akh_wa_task_has_assigned_editor($task)) {
+        return ['ok' => false, 'error' => 'Saved in WhatsApp tasks, but editor board sync failed: ' . $syncErr, 'task' => $task];
+    }
+
+    return ['ok' => true, 'task' => $task, 'sync_warning' => $syncErr];
+}
+
+function akh_wa_task_has_assigned_editor(array $row): bool
+{
+    return isset($row['assigned_editor']) && $row['assigned_editor'] !== null && (string) $row['assigned_editor'] !== '';
+}
+
+function akh_wa_has_studio_task_id_column(): bool
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    try {
+        $st = akh_db()->query("SHOW COLUMNS FROM whatsapp_tasks LIKE 'studio_task_id'");
+        $cached = $st !== false && $st->fetch(PDO::FETCH_ASSOC) !== false;
+    } catch (Throwable) {
+        $cached = false;
+    }
+
+    return $cached;
+}
+
+function akh_wa_set_studio_task_id(int $waId, string $studioTaskId): void
+{
+    if (!akh_wa_has_studio_task_id_column() || $waId <= 0 || trim($studioTaskId) === '') {
+        return;
+    }
+    akh_db()->prepare('UPDATE whatsapp_tasks SET studio_task_id = ? WHERE id = ?')->execute([$studioTaskId, $waId]);
+}
+
+function akh_wa_map_status_to_studio(string $waStatus): string
+{
+    $key = strtolower(trim($waStatus));
+    $map = [
+        'new' => 'new',
+        'assigned' => 'assigned',
+        'editing' => 'in_progress',
+        'review' => 'review',
+        'delivered' => 'delivered',
+        'closed' => 'closed',
+    ];
+
+    return $map[$key] ?? 'new';
+}
+
+function akh_wa_resolve_client_username(array $waRow): string
+{
+    $cid = isset($waRow['customer_id']) ? (int) $waRow['customer_id'] : 0;
+    if ($cid > 0) {
+        $st = akh_db()->prepare('SELECT username FROM users WHERE id = ? AND role = ? LIMIT 1');
+        $st->execute([$cid, 'customer']);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        if (is_array($row)) {
+            $u = strtolower(trim((string) ($row['username'] ?? '')));
+            if ($u !== '') {
+                return $u;
+            }
+        }
+    }
+
+    return 'whatsapp';
+}
+
+function akh_wa_build_studio_description(array $waRow): string
+{
+    $parts = ['WhatsApp task: ' . (string) ($waRow['task_code'] ?? '')];
+    $taskType = trim((string) ($waRow['task_type'] ?? ''));
+    if ($taskType !== '') {
+        $parts[] = 'Type: ' . $taskType;
+    }
+    $deliveryType = trim((string) ($waRow['delivery_type'] ?? ''));
+    if ($deliveryType !== '') {
+        $parts[] = 'Delivery: ' . $deliveryType;
+    }
+    $instructions = trim((string) ($waRow['instructions'] ?? ''));
+    if ($instructions !== '') {
+        $parts[] = '';
+        $parts[] = 'Instructions:';
+        $parts[] = $instructions;
+    }
+    $comments = trim((string) ($waRow['comments'] ?? ''));
+    if ($comments !== '') {
+        $parts[] = '';
+        $parts[] = 'Comments:';
+        $parts[] = $comments;
+    }
+    $desc = trim(implode("\n", $parts));
+
+    return $desc !== '' ? $desc : '(WhatsApp task — no notes.)';
+}
+
+/** @return array{0: string, 1: string} */
+function akh_wa_resolve_delivery_mode(array $waRow): array
+{
+    $drive = trim((string) ($waRow['drive_link'] ?? ''));
+    $dtype = strtolower(trim((string) ($waRow['delivery_type'] ?? '')));
+    if ($drive !== '') {
+        return ['google_drive', $drive];
+    }
+    if (str_contains($dtype, 'nas') || str_contains($dtype, 'nextcloud')) {
+        return ['nas_storage', ''];
+    }
+    if (str_contains($dtype, 'courier') || str_contains($dtype, 'hdd') || str_contains($dtype, 'drive')) {
+        return ['courier_hdd', ''];
+    }
+
+    return ['nas_storage', ''];
+}
+
+function akh_wa_editor_username_by_id(int $editorId): ?string
+{
+    if ($editorId <= 0) {
+        return null;
+    }
+    $st = akh_db()->prepare('SELECT username FROM users WHERE id = ? AND role = ? LIMIT 1');
+    $st->execute([$editorId, 'editor']);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if (!is_array($row)) {
+        return null;
+    }
+    $u = strtolower(trim((string) ($row['username'] ?? '')));
+
+    return $u !== '' ? $u : null;
+}
+
+function akh_wa_find_studio_task_id(int $waId, string $taskCode): string
+{
+    require_once __DIR__ . '/tasks.php';
+    foreach (akh_tasks_load() as $t) {
+        if (!is_array($t)) {
+            continue;
+        }
+        if ($waId > 0 && (int) ($t['whatsapp_task_id'] ?? 0) === $waId) {
+            return trim((string) ($t['id'] ?? ''));
+        }
+        if ($taskCode !== '' && (string) ($t['whatsapp_task_code'] ?? '') === $taskCode) {
+            return trim((string) ($t['id'] ?? ''));
+        }
+    }
+
+    return '';
+}
+
+/**
+ * Push WhatsApp task assignment/details to the editor task board (app_kv tasks).
+ *
+ * @return string|null error message, or null on success / nothing to sync
+ */
+function akh_wa_sync_to_studio(array $waRow): ?string
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $waId = (int) ($waRow['id'] ?? 0);
+    if ($waId <= 0) {
+        return 'Invalid WhatsApp task.';
+    }
+
+    $taskCode = (string) ($waRow['task_code'] ?? '');
+    $studioId = akh_wa_has_studio_task_id_column() ? trim((string) ($waRow['studio_task_id'] ?? '')) : '';
+    if ($studioId === '') {
+        $studioId = akh_wa_find_studio_task_id($waId, $taskCode);
+    }
+    $editorId = isset($waRow['assigned_editor']) ? (int) $waRow['assigned_editor'] : 0;
+    $editorUsername = $editorId > 0 ? akh_wa_editor_username_by_id($editorId) : null;
+    if ($editorId > 0 && $editorUsername === null) {
+        return 'Assigned editor was not found.';
+    }
+
+    if ($editorUsername === null && $studioId === '') {
+        return null;
+    }
+
+    $clientUsername = akh_wa_resolve_client_username($waRow);
+    $title = trim((string) ($waRow['project_name'] ?? ''));
+    if ($title === '') {
+        $title = trim((string) ($waRow['customer_name'] ?? ''));
+    }
+    if ($title === '') {
+        $title = trim((string) ($waRow['task_code'] ?? 'WhatsApp task'));
+    }
+    $description = akh_wa_build_studio_description($waRow);
+    [$deliveryMode, $driveLink] = akh_wa_resolve_delivery_mode($waRow);
+    $referenceLink = trim((string) ($waRow['reference_link'] ?? ''));
+    $waStatus = akh_wa_task_normalize_status((string) ($waRow['status'] ?? 'new')) ?? 'new';
+    $studioStatus = akh_wa_map_status_to_studio($waStatus);
+
+    if ($studioId === '' || akh_task_by_id($studioId) === null) {
+        $created = akh_task_admin_create_for_client(
+            $clientUsername,
+            $title,
+            $description,
+            $deliveryMode,
+            $driveLink,
+            $referenceLink
+        );
+        if ($created === null) {
+            return 'Could not create editor-board task.';
+        }
+        $studioId = (string) ($created['id'] ?? '');
+        if ($studioId === '') {
+            return 'Could not create editor-board task.';
+        }
+        akh_wa_set_studio_task_id($waId, $studioId);
+    } else {
+        $list = akh_tasks_load();
+        $updated = false;
+        foreach ($list as $i => $t) {
+            if ((string) ($t['id'] ?? '') !== $studioId) {
+                continue;
+            }
+            $list[$i]['title'] = mb_strlen($title) > 200 ? mb_substr($title, 0, 197) . '…' : $title;
+            $list[$i]['description'] = mb_strlen($description) > 8000 ? mb_substr($description, 0, 7997) . '…' : $description;
+            $list[$i]['reference_link'] = $referenceLink;
+            $list[$i]['delivery_mode'] = $deliveryMode;
+            $list[$i]['drive_link'] = $deliveryMode === 'google_drive' ? $driveLink : '';
+            $list[$i]['whatsapp_task_id'] = $waId;
+            $list[$i]['whatsapp_task_code'] = (string) ($waRow['task_code'] ?? '');
+            $list[$i]['updated_at'] = gmdate('c');
+            $updated = true;
+            break;
+        }
+        if ($updated && !akh_tasks_save_locked($list)) {
+            return 'Could not update editor-board task.';
+        }
+    }
+
+    if ($editorUsername !== null) {
+        $assignErr = akh_task_admin_assign($studioId, $editorUsername);
+        if ($assignErr !== null) {
+            return $assignErr;
+        }
+        if (!in_array($studioStatus, ['new', 'assigned'], true)) {
+            $statusErr = akh_task_admin_set_status($studioId, $studioStatus);
+            if ($statusErr !== null) {
+                return $statusErr;
+            }
+        }
+    } else {
+        $assignErr = akh_task_admin_assign($studioId, null);
+        if ($assignErr !== null) {
+            return $assignErr;
+        }
+    }
+
+    return null;
 }
 
 /** @return array<string, mixed> */
@@ -272,7 +526,6 @@ function akh_wa_task_row_for_json(array $row, array $editors): array
         'id' => (int) ($row['id'] ?? 0),
         'task_code' => (string) ($row['task_code'] ?? ''),
         'customer_id' => $row['customer_id'] !== null ? (int) $row['customer_id'] : null,
-        'phone' => (string) ($row['phone'] ?? ''),
         'project_name' => (string) ($row['project_name'] ?? ''),
         'task_type' => (string) ($row['task_type'] ?? ''),
         'instructions' => (string) ($row['instructions'] ?? ''),

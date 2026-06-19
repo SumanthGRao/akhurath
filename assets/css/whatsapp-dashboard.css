@@ -11,8 +11,8 @@
   --wa-accent-soft: rgba(212, 168, 83, 0.15);
   --wa-radius: 12px;
   --wa-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
-  --wa-font: "DM Sans", system-ui, sans-serif;
-  --wa-serif: "Instrument Serif", Georgia, serif;
+  --wa-font: "Source Sans 3", system-ui, sans-serif;
+  --wa-serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
   --wa-status-new: #6b9bd1;
   --wa-status-assigned: #a78bfa;
   --wa-status-editing: #f59e0b;
@@ -32,6 +32,8 @@ body.page-wa-login {
   margin: 0;
   min-height: 100vh;
   font-family: var(--wa-font);
+  font-weight: 400;
+  letter-spacing: 0.01em;
   color: var(--wa-ink);
   background:
     radial-gradient(ellipse 80% 50% at 50% -20%, rgba(212, 168, 83, 0.12), transparent),
@@ -200,9 +202,10 @@ body.page-wa-dashboard .site-footer {
 .wa-topbar__title {
   margin: 0;
   font-family: var(--wa-serif);
-  font-size: 1.35rem;
-  font-weight: 400;
-  line-height: 1.2;
+  font-size: 1.55rem;
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
 }
 
 .wa-topbar__actions {
@@ -293,8 +296,9 @@ body.page-wa-dashboard .site-footer {
 
 .wa-stat__count {
   display: block;
-  font-size: 1.65rem;
-  font-weight: 700;
+  font-family: var(--wa-serif);
+  font-size: 1.85rem;
+  font-weight: 600;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
@@ -401,7 +405,7 @@ body.page-wa-dashboard .site-footer {
 .wa-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
 }
 
 .wa-table th,
@@ -597,11 +601,20 @@ body.page-wa-dashboard .site-footer {
 }
 
 .wa-field span {
-  font-size: 0.78rem;
-  font-weight: 500;
+  font-family: var(--wa-font);
+  font-size: 0.76rem;
+  font-weight: 600;
   color: var(--wa-muted);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+}
+
+.wa-field__optional {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.72rem;
+  color: rgba(168, 159, 148, 0.85);
 }
 
 .wa-field input,

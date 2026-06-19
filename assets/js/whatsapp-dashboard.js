@@ -107,11 +107,10 @@
 
     els.body.innerHTML = tasks.map(function (t) {
       var editor = t.assigned_editor_name ? escHtml(t.assigned_editor_name) : '—';
-      var phone = t.phone ? '<span class="wa-cell-sub">' + escHtml(t.phone) + '</span>' : '';
       return (
         '<tr data-task-id="' + t.id + '">' +
         '<td><code class="wa-code">' + escHtml(t.task_code) + '</code></td>' +
-        '<td><span class="wa-cell-main">' + escHtml(t.customer_name || '—') + '</span>' + phone + '</td>' +
+        '<td><span class="wa-cell-main">' + escHtml(t.customer_name || '—') + '</span></td>' +
         '<td>' + escHtml(t.project_name || '—') + '</td>' +
         '<td>' + escHtml(t.task_type || '—') + '</td>' +
         '<td><span class="wa-badge wa-badge--' + escHtml(t.status) + '">' + escHtml(t.status_label) + '</span></td>' +
@@ -134,7 +133,7 @@
       if (filterStatus && t.status !== filterStatus) return false;
       if (!q) return true;
       var hay = [
-        t.task_code, t.customer_name, t.project_name, t.phone, t.task_type,
+        t.task_code, t.customer_name, t.project_name, t.task_type,
       ].join(' ').toLowerCase();
       return hay.indexOf(q) !== -1;
     });
@@ -202,7 +201,7 @@
     if (!t || !els.modal) return;
 
     var fields = [
-      'id', 'task_code', 'status', 'customer_name', 'customer_id', 'phone',
+      'id', 'task_code', 'status', 'customer_name', 'customer_id',
       'project_name', 'task_type', 'delivery_type', 'assigned_editor',
       'instructions', 'drive_link', 'reference_link', 'comments',
     ];
@@ -252,7 +251,6 @@
       status: val('status'),
       customer_name: val('customer_name'),
       customer_id: val('customer_id'),
-      phone: val('phone'),
       project_name: val('project_name'),
       task_type: val('task_type'),
       delivery_type: val('delivery_type'),
