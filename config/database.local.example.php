@@ -11,6 +11,8 @@ declare(strict_types=1);
  * === Hostinger — database `u113439427_akhurath` (phpMyAdmin) ===
  * MySQL user is often the same full name as the database (verify in hPanel → Databases → Management).
  * Host is usually localhost.
+ * IMPORTANT: Use localhost from PHP on Hostinger — do NOT use srv2214.hstgr.io here
+ * (that hostname is for remote tools like MySQL Workbench; PHP on the server gets HTTP 500).
  *
  * define('AKH_DB_DSN', 'mysql:host=localhost;dbname=u113439427_akhurath;charset=utf8mb4');
  * define('AKH_DB_USER', 'u113439427_akhurath');
