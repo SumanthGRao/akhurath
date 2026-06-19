@@ -152,6 +152,17 @@ function base_path(string $path = ''): string
     return $b . '/' . $p;
 }
 
+/**
+ * WhatsApp task dashboard (/whatsapp/) — separate login from admin/editor portals.
+ * Reads whatsapp_tasks in MySQL. Generate AKH_WA_DASHBOARD_PASS_HASH with:
+ *   php scripts/hash-password.php 'YourSecurePassword'
+ */
+const AKH_WA_DASHBOARD_ENABLED = true;
+const AKH_WA_DASHBOARD_USER = 'wa_ops';
+const AKH_WA_DASHBOARD_PASS_HASH = '$2y$12$CQb.aKIcjY.Fz6s4PV1h8.BMrtswBIJI1QaNTv3PlvsGxFSmcxkCW';
+/** Auto-refresh interval in seconds (default 5 minutes). */
+const AKH_WA_DASHBOARD_REFRESH_SECONDS = 300;
+
 /** Cookie path for PHP sessions (subfolder installs need the app prefix). */
 function akh_session_cookie_path(): string
 {
