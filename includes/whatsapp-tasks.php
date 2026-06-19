@@ -359,19 +359,193 @@ function akh_wa_build_studio_description(array $waRow): string
 /** @return array{0: string, 1: string} */
 function akh_wa_resolve_delivery_mode(array $waRow): array
 {
-    $drive = trim((string) ($waRow['drive_link'] ?? ''));
-    $dtype = strtolower(trim((string) ($waRow['delivery_type'] ?? '')));
-    if ($drive !== '') {
+    $driveRaw = trim((string) ($waRow['drive_link'] ?? ''));
+    $drive = akh_wa_normalize_http_url($driveRaw);
+    if ($drive !== '' && preg_match('#^https?://#i', $drive)) {
         return ['google_drive', $drive];
     }
+
+    $dtype = strtolower(trim((string) ($waRow['delivery_type'] ?? '')));
     if (str_contains($dtype, 'nas') || str_contains($dtype, 'nextcloud')) {
         return ['nas_storage', ''];
     }
-    if (str_contains($dtype, 'courier') || str_contains($dtype, 'hdd') || str_contains($dtype, 'drive')) {
+    if (str_contains($dtype, 'courier') || str_contains($dtype, 'hdd')) {
         return ['courier_hdd', ''];
     }
 
     return ['nas_storage', ''];
+}
+
+function akh_wa_normalize_http_url(string $url): string
+{
+    $url = trim($url);
+    if ($url === '') {
+        return '';
+    }
+    if (preg_match('#^https?://#i', $url)) {
+        return $url;
+    }
+    if (preg_match('#^(www\.|drive\.google\.|[a-z0-9-]+\.)#i', $url)) {
+        return 'https://' . ltrim($url, '/');
+    }
+
+    return $url;
+}
+
+/**
+ * Sanitize WhatsApp row for editor-board task creation (relaxed vs client form).
+ *
+ * @return array{
+ *   title: string,
+ *   description: string,
+ *   delivery_mode: string,
+ *   drive_link: string,
+ *   reference_link: string,
+ *   client_username: string
+ * }
+ */
+function akh_wa_prepare_studio_task_inputs(array $waRow): array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $title = trim((string) ($waRow['project_name'] ?? ''));
+    if ($title === '') {
+        $title = trim((string) ($waRow['customer_name'] ?? ''));
+    }
+    if ($title === '') {
+        $title = trim((string) ($waRow['task_code'] ?? 'WhatsApp task'));
+    }
+    if (mb_strlen($title) > 200) {
+        $title = mb_substr($title, 0, 197) . '…';
+    }
+
+    $description = akh_wa_build_studio_description($waRow);
+    $driveRaw = trim((string) ($waRow['drive_link'] ?? ''));
+    $refRaw = trim((string) ($waRow['reference_link'] ?? ''));
+    $drive = akh_wa_normalize_http_url($driveRaw);
+    $ref = akh_wa_normalize_http_url($refRaw);
+
+    if ($ref !== '' && !akh_task_is_valid_reference_link($ref)) {
+        $description .= ($description !== '' ? "\n\n" : '') . 'Reference link: ' . $refRaw;
+        $ref = '';
+    }
+
+    [$deliveryMode, $driveLink] = akh_wa_resolve_delivery_mode($waRow);
+    if ($driveRaw !== '' && $deliveryMode !== 'google_drive') {
+        $description .= ($description !== '' ? "\n\n" : '') . 'Drive link: ' . $driveRaw;
+    }
+
+    $description = trim($description);
+    if ($description === '') {
+        $description = '(WhatsApp task — no notes.)';
+    }
+    if (mb_strlen($description) > 7200) {
+        $description = mb_substr($description, 0, 7197) . '…';
+    }
+
+    return [
+        'title' => $title,
+        'description' => $description,
+        'delivery_mode' => $deliveryMode,
+        'drive_link' => $driveLink,
+        'reference_link' => $ref,
+        'client_username' => akh_wa_resolve_client_username($waRow),
+    ];
+}
+
+function akh_wa_studio_create_error_message(array $inputs): string
+{
+    require_once __DIR__ . '/tasks.php';
+
+    if (trim((string) ($inputs['client_username'] ?? '')) === '') {
+        return 'Missing client username.';
+    }
+    if (trim((string) ($inputs['title'] ?? '')) === '') {
+        return 'Missing project/title.';
+    }
+    if (trim((string) ($inputs['description'] ?? '')) === '') {
+        return 'Missing task notes.';
+    }
+    $mode = (string) ($inputs['delivery_mode'] ?? '');
+    if (!in_array($mode, akh_task_valid_delivery_modes(), true)) {
+        return 'Invalid delivery mode.';
+    }
+    $drive = trim((string) ($inputs['drive_link'] ?? ''));
+    if ($mode === 'google_drive' && ($drive === '' || !preg_match('#^https?://#i', $drive))) {
+        return 'Drive link must be a valid http(s) URL.';
+    }
+    $ref = trim((string) ($inputs['reference_link'] ?? ''));
+    if ($ref !== '' && !akh_task_is_valid_reference_link($ref)) {
+        return 'Reference link must be a valid http(s) URL.';
+    }
+
+    return 'Could not save task to the editor board (database).';
+}
+
+/**
+ * Last-resort studio task insert when akh_task_create rejects sanitized WhatsApp data.
+ *
+ * @param array{title: string, description: string, delivery_mode: string, drive_link: string, reference_link: string, client_username: string} $inputs
+ * @return ?array<string, mixed>
+ */
+function akh_wa_insert_studio_task_direct(array $inputs, int $waId, string $taskCode): ?array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $now = gmdate('c');
+    $couple = trim((string) $inputs['title']);
+    $projectDetails = trim((string) $inputs['description']);
+    $referenceLink = trim((string) $inputs['reference_link']);
+    $deliveryMode = (string) $inputs['delivery_mode'];
+    $driveLink = trim((string) $inputs['drive_link']);
+    [$builtDescription, $descOk] = akh_task_build_description(
+        $couple,
+        'studio_admin',
+        $projectDetails,
+        $referenceLink,
+        $deliveryMode,
+        $deliveryMode === 'google_drive' ? $driveLink : ''
+    );
+    if (!$descOk) {
+        $builtDescription = "WhatsApp task: {$taskCode}\n\n{$projectDetails}";
+        if (mb_strlen($builtDescription) > 8000) {
+            $builtDescription = mb_substr($builtDescription, 0, 7997) . '…';
+        }
+    }
+
+    $task = [
+        'id' => akh_task_generate_id(),
+        'client_username' => strtolower(trim((string) $inputs['client_username'])),
+        'title' => akh_task_build_title($couple, 'studio_admin'),
+        'description' => $builtDescription,
+        'couple_name' => $couple,
+        'edit_type' => 'studio_admin',
+        'project_details' => $projectDetails,
+        'reference_link' => $referenceLink,
+        'delivery_mode' => $deliveryMode,
+        'drive_link' => $deliveryMode === 'google_drive' ? $driveLink : '',
+        'deliverable_output' => '',
+        'client_feedback' => '',
+        'client_meeting_date' => '',
+        'client_meeting_link' => '',
+        'created_at' => $now,
+        'updated_at' => $now,
+        'status' => 'new',
+        'assigned_editor' => null,
+        'editor_feedback_notify' => false,
+        'client_editor_notify' => false,
+        'conversation' => [],
+        'whatsapp_task_id' => $waId,
+        'whatsapp_task_code' => $taskCode,
+    ];
+
+    $list = akh_tasks_load();
+    $list[] = $task;
+    if (!akh_tasks_save_locked($list)) {
+        return null;
+    }
+
+    return $task;
 }
 
 function akh_wa_editor_username_by_id(int $editorId): ?string
@@ -437,23 +611,18 @@ function akh_wa_sync_to_studio(array $waRow): ?string
         return null;
     }
 
-    $clientUsername = akh_wa_resolve_client_username($waRow);
-    $title = trim((string) ($waRow['project_name'] ?? ''));
-    if ($title === '') {
-        $title = trim((string) ($waRow['customer_name'] ?? ''));
-    }
-    if ($title === '') {
-        $title = trim((string) ($waRow['task_code'] ?? 'WhatsApp task'));
-    }
-    $description = akh_wa_build_studio_description($waRow);
-    [$deliveryMode, $driveLink] = akh_wa_resolve_delivery_mode($waRow);
-    $referenceLink = trim((string) ($waRow['reference_link'] ?? ''));
+    $inputs = akh_wa_prepare_studio_task_inputs($waRow);
+    $title = $inputs['title'];
+    $description = $inputs['description'];
+    $deliveryMode = $inputs['delivery_mode'];
+    $driveLink = $inputs['drive_link'];
+    $referenceLink = $inputs['reference_link'];
     $waStatus = akh_wa_task_normalize_status((string) ($waRow['status'] ?? 'new')) ?? 'new';
     $studioStatus = akh_wa_map_status_to_studio($waStatus);
 
     if ($studioId === '' || akh_task_by_id($studioId) === null) {
         $created = akh_task_admin_create_for_client(
-            $clientUsername,
+            $inputs['client_username'],
             $title,
             $description,
             $deliveryMode,
@@ -461,11 +630,14 @@ function akh_wa_sync_to_studio(array $waRow): ?string
             $referenceLink
         );
         if ($created === null) {
-            return 'Could not create editor-board task.';
+            $created = akh_wa_insert_studio_task_direct($inputs, $waId, $taskCode);
+        }
+        if ($created === null) {
+            return akh_wa_studio_create_error_message($inputs);
         }
         $studioId = (string) ($created['id'] ?? '');
         if ($studioId === '') {
-            return 'Could not create editor-board task.';
+            return akh_wa_studio_create_error_message($inputs);
         }
         akh_wa_set_studio_task_id($waId, $studioId);
     } else {
