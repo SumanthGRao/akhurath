@@ -150,6 +150,17 @@ const LEADS_EMAIL = 'info@akhurathstudio.com';
 const WHATSAPP_MSISDN = '919483184620';
 
 /**
+ * WhatsApp task dashboard (/whatsapp/) — separate login from admin/editor portals.
+ * Reads whatsapp_tasks in MySQL. Generate AKH_WA_DASHBOARD_PASS_HASH with:
+ *   php scripts/hash-password.php 'YourSecurePassword'
+ */
+const AKH_WA_DASHBOARD_ENABLED = true;
+const AKH_WA_DASHBOARD_USER = 'wa_ops';
+const AKH_WA_DASHBOARD_PASS_HASH = '$2y$12$CQb.aKIcjY.Fz6s4PV1h8.BMrtswBIJI1QaNTv3PlvsGxFSmcxkCW';
+/** Auto-refresh interval in seconds (default 5 minutes). */
+const AKH_WA_DASHBOARD_REFRESH_SECONDS = 300;
+
+/**
  * Customer portal: web UI for your NAS / drive (Synology Drive, Nextcloud, etc.).
  * After login, the dashboard links here — users sign in on YOUR drive with the
  * credentials you create on the NAS (same username if you sync accounts, or separate).

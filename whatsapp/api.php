@@ -1,0 +1,105 @@
+<?php
+
+declare(strict_types=1);
+
+require_once dirname(__DIR__) . '/includes/bootstrap.php';
+require_once AKH_ROOT . '/includes/whatsapp-dashboard-auth.php';
+require_once AKH_ROOT . '/includes/whatsapp-tasks.php';
+require_once AKH_ROOT . '/includes/csrf.php';
+
+akh_require_wa_dashboard();
+
+header('Content-Type: application/json; charset=utf-8');
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['ok' => false, 'error' => 'method_not_allowed']);
+    exit;
+}
+
+if (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'csrf']);
+    exit;
+}
+
+$action = trim((string) ($_POST['ajax_action'] ?? ''));
+
+try {
+    if ($action === 'poll') {
+        echo json_encode([
+            'ok' => true,
+            'sig' => akh_wa_tasks_poll_signature(),
+        ], JSON_THROW_ON_ERROR);
+        exit;
+    }
+
+    if ($action === 'list') {
+        $filters = [
+            'status' => (string) ($_POST['status'] ?? ''),
+            'q' => (string) ($_POST['q'] ?? ''),
+        ];
+        $rows = akh_wa_tasks_list($filters);
+        $editors = akh_wa_editors_for_select();
+        $tasks = array_map(static fn (array $r): array => akh_wa_task_row_for_json($r, $editors), $rows);
+
+        echo json_encode([
+            'ok' => true,
+            'sig' => akh_wa_tasks_poll_signature(),
+            'counts' => akh_wa_task_status_counts(),
+            'tasks' => $tasks,
+            'editors' => $editors,
+            'statuses' => akh_wa_task_statuses(),
+        ], JSON_THROW_ON_ERROR);
+        exit;
+    }
+
+    if ($action === 'update') {
+        $id = (int) ($_POST['id'] ?? 0);
+        $fields = [
+            'task_code' => (string) ($_POST['task_code'] ?? ''),
+            'customer_id' => (string) ($_POST['customer_id'] ?? ''),
+            'customer_name' => (string) ($_POST['customer_name'] ?? ''),
+            'phone' => (string) ($_POST['phone'] ?? ''),
+            'project_name' => (string) ($_POST['project_name'] ?? ''),
+            'task_type' => (string) ($_POST['task_type'] ?? ''),
+            'instructions' => (string) ($_POST['instructions'] ?? ''),
+            'delivery_type' => (string) ($_POST['delivery_type'] ?? ''),
+            'drive_link' => (string) ($_POST['drive_link'] ?? ''),
+            'reference_link' => (string) ($_POST['reference_link'] ?? ''),
+            'comments' => (string) ($_POST['comments'] ?? ''),
+            'status' => (string) ($_POST['status'] ?? ''),
+            'assigned_editor' => (string) ($_POST['assigned_editor'] ?? ''),
+        ];
+
+        $result = akh_wa_task_update($id, $fields);
+        if (!$result['ok']) {
+            http_response_code(400);
+            echo json_encode([
+                'ok' => false,
+                'error' => (string) ($result['error'] ?? 'Update failed.'),
+            ], JSON_THROW_ON_ERROR);
+            exit;
+        }
+
+        $editors = akh_wa_editors_for_select();
+        $task = akh_wa_task_row_for_json((array) ($result['task'] ?? []), $editors);
+
+        echo json_encode([
+            'ok' => true,
+            'sig' => akh_wa_tasks_poll_signature(),
+            'counts' => akh_wa_task_status_counts(),
+            'task' => $task,
+        ], JSON_THROW_ON_ERROR);
+        exit;
+    }
+
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'bad_action']);
+} catch (Throwable $e) {
+    http_response_code(500);
+    echo json_encode([
+        'ok' => false,
+        'error' => trim((string) $e->getMessage()) !== '' ? $e->getMessage() : 'Server error.',
+    ]);
+}

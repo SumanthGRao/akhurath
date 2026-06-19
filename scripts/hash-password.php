@@ -8,7 +8,8 @@ declare(strict_types=1);
  * Paste the single-line hash into:
  *   - data/customers.php (client username => hash), or
  *   - data/admins.php (admin username => hash), or
- *   - data/editors.php (editor username => hash).
+ *   - data/editors.php (editor username => hash), or
+ *   - includes/config.php AKH_WA_DASHBOARD_PASS_HASH (WhatsApp task dashboard).
  */
 $pw = $argv[1] ?? '';
 if ($pw === '') {
