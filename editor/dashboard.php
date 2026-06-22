@@ -84,9 +84,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $status = (string) ($_POST['status'] ?? '');
             $deliverable = trim((string) ($_POST['deliverable_output'] ?? ''));
             $statusComment = trim((string) ($_POST['status_comment'] ?? ''));
+            $existing = akh_task_by_id($taskId);
             $t = akh_task_set_status($taskId, $editor, $status, $deliverable, $statusComment);
             if ($t === null) {
-                $error = 'Could not update status (only the assigned editor can change it), final output text is too long, a status note is required when changing workflow status, or WhatsApp sync failed.';
+                $waErr = akh_whatsapp_task_sync_last_error();
+                if ($waErr !== '') {
+                    $error = $waErr;
+                } elseif (
+                    is_array($existing)
+                    && (string) ($existing['status'] ?? '') !== $status
+                    && $statusComment === ''
+                ) {
+                    $error = 'A status note is required when changing workflow status.';
+                } else {
+                    $error = 'Could not update status. Only the assigned editor can change it, or the final output text may be too long.';
+                }
             } else {
                 $flash = 'Status updated.';
             }

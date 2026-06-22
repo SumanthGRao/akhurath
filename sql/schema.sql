@@ -59,15 +59,7 @@ CREATE TABLE IF NOT EXISTS contact_enquiries (
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS whatsapp_tasks (
-  task_id VARCHAR(32) NOT NULL,
-  status VARCHAR(64) NOT NULL DEFAULT 'New',
-  status_updated_at TIMESTAMP NULL DEFAULT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (task_id),
-  KEY ix_whatsapp_tasks_status (status),
-  KEY ix_whatsapp_tasks_status_updated (status_updated_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- WhatsApp queue: import sql/migrations/004_whatsapp_tasks.sql (and 005 for studio_task_id).
 
 CREATE TABLE IF NOT EXISTS task_updates (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

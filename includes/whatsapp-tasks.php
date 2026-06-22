@@ -310,6 +310,25 @@ function akh_wa_map_status_to_studio(string $waStatus): string
     return $map[$key] ?? 'new';
 }
 
+function akh_wa_map_status_from_studio(string $studioStatus): ?string
+{
+    $key = strtolower(trim($studioStatus));
+    $map = [
+        'assigned' => 'assigned',
+        'in_progress' => 'editing',
+        'review' => 'review',
+        'delivered' => 'delivered',
+        'reverted' => 'review',
+        'closed' => 'closed',
+    ];
+    $wa = $map[$key] ?? null;
+    if ($wa === null) {
+        return null;
+    }
+
+    return in_array($wa, akh_wa_task_statuses(), true) ? $wa : null;
+}
+
 function akh_wa_resolve_client_username(array $waRow): string
 {
     $cid = isset($waRow['customer_id']) ? (int) $waRow['customer_id'] : 0;

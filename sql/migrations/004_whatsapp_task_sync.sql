@@ -1,15 +1,7 @@
--- WhatsApp task sync tables (editor portal → WhatsApp bot / client notifications).
--- Safe to run on DBs that already have these tables (CREATE IF NOT EXISTS).
+-- Editor status history for WhatsApp / client notifications.
+-- whatsapp_tasks is created by sql/migrations/004_whatsapp_tasks.sql — do not redefine it here.
 
-CREATE TABLE IF NOT EXISTS whatsapp_tasks (
-  task_id VARCHAR(32) NOT NULL,
-  status VARCHAR(64) NOT NULL DEFAULT 'New',
-  status_updated_at TIMESTAMP NULL DEFAULT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (task_id),
-  KEY ix_whatsapp_tasks_status (status),
-  KEY ix_whatsapp_tasks_status_updated (status_updated_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+SET NAMES utf8mb4;
 
 CREATE TABLE IF NOT EXISTS task_updates (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

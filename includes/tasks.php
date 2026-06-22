@@ -2098,7 +2098,7 @@ function akh_task_set_status(
         if (($t['id'] ?? '') !== $taskId) {
             continue;
         }
-        if (($t['assigned_editor'] ?? null) !== $editorUsername) {
+        if (strtolower(trim((string) ($t['assigned_editor'] ?? ''))) !== strtolower(trim($editorUsername))) {
             return null;
         }
         $prevSt = (string) ($t['status'] ?? '');
@@ -2141,7 +2141,7 @@ function akh_task_set_status(
         return null;
     }
     if ($prevSt !== $newStatus) {
-        if (!akh_whatsapp_record_task_status_update($taskId, $newStatus, $editorUsername, $statusComment)) {
+        if (!akh_whatsapp_record_task_status_update($out, $newStatus, $editorUsername, $statusComment)) {
             return null;
         }
     }
