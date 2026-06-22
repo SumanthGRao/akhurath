@@ -8,6 +8,8 @@
 
   var tasksById = {};
   var currentSig = cfg.initialSig || '';
+  var currentNotifySig = cfg.notifySig || '';
+  var clientAlerts = cfg.alerts || {};
   var filterStatus = cfg.filterStatus || '';
   var filterQ = cfg.filterQ || '';
   var refreshSeconds = Math.max(60, parseInt(cfg.refreshSeconds, 10) || 300);
@@ -16,6 +18,7 @@
   var refreshTimer = null;
   var searchDebounce = null;
   var loading = false;
+  var baseTitle = document.title;
 
   var els = {
     body: document.getElementById('wa-tasks-body'),
@@ -33,7 +36,58 @@
     editError: document.getElementById('wa-edit-error'),
     editMeta: document.getElementById('wa-edit-meta'),
     editTitle: document.getElementById('wa-edit-title'),
+    notifyBell: document.getElementById('wa-notify-bell'),
+    notifyCount: document.getElementById('wa-notify-count'),
   };
+
+  function normalizeTaskCode(code) {
+    var s = String(code || '').trim().toUpperCase();
+    var m = s.match(/^AS_?(\d+)$/i);
+    if (m) {
+      var n = parseInt(m[1], 10);
+      return 'AS' + String(n).padStart(4, '0');
+    }
+    return s;
+  }
+
+  function alertForTask(task) {
+    var code = normalizeTaskCode(task.task_code);
+    return clientAlerts[code] || clientAlerts[task.task_code] || null;
+  }
+
+  function setNotifyUi(count) {
+    var n = typeof count === 'number' ? count : 0;
+    if (els.notifyCount) els.notifyCount.textContent = String(n);
+    if (els.notifyBell) {
+      els.notifyBell.classList.toggle('wa-bell--active', n > 0);
+    }
+    if (n > 0) {
+      document.title = '🔔 ' + n + ' · ' + baseTitle;
+    } else {
+      document.title = baseTitle;
+    }
+  }
+
+  function applyNotifyPayload(data) {
+    if (data && data.alerts) {
+      clientAlerts = data.alerts;
+    }
+    if (data && typeof data.notify_count === 'number') {
+      setNotifyUi(data.notify_count);
+    }
+    if (data && data.notify_sig) {
+      currentNotifySig = data.notify_sig;
+    }
+  }
+
+  function ackNotifications(maxId) {
+    var payload = {};
+    if (maxId) payload.max_id = String(maxId);
+    return post('notify_ack', payload).then(function (data) {
+      applyNotifyPayload(data);
+      applyFiltersLocally();
+    });
+  }
 
   function escHtml(s) {
     return String(s || '')
@@ -107,9 +161,14 @@
 
     els.body.innerHTML = tasks.map(function (t) {
       var editor = t.assigned_editor_name ? escHtml(t.assigned_editor_name) : '—';
+      var alert = alertForTask(t);
+      var rowClass = alert ? ' wa-table__row--alert' : '';
+      var alertBadge = alert
+        ? '<span class="wa-alert-pill" title="' + escHtml(alert.preview || 'Client update') + '">Update</span> '
+        : '';
       return (
-        '<tr data-task-id="' + t.id + '">' +
-        '<td><code class="wa-code">' + escHtml(t.task_code) + '</code></td>' +
+        '<tr class="wa-table__row' + rowClass + '" data-task-id="' + t.id + '">' +
+        '<td>' + alertBadge + '<code class="wa-code">' + escHtml(t.task_code) + '</code></td>' +
         '<td><span class="wa-cell-main">' + escHtml(t.customer_name || '—') + '</span></td>' +
         '<td>' + escHtml(t.project_name || '—') + '</td>' +
         '<td>' + escHtml(t.task_type || '—') + '</td>' +
@@ -125,6 +184,15 @@
   function applyFiltersLocally() {
     var list = Object.keys(tasksById).map(function (id) { return tasksById[id]; });
     list.sort(function (a, b) {
+      var aa = alertForTask(a) ? 1 : 0;
+      var ab = alertForTask(b) ? 1 : 0;
+      if (aa !== ab) return ab - aa;
+      if (aa && ab) {
+        var ta = alertForTask(a);
+        var tb = alertForTask(b);
+        var cmp = String(tb.created_at || '').localeCompare(String(ta.created_at || ''));
+        if (cmp !== 0) return cmp;
+      }
       return String(b.updated_at).localeCompare(String(a.updated_at));
     });
 
@@ -153,6 +221,7 @@
         indexTasks(data.tasks || []);
         updateCounts(data.counts || {});
         if (data.sig) currentSig = data.sig;
+        applyNotifyPayload(data);
         applyFiltersLocally();
         resetCountdown();
       })
@@ -169,7 +238,13 @@
   function pollChanges() {
     return post('poll', {})
       .then(function (data) {
-        if (data.sig && data.sig !== currentSig) {
+        var needsReload = data.sig && data.sig !== currentSig;
+        var needsNotify = data.notify_sig && data.notify_sig !== currentNotifySig;
+        if (needsNotify && typeof data.notify_count === 'number') {
+          setNotifyUi(data.notify_count);
+          currentNotifySig = data.notify_sig;
+        }
+        if (needsReload || needsNotify) {
           return loadTasks(true);
         }
       })
@@ -230,6 +305,11 @@
 
     if (typeof els.modal.showModal === 'function') {
       els.modal.showModal();
+    }
+
+    var alert = alertForTask(t);
+    if (alert && alert.max_id) {
+      ackNotifications(alert.max_id).catch(function () {});
     }
   }
 
@@ -344,9 +424,16 @@
     }
     if (els.editClose) els.editClose.addEventListener('click', closeEdit);
     if (els.editCancel) els.editCancel.addEventListener('click', closeEdit);
+
+    if (els.notifyBell) {
+      els.notifyBell.addEventListener('click', function () {
+        ackNotifications(0).catch(function () {});
+      });
+    }
   }
 
   indexTasks(cfg.tasks || []);
+  setNotifyUi(parseInt(cfg.notifyCount, 10) || 0);
   bindEvents();
   resetCountdown();
   countdownTimer = setInterval(tickCountdown, 1000);

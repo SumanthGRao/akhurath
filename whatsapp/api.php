@@ -27,9 +27,29 @@ $action = trim((string) ($_POST['ajax_action'] ?? ''));
 
 try {
     if ($action === 'poll') {
+        $notify = akh_wa_client_notification_payload();
         echo json_encode([
             'ok' => true,
             'sig' => akh_wa_tasks_poll_signature(),
+            'notify_sig' => $notify['notify_sig'],
+            'notify_count' => $notify['count'],
+        ], JSON_THROW_ON_ERROR);
+        exit;
+    }
+
+    if ($action === 'notify_ack') {
+        $maxId = (int) ($_POST['max_id'] ?? 0);
+        if ($maxId > 0) {
+            akh_wa_notification_mark_seen($maxId);
+        } else {
+            akh_wa_notification_mark_all_seen();
+        }
+        $notify = akh_wa_client_notification_payload();
+        echo json_encode([
+            'ok' => true,
+            'notify_sig' => $notify['notify_sig'],
+            'notify_count' => $notify['count'],
+            'alerts' => $notify['alerts'],
         ], JSON_THROW_ON_ERROR);
         exit;
     }
@@ -42,10 +62,14 @@ try {
         $rows = akh_wa_tasks_list($filters);
         $editors = akh_wa_editors_for_select();
         $tasks = array_map(static fn (array $r): array => akh_wa_task_row_for_json($r, $editors), $rows);
+        $notify = akh_wa_client_notification_payload();
 
         echo json_encode([
             'ok' => true,
             'sig' => akh_wa_tasks_poll_signature(),
+            'notify_sig' => $notify['notify_sig'],
+            'notify_count' => $notify['count'],
+            'alerts' => $notify['alerts'],
             'counts' => akh_wa_task_status_counts(),
             'tasks' => $tasks,
             'editors' => $editors,

@@ -36,7 +36,7 @@ ON DUPLICATE KEY UPDATE k = k;
 
 CREATE TABLE IF NOT EXISTS task_notification_events (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  event_kind ENUM('studio_new', 'client_feedback') NOT NULL,
+  event_kind ENUM('studio_new', 'client_feedback', 'client_update', 'client_message') NOT NULL,
   task_id VARCHAR(64) NOT NULL,
   body MEDIUMTEXT NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

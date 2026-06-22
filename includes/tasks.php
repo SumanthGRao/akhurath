@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/site-notify-mail.php';
 require_once __DIR__ . '/whatsapp-task-sync.php';
+require_once __DIR__ . '/task-notification-events.php';
 
 /** Tasks, task_seq counter, and editor-seen map live in MySQL app_kv when the DB is bootstrapped. */
 function akh_tasks_storage_is_database(): bool
@@ -646,6 +647,7 @@ function akh_task_client_append_thread(string $taskId, string $clientUsername, s
         if (!akh_tasks_save_locked($list)) {
             return 'Could not save.';
         }
+        akh_task_write_client_message_notification($list[$i], $body);
 
         return null;
     }
@@ -1755,6 +1757,7 @@ function akh_task_client_update(
             return null;
         }
         akh_task_bundle_sync_parent($pid);
+        akh_task_write_client_update_notification($list[$existingIdx]);
 
         return $list[$existingIdx];
     }
@@ -1807,6 +1810,8 @@ function akh_task_client_update(
     if (!akh_tasks_save_locked($list)) {
         return null;
     }
+
+    akh_task_write_client_update_notification($out);
 
     return $out;
 }
@@ -1905,6 +1910,40 @@ function akh_task_client_save_post_delivery(
 }
 
 /**
+ * @param array<string, mixed> $task
+ */
+function akh_task_write_client_message_notification(array $task, string $message): void
+{
+    $id = (string) ($task['id'] ?? 'unknown');
+    $editor = (string) ($task['assigned_editor'] ?? '');
+    $snippet = mb_strlen($message) > 600 ? mb_substr($message, 0, 600) . '…' : $message;
+    $block = str_repeat('=', 72) . "\n"
+        . 'CLIENT MESSAGE (UTC): ' . gmdate('c') . "\n"
+        . 'Task ID: ' . $id . "\n"
+        . 'Assigned editor: ' . $editor . "\n"
+        . 'Client login: ' . ($task['client_username'] ?? '') . "\n"
+        . 'Title: ' . ($task['title'] ?? '') . "\n\n"
+        . $snippet . "\n";
+    akh_task_notification_insert('client_message', $id, $block);
+}
+
+/**
+ * @param array<string, mixed> $task
+ */
+function akh_task_write_client_update_notification(array $task): void
+{
+    $id = (string) ($task['id'] ?? 'unknown');
+    $block = str_repeat('=', 72) . "\n"
+        . 'CLIENT TASK UPDATE (UTC): ' . gmdate('c') . "\n"
+        . 'Task ID: ' . $id . "\n"
+        . 'Client login: ' . ($task['client_username'] ?? '') . "\n"
+        . 'Title: ' . ($task['title'] ?? '') . "\n"
+        . 'Status: ' . ($task['status'] ?? 'new') . "\n\n"
+        . 'Updated brief:' . "\n" . ($task['description'] ?? '') . "\n";
+    akh_task_notification_insert('client_update', $id, $block);
+}
+
+/**
  * Filesystem ping for the assigned editor (same folder as new-task notifications).
  *
  * @param array<string, mixed> $task
@@ -1923,24 +1962,7 @@ function akh_task_write_editor_feedback_notification(array $task): void
         . 'Title: ' . ($task['title'] ?? '') . "\n"
         . 'Status after save: reverted' . "\n\n"
         . 'Feedback (snippet):' . "\n" . $snippet . "\n";
-    if (akh_tasks_storage_is_database()) {
-        try {
-            akh_db()->prepare(
-                'INSERT INTO task_notification_events (event_kind, task_id, body) VALUES (?, ?, ?)'
-            )->execute(['client_feedback', $id, $block]);
-        } catch (\Throwable $e) {
-            // best-effort notification
-        }
-
-        return;
-    }
-    $dir = akh_task_notify_dir();
-    if (!is_dir($dir)) {
-        @mkdir($dir, 0755, true);
-    }
-    $safe = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
-    $file = $dir . '/' . gmdate('Y-m-d_His') . '_' . $safe . '_CLIENT_FEEDBACK.txt';
-    @file_put_contents($file, $block, LOCK_EX);
+    akh_task_notification_insert('client_feedback', $id, $block);
 }
 
 function akh_task_editor_unread_feedback_count(string $editorUsername): int
@@ -2011,24 +2033,7 @@ function akh_task_write_studio_notification(array $task): void
     $block .= 'Delivery: ' . $mode . "\n"
         . ($link !== '' ? 'Drive: ' . $link . "\n" : '')
         . "\nFull notes:\n" . ($task['description'] ?? '') . "\n";
-    if (akh_tasks_storage_is_database()) {
-        try {
-            akh_db()->prepare(
-                'INSERT INTO task_notification_events (event_kind, task_id, body) VALUES (?, ?, ?)'
-            )->execute(['studio_new', $id, $block]);
-        } catch (\Throwable $e) {
-            // best-effort notification
-        }
-
-        return;
-    }
-    $dir = akh_task_notify_dir();
-    if (!is_dir($dir)) {
-        @mkdir($dir, 0755, true);
-    }
-    $safe = preg_replace('/[^a-zA-Z0-9_-]/', '_', $id);
-    $file = $dir . '/' . gmdate('Y-m-d_His') . '_' . $safe . '.txt';
-    @file_put_contents($file, $block, LOCK_EX);
+    akh_task_notification_insert('studio_new', $id, $block);
 }
 
 /**

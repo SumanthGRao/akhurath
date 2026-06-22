@@ -56,7 +56,55 @@ function akh_wa_dashboard_login(string $username, string $password): bool
 
 function akh_wa_dashboard_logout(): void
 {
-    unset($_SESSION['akh_wa_dashboard_user']);
+    unset($_SESSION['akh_wa_dashboard_user'], $_SESSION['wa_notify_watermark']);
+}
+
+function akh_wa_notification_watermark(): int
+{
+    require_once __DIR__ . '/task-notification-events.php';
+    if (!isset($_SESSION['wa_notify_watermark'])) {
+        $_SESSION['wa_notify_watermark'] = akh_task_notification_latest_id();
+    }
+
+    return max(0, (int) $_SESSION['wa_notify_watermark']);
+}
+
+function akh_wa_notification_mark_seen(int $eventId): void
+{
+    if ($eventId < 1) {
+        return;
+    }
+    $cur = akh_wa_notification_watermark();
+    if ($eventId > $cur) {
+        $_SESSION['wa_notify_watermark'] = $eventId;
+    }
+}
+
+function akh_wa_notification_mark_all_seen(): void
+{
+    require_once __DIR__ . '/task-notification-events.php';
+    $_SESSION['wa_notify_watermark'] = akh_task_notification_latest_id();
+}
+
+/**
+ * @return array{count: int, alerts: array<string, array{count: int, max_id: int, preview: string, kind: string, created_at: string}>, notify_sig: string}
+ */
+function akh_wa_client_notification_payload(): array
+{
+    require_once __DIR__ . '/task-notification-events.php';
+    $wm = akh_wa_notification_watermark();
+    $alerts = akh_task_notification_client_alerts_grouped($wm);
+    $count = 0;
+    foreach ($alerts as $a) {
+        $count += (int) ($a['count'] ?? 0);
+    }
+
+    return [
+        'count' => $count,
+        'alerts' => $alerts,
+        'notify_sig' => akh_task_notification_poll_signature(),
+        'watermark' => $wm,
+    ];
 }
 
 function akh_require_wa_dashboard(): void

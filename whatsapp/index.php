@@ -48,6 +48,7 @@ foreach ($initialTasks as $row) {
 
 $totalTasks = array_sum($initialCounts);
 $userLabel = akh_wa_dashboard_current() ?? '';
+$waNotify = $dbError === '' ? akh_wa_client_notification_payload() : ['count' => 0, 'alerts' => [], 'notify_sig' => 'missing', 'watermark' => 0];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -74,6 +75,16 @@ $userLabel = akh_wa_dashboard_current() ?? '';
         </div>
       </div>
       <div class="wa-topbar__actions">
+        <button
+          type="button"
+          class="wa-bell<?php echo (int) ($waNotify['count'] ?? 0) > 0 ? ' wa-bell--active' : ''; ?>"
+          id="wa-notify-bell"
+          title="Client updates needing attention"
+        >
+          <span class="wa-bell__icon" aria-hidden="true">🔔</span>
+          <span class="wa-bell__count" id="wa-notify-count"><?php echo (int) ($waNotify['count'] ?? 0); ?></span>
+          <span class="visually-hidden"><?php echo (int) ($waNotify['count'] ?? 0); ?> client updates</span>
+        </button>
         <div class="wa-refresh" id="wa-refresh-indicator" aria-live="polite">
           <span class="wa-refresh__dot" aria-hidden="true"></span>
           <span class="wa-refresh__text">Next refresh in <strong id="wa-refresh-countdown"><?php echo (int) $refreshSec; ?></strong>s</span>
@@ -251,6 +262,9 @@ $userLabel = akh_wa_dashboard_current() ?? '';
         'statuses' => akh_wa_task_statuses(),
         'filterStatus' => $fStatus,
         'filterQ' => $fQ,
+        'notifyCount' => (int) ($waNotify['count'] ?? 0),
+        'notifySig' => (string) ($waNotify['notify_sig'] ?? ''),
+        'alerts' => $waNotify['alerts'] ?? [],
     ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR); ?>;
   </script>
   <script src="<?php echo h(base_path('assets/js/whatsapp-dashboard.js') . ($waJsVer !== '' ? '?v=' . rawurlencode($waJsVer) : '')); ?>" defer></script>

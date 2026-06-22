@@ -137,6 +137,22 @@ if (is_file($migrationPath)) {
     }
 }
 
+$migrationNotify = AKH_ROOT . '/sql/migrations/007_task_notification_event_kinds.sql';
+if (is_file($migrationNotify) && akh_ensure_table_exists($pdo, $schema, 'task_notification_events')) {
+    $col = $pdo->query(
+        "SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = " . $pdo->quote($schema) . " AND TABLE_NAME = 'task_notification_events' AND COLUMN_NAME = 'event_kind'"
+    );
+    $type = $col !== false ? $col->fetchColumn() : false;
+    if (is_string($type) && !str_contains($type, 'client_update')) {
+        echo "Applying sql/migrations/007_task_notification_event_kinds.sql ...\n";
+        $sqlNotify = file_get_contents($migrationNotify);
+        if (is_string($sqlNotify) && trim($sqlNotify) !== '') {
+            $pdo->exec($sqlNotify);
+        }
+    }
+}
+
 echo "Schema patches are up to date.\n";
 
 if (!$migrateCustomers && !$migrateEditors) {
