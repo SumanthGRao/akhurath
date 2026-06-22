@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/site-notify-mail.php';
+require_once __DIR__ . '/whatsapp-task-sync.php';
 
 /** Tasks, task_seq counter, and editor-seen map live in MySQL app_kv when the DB is bootstrapped. */
 function akh_tasks_storage_is_database(): bool
@@ -2070,8 +2071,13 @@ function akh_task_claim(string $taskId, string $editorUsername): ?array
 /**
  * @return array<string, mixed>|null
  */
-function akh_task_set_status(string $taskId, string $editorUsername, string $newStatus, string $deliverableOutput = ''): ?array
-{
+function akh_task_set_status(
+    string $taskId,
+    string $editorUsername,
+    string $newStatus,
+    string $deliverableOutput = '',
+    string $statusComment = ''
+): ?array {
     $allowed = ['assigned', 'in_progress', 'review', 'delivered', 'reverted', 'closed'];
     if (!in_array($newStatus, $allowed, true)) {
         return null;
@@ -2080,9 +2086,14 @@ function akh_task_set_status(string $taskId, string $editorUsername, string $new
     if (mb_strlen($deliverableOutput) > 4000) {
         return null;
     }
+    $statusComment = trim($statusComment);
+    if (mb_strlen($statusComment) > 2000) {
+        return null;
+    }
     $list = akh_tasks_load();
     $out = null;
     $notifyClient = false;
+    $prevSt = '';
     foreach ($list as $i => $t) {
         if (($t['id'] ?? '') !== $taskId) {
             continue;
@@ -2091,6 +2102,9 @@ function akh_task_set_status(string $taskId, string $editorUsername, string $new
             return null;
         }
         $prevSt = (string) ($t['status'] ?? '');
+        if ($prevSt !== $newStatus && $statusComment === '') {
+            return null;
+        }
         $prevDel = trim((string) ($t['deliverable_output'] ?? ''));
         $list[$i]['status'] = $newStatus;
         $list[$i]['deliverable_output'] = $deliverableOutput;
@@ -2125,6 +2139,11 @@ function akh_task_set_status(string $taskId, string $editorUsername, string $new
     }
     if ($out === null) {
         return null;
+    }
+    if ($prevSt !== $newStatus) {
+        if (!akh_whatsapp_record_task_status_update($taskId, $newStatus, $editorUsername, $statusComment)) {
+            return null;
+        }
     }
     if (!akh_tasks_save_locked($list)) {
         return null;

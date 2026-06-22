@@ -83,9 +83,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($action === 'status' && $taskId !== '') {
             $status = (string) ($_POST['status'] ?? '');
             $deliverable = trim((string) ($_POST['deliverable_output'] ?? ''));
-            $t = akh_task_set_status($taskId, $editor, $status, $deliverable);
+            $statusComment = trim((string) ($_POST['status_comment'] ?? ''));
+            $t = akh_task_set_status($taskId, $editor, $status, $deliverable, $statusComment);
             if ($t === null) {
-                $error = 'Could not update status (only the assigned editor can change it), or final output text is too long.';
+                $error = 'Could not update status (only the assigned editor can change it), final output text is too long, a status note is required when changing workflow status, or WhatsApp sync failed.';
             } else {
                 $flash = 'Status updated.';
             }
@@ -342,18 +343,23 @@ require_once AKH_ROOT . '/includes/header.php';
                           <?php endif; ?>
                         </div>
                       <?php endif; ?>
-                      <form class="portal-form portal-form--compact ticket__form" method="post" action="">
+                      <form class="portal-form portal-form--compact ticket__form ticket__form--status" method="post" action="" data-current-status="<?php echo h($st); ?>">
                         <input type="hidden" name="csrf_token" value="<?php echo h($pageCsrf); ?>" />
                         <input type="hidden" name="action" value="status" />
                         <input type="hidden" name="task_id" value="<?php echo h($tid); ?>" />
                         <h3 class="ticket__block-title">Status &amp; deliverable</h3>
                         <label class="field" style="margin-top:0">
                           <span>Workflow status</span>
-                          <select name="status" aria-label="Task status">
+                          <select name="status" class="js-task-status-select" aria-label="Task status">
                             <?php foreach ($opts as $o): ?>
                               <option value="<?php echo h($o); ?>"<?php echo $o === $st ? ' selected' : ''; ?>><?php echo h(akh_task_status_label($o)); ?></option>
                             <?php endforeach; ?>
                           </select>
+                        </label>
+                        <label class="field field--status-comment" hidden>
+                          <span>Current status note <strong>(required when status changes)</strong></span>
+                          <textarea name="status_comment" rows="2" maxlength="2000" placeholder="e.g. Started teaser edit, sent for client review, delivered final cut…"></textarea>
+                          <span class="portal-muted" style="font-size:0.85rem">Saved to WhatsApp task history whenever you change workflow status.</span>
                         </label>
                         <label class="field">
                           <span>Final output link or path (saved with status; clients see it when you mark <strong>Delivered</strong>)</span>
@@ -483,6 +489,25 @@ require_once AKH_ROOT . '/includes/header.php';
       }, true);
       document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('details.ticket[open]').forEach(ackOpenedEditor);
+        document.querySelectorAll('.ticket__form--status').forEach(function (form) {
+          var select = form.querySelector('.js-task-status-select');
+          var commentField = form.querySelector('.field--status-comment');
+          var commentInput = commentField ? commentField.querySelector('textarea[name="status_comment"]') : null;
+          var currentStatus = form.getAttribute('data-current-status') || '';
+          function syncStatusCommentField() {
+            if (!select || !commentField || !commentInput) return;
+            var needsComment = select.value !== currentStatus;
+            commentField.hidden = !needsComment;
+            commentInput.required = needsComment;
+            if (!needsComment) {
+              commentInput.value = '';
+            }
+          }
+          if (select) {
+            select.addEventListener('change', syncStatusCommentField);
+            syncStatusCommentField();
+          }
+        });
       });
     })();
   </script>

@@ -126,6 +126,18 @@ if (akh_ensure_table_exists($pdo, $schema, 'contact_enquiries')
     );
 }
 
+$migrationPath = AKH_ROOT . '/sql/migrations/004_whatsapp_task_sync.sql';
+if (is_file($migrationPath)) {
+    $sql = file_get_contents($migrationPath);
+    if (is_string($sql) && trim($sql) !== '') {
+        if (!akh_ensure_table_exists($pdo, $schema, 'whatsapp_tasks')
+            || !akh_ensure_table_exists($pdo, $schema, 'task_updates')) {
+            echo "Applying sql/migrations/004_whatsapp_task_sync.sql ...\n";
+            $pdo->exec($sql);
+        }
+    }
+}
+
 echo "Schema patches are up to date.\n";
 
 if (!$migrateCustomers && !$migrateEditors) {
