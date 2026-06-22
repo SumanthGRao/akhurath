@@ -80,9 +80,11 @@
     }
   }
 
-  function ackNotifications(maxId) {
+  function ackNotifications(taskCode) {
     var payload = {};
-    if (maxId) payload.max_id = String(maxId);
+    if (taskCode) {
+      payload.task_code = normalizeTaskCode(taskCode);
+    }
     return post('notify_ack', payload).then(function (data) {
       applyNotifyPayload(data);
       applyFiltersLocally();
@@ -308,8 +310,8 @@
     }
 
     var alert = alertForTask(t);
-    if (alert && alert.max_id) {
-      ackNotifications(alert.max_id).catch(function () {});
+    if (alert && t.task_code) {
+      ackNotifications(t.task_code).catch(function () {});
     }
   }
 

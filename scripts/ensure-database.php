@@ -153,6 +153,19 @@ if (is_file($migrationNotify) && akh_ensure_table_exists($pdo, $schema, 'task_no
     }
 }
 
+$migrationNotifyStatus = AKH_ROOT . '/sql/migrations/008_task_notification_status.sql';
+if (is_file($migrationNotifyStatus) && akh_ensure_table_exists($pdo, $schema, 'task_notification_events')) {
+    if (!akh_ensure_column_exists($pdo, $schema, 'task_notification_events', 'status')) {
+        echo "Adding column task_notification_events.status ...\n";
+        $pdo->exec(
+            "ALTER TABLE task_notification_events ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending' AFTER body"
+        );
+        $pdo->exec(
+            'ALTER TABLE task_notification_events ADD KEY ix_task_notification_status (status)'
+        );
+    }
+}
+
 echo "Schema patches are up to date.\n";
 
 if (!$migrateCustomers && !$migrateEditors) {

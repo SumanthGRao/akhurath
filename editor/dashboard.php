@@ -123,8 +123,29 @@ $newTasks = array_values(array_filter($all, static function (array $t): bool {
     return akh_task_editor_pool_eligible($t);
 }));
 $mine = array_values(array_filter($all, static function (array $t) use ($editor): bool {
-    return ($t['assigned_editor'] ?? null) === $editor;
+    return strtolower(trim((string) ($t['assigned_editor'] ?? ''))) === strtolower(trim($editor));
 }));
+require_once AKH_ROOT . '/includes/task-notification-events.php';
+$clientNotifyAlerts = akh_task_notification_pending_alerts_for_editor($editor);
+usort($mine, static function (array $a, array $b) use ($clientNotifyAlerts): int {
+    $aid = akh_task_normalize_id((string) ($a['id'] ?? ''));
+    $bid = akh_task_normalize_id((string) ($b['id'] ?? ''));
+    $aAlert = isset($clientNotifyAlerts[$aid]) ? 1 : 0;
+    $bAlert = isset($clientNotifyAlerts[$bid]) ? 1 : 0;
+    if ($aAlert !== $bAlert) {
+        return $bAlert <=> $aAlert;
+    }
+    if ($aAlert && $bAlert) {
+        $ta = (string) ($clientNotifyAlerts[$aid]['created_at'] ?? '');
+        $tb = (string) ($clientNotifyAlerts[$bid]['created_at'] ?? '');
+        $cmp = strcmp($tb, $ta);
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+    }
+
+    return strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
+});
 $seenNew = akh_task_editor_seen_load()[strtolower($editor)] ?? [];
 $editorBellCount = akh_task_editor_board_bell_count($editor);
 $editorBoardSig = akh_task_poll_signature_all();
@@ -291,7 +312,9 @@ require_once AKH_ROOT . '/includes/header.php';
               $dm = (string) ($t['delivery_mode'] ?? '');
               $headline = (string) ($t['title'] ?? '');
               $stSlug = preg_replace('/[^a-z_]/', '', $st);
-              $notify = ($t['editor_feedback_notify'] ?? false) === true;
+              $tidNorm = akh_task_normalize_id($tid);
+              $clientAlert = $clientNotifyAlerts[$tidNorm] ?? null;
+              $notify = ($t['editor_feedback_notify'] ?? false) === true || $clientAlert !== null;
               $isOpen = $openTicketId !== '' && $openTicketId === $tid;
               $opts = ['assigned', 'in_progress', 'review', 'delivered', 'reverted', 'closed'];
               ?>
@@ -339,6 +362,12 @@ require_once AKH_ROOT . '/includes/header.php';
                       <?php endif; ?>
                       <?php if ($dm === 'google_drive' && trim((string) ($t['drive_link'] ?? '')) !== ''): ?>
                         <p class="ticket__line"><a class="text-link" href="<?php echo h((string) $t['drive_link']); ?>" target="_blank" rel="noopener noreferrer">Client Drive link</a></p>
+                      <?php endif; ?>
+                      <?php if ($clientAlert !== null): ?>
+                        <div class="ticket__block ticket__block--clientfb">
+                          <h3 class="ticket__block-title">Client update request</h3>
+                          <div class="ticket__prose"><?php echo nl2br(h((string) ($clientAlert['preview'] ?? 'Client requested an update.'))); ?></div>
+                        </div>
                       <?php endif; ?>
                       <?php if (trim((string) ($t['client_feedback'] ?? '')) !== '' || trim((string) ($t['client_meeting_date'] ?? '')) !== ''): ?>
                         <div class="ticket__block ticket__block--clientfb">

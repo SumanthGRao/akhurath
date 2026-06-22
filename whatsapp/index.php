@@ -48,7 +48,7 @@ foreach ($initialTasks as $row) {
 
 $totalTasks = array_sum($initialCounts);
 $userLabel = akh_wa_dashboard_current() ?? '';
-$waNotify = $dbError === '' ? akh_wa_client_notification_payload() : ['count' => 0, 'alerts' => [], 'notify_sig' => 'missing', 'watermark' => 0];
+$waNotify = $dbError === '' ? akh_wa_client_notification_payload() : ['count' => 0, 'alerts' => [], 'notify_sig' => 'missing'];
 ?>
 <!DOCTYPE html>
 <html lang="en">

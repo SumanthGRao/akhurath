@@ -39,10 +39,12 @@ CREATE TABLE IF NOT EXISTS task_notification_events (
   event_kind ENUM('studio_new', 'client_feedback', 'client_update', 'client_message') NOT NULL,
   task_id VARCHAR(64) NOT NULL,
   body MEDIUMTEXT NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY ix_task_notification_task (task_id),
-  KEY ix_task_notification_created (created_at)
+  KEY ix_task_notification_created (created_at),
+  KEY ix_task_notification_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS contact_enquiries (

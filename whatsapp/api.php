@@ -38,11 +38,13 @@ try {
     }
 
     if ($action === 'notify_ack') {
-        $maxId = (int) ($_POST['max_id'] ?? 0);
-        if ($maxId > 0) {
-            akh_wa_notification_mark_seen($maxId);
+        $taskCode = trim((string) ($_POST['task_code'] ?? ''));
+        if ($taskCode !== '') {
+            require_once AKH_ROOT . '/includes/task-notification-events.php';
+            akh_task_notification_mark_task_read($taskCode);
         } else {
-            akh_wa_notification_mark_all_seen();
+            require_once AKH_ROOT . '/includes/task-notification-events.php';
+            akh_task_notification_mark_all_read();
         }
         $notify = akh_wa_client_notification_payload();
         echo json_encode([

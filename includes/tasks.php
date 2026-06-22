@@ -285,7 +285,11 @@ function akh_task_editor_unseen_new_count(string $editorUsername): int
 
 function akh_task_editor_board_bell_count(string $editorUsername): int
 {
-    return akh_task_editor_unseen_new_count($editorUsername) + akh_task_editor_unread_feedback_count($editorUsername);
+    require_once __DIR__ . '/task-notification-events.php';
+
+    return akh_task_editor_unseen_new_count($editorUsername)
+        + akh_task_editor_unread_feedback_count($editorUsername)
+        + akh_task_notification_pending_count_for_editor($editorUsername);
 }
 
 /**
@@ -325,7 +329,7 @@ function akh_task_poll_signature_all(): string
     }
     sort($parts);
 
-    return sha1(implode("\n", $parts));
+    return sha1(implode("\n", $parts) . '|' . akh_task_notification_poll_signature());
 }
 
 /** Fingerprint of one client’s tasks (for client dashboard refresh). */
@@ -453,6 +457,33 @@ function akh_task_editor_notice_rows(string $editorUsername): array
             ];
             $seenIds[] = $tid;
         }
+    }
+
+    require_once __DIR__ . '/task-notification-events.php';
+    foreach (akh_task_notification_pending_alerts_for_editor($editorUsername) as $taskId => $alert) {
+        if (in_array($taskId, $seenIds, true)) {
+            continue;
+        }
+        $t = akh_task_by_id($taskId);
+        $title = is_array($t) ? (string) ($t['title'] ?? $taskId) : $taskId;
+        if (mb_strlen($title) > 100) {
+            $title = mb_substr($title, 0, 99) . '…';
+        }
+        $detail = trim((string) ($alert['preview'] ?? ''));
+        if ($detail === '') {
+            $detail = akh_task_notification_kind_label((string) ($alert['kind'] ?? 'client_update'));
+        }
+        if (mb_strlen($detail) > 220) {
+            $detail = mb_substr($detail, 0, 219) . '…';
+        }
+        $out[] = [
+            'task_id' => $taskId,
+            'anchor_id' => $taskId,
+            'title' => $title,
+            'label' => akh_task_notification_kind_label((string) ($alert['kind'] ?? 'client_update')),
+            'detail' => $detail,
+        ];
+        $seenIds[] = $taskId;
     }
 
     return $out;
@@ -795,6 +826,8 @@ function akh_task_ajax_editor_view_ack(string $editorUsername, string $taskId, s
             return ['ok' => false, 'error' => 'not_yours'];
         }
         akh_task_editor_clear_feedback_notify($taskId, $editorUsername);
+        require_once __DIR__ . '/task-notification-events.php';
+        akh_task_notification_mark_task_read($taskId);
     } else {
         return ['ok' => false, 'error' => 'bad_kind'];
     }
