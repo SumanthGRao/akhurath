@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once AKH_ROOT . '/includes/whatsapp-dashboard-auth.php';
 require_once AKH_ROOT . '/includes/whatsapp-tasks.php';
+require_once AKH_ROOT . '/includes/tasks.php';
 require_once AKH_ROOT . '/includes/csrf.php';
 
 akh_require_wa_dashboard();
@@ -23,7 +24,7 @@ try {
     if (!akh_wa_tasks_table_exists()) {
         $dbError = 'Table whatsapp_tasks was not found. Import sql/migrations/004_whatsapp_tasks.sql in phpMyAdmin.';
     } else {
-        $initialTasks = akh_wa_tasks_list();
+        $initialTasks = akh_wa_tasks_list_for_dashboard();
         $initialCounts = akh_wa_task_status_counts();
         $editors = akh_wa_editors_for_select();
         $pollSig = akh_wa_tasks_poll_signature();
@@ -144,9 +145,17 @@ $waNotify = $dbError === '' ? akh_wa_client_notification_payload() : ['count' =>
           <?php if ($tasksJson === []): ?>
             <tr class="wa-table__empty"><td colspan="8">No tasks yet — they will appear here when WhatsApp automation creates them.</td></tr>
           <?php else: ?>
-            <?php foreach ($tasksJson as $t): ?>
-              <tr data-task-id="<?php echo (int) $t['id']; ?>">
-                <td><code class="wa-code"><?php echo h((string) $t['task_code']); ?></code></td>
+            <?php
+            $waAlerts = $dbError === '' ? ($waNotify['alerts'] ?? []) : [];
+            foreach ($tasksJson as $t):
+              $alert = akh_task_notification_alert_for_code($waAlerts, (string) ($t['task_code'] ?? ''));
+              $rowClass = $alert ? ' wa-table__row--alert' : '';
+              $alertBadge = $alert
+                  ? '<span class="wa-alert-pill" title="' . h((string) ($alert['preview'] ?? 'Client update')) . '">Update</span> '
+                  : '';
+              ?>
+              <tr class="wa-table__row<?php echo $rowClass; ?>" data-task-id="<?php echo (int) $t['id']; ?>">
+                <td><?php echo $alertBadge; ?><code class="wa-code"><?php echo h((string) $t['task_code']); ?></code></td>
                 <td>
                   <span class="wa-cell-main"><?php echo h((string) ($t['customer_name'] !== '' ? $t['customer_name'] : '—')); ?></span>
                 </td>

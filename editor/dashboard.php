@@ -127,6 +127,23 @@ $mine = array_values(array_filter($all, static function (array $t) use ($editor)
 }));
 require_once AKH_ROOT . '/includes/task-notification-events.php';
 $clientNotifyAlerts = akh_task_notification_pending_alerts_for_editor($editor);
+$mineIds = [];
+foreach ($mine as $t) {
+    $nid = akh_task_normalize_id((string) ($t['id'] ?? ''));
+    if ($nid !== '') {
+        $mineIds[$nid] = true;
+    }
+}
+foreach (array_keys($clientNotifyAlerts) as $alertTaskId) {
+    if (isset($mineIds[$alertTaskId])) {
+        continue;
+    }
+    $extra = akh_task_notification_editor_board_row($alertTaskId, $editor);
+    if (is_array($extra)) {
+        $mine[] = $extra;
+        $mineIds[$alertTaskId] = true;
+    }
+}
 usort($mine, static function (array $a, array $b) use ($clientNotifyAlerts): int {
     $aid = akh_task_normalize_id((string) ($a['id'] ?? ''));
     $bid = akh_task_normalize_id((string) ($b['id'] ?? ''));

@@ -61,7 +61,7 @@ try {
             'status' => (string) ($_POST['status'] ?? ''),
             'q' => (string) ($_POST['q'] ?? ''),
         ];
-        $rows = akh_wa_tasks_list($filters);
+        $rows = akh_wa_tasks_list_for_dashboard($filters);
         $editors = akh_wa_editors_for_select();
         $tasks = array_map(static fn (array $r): array => akh_wa_task_row_for_json($r, $editors), $rows);
         $notify = akh_wa_client_notification_payload();

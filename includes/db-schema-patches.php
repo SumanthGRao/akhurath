@@ -34,8 +34,15 @@ function akh_db_apply_runtime_patches(PDO $pdo): void
             return;
         }
 
+        $after = 'body';
+        $col->execute([$schema, 'task_notification_events', 'body']);
+        if ($col->fetchColumn() === false) {
+            $col->execute([$schema, 'task_notification_events', 'message']);
+            $after = $col->fetchColumn() !== false ? 'message' : '';
+        }
+        $afterSql = $after !== '' ? " AFTER {$after}" : '';
         $pdo->exec(
-            "ALTER TABLE task_notification_events ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending' AFTER body"
+            "ALTER TABLE task_notification_events ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending'{$afterSql}"
         );
         $pdo->exec(
             'ALTER TABLE task_notification_events ADD KEY ix_task_notification_status (status)'

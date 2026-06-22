@@ -52,7 +52,13 @@
 
   function alertForTask(task) {
     var code = normalizeTaskCode(task.task_code);
-    return clientAlerts[code] || clientAlerts[task.task_code] || null;
+    if (clientAlerts[code]) return clientAlerts[code];
+    if (clientAlerts[task.task_code]) return clientAlerts[task.task_code];
+    var keys = Object.keys(clientAlerts || {});
+    for (var i = 0; i < keys.length; i++) {
+      if (normalizeTaskCode(keys[i]) === code) return clientAlerts[keys[i]];
+    }
+    return null;
   }
 
   function setNotifyUi(count) {
@@ -435,7 +441,11 @@
   }
 
   indexTasks(cfg.tasks || []);
+  if (cfg.alerts) {
+    clientAlerts = cfg.alerts;
+  }
   setNotifyUi(parseInt(cfg.notifyCount, 10) || 0);
+  applyFiltersLocally();
   bindEvents();
   resetCountdown();
   countdownTimer = setInterval(tickCountdown, 1000);

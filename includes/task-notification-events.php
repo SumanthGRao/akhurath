@@ -73,8 +73,83 @@ function akh_task_notification_body_column(): string
     if (akh_task_notification_has_column('comment')) {
         return 'comment';
     }
+    if (akh_task_notification_has_column('notification')) {
+        return 'notification';
+    }
 
     return 'body';
+}
+
+function akh_task_notification_body_select(): string
+{
+    $parts = [];
+    foreach (['body', 'message', 'comment', 'notification'] as $col) {
+        if (akh_task_notification_has_column($col)) {
+            $parts[] = "NULLIF(TRIM({$col}), '')";
+        }
+    }
+    if ($parts === []) {
+        return "'Client update request' AS body";
+    }
+
+    return 'COALESCE(' . implode(', ', $parts) . ", 'Client update request') AS body";
+}
+
+/** SQL fragment selecting a unified task id (bot may use task_code). */
+function akh_task_notification_task_ref_select(): string
+{
+    $hasTaskId = akh_task_notification_has_column('task_id');
+    $hasTaskCode = akh_task_notification_has_column('task_code');
+    if ($hasTaskId && $hasTaskCode) {
+        return 'COALESCE(NULLIF(TRIM(task_id), ""), NULLIF(TRIM(task_code), "")) AS task_id';
+    }
+    if ($hasTaskId) {
+        return 'task_id';
+    }
+    if ($hasTaskCode) {
+        return 'task_code AS task_id';
+    }
+
+    return 'task_id';
+}
+
+function akh_task_notification_task_ref_column(): string
+{
+    if (akh_task_notification_has_column('task_id')) {
+        return 'task_id';
+    }
+    if (akh_task_notification_has_column('task_code')) {
+        return 'task_code';
+    }
+
+    return 'task_id';
+}
+
+/**
+ * @return array{sql: string, params: list<mixed>}
+ */
+function akh_task_notification_pending_filter(): array
+{
+    if (akh_task_notification_has_column('status')) {
+        return [
+            'sql' => "(status IS NULL OR TRIM(status) = '' OR LOWER(TRIM(status)) IN ('pending', 'unread', 'new', 'open'))",
+            'params' => [],
+        ];
+    }
+    if (akh_task_notification_has_column('is_read')) {
+        return ['sql' => '(is_read = 0 OR is_read IS NULL)', 'params' => []];
+    }
+    if (akh_task_notification_has_column('read_at')) {
+        return ['sql' => 'read_at IS NULL', 'params' => []];
+    }
+    if (akh_task_notification_has_column('event_kind')) {
+        $kinds = akh_task_notification_client_kinds();
+        $placeholders = implode(',', array_fill(0, count($kinds), '?'));
+
+        return ['sql' => "event_kind IN ({$placeholders})", 'params' => $kinds];
+    }
+
+    return ['sql' => '1=1', 'params' => []];
 }
 
 function akh_task_notification_insert(string $eventKind, string $taskId, string $body): void
@@ -151,29 +226,20 @@ function akh_task_notification_poll_signature(): string
     }
 
     try {
-        if (akh_task_notification_has_column('status')) {
-            $row = akh_db()->query(
-                "SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS m FROM task_notification_events WHERE status = 'pending'"
-            )->fetch(PDO::FETCH_ASSOC);
-        } elseif (akh_task_notification_has_column('event_kind')) {
-            $kinds = akh_task_notification_client_kinds();
-            $placeholders = implode(',', array_fill(0, count($kinds), '?'));
-            $st = akh_db()->prepare(
-                "SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS m FROM task_notification_events WHERE event_kind IN ({$placeholders})"
-            );
-            $st->execute($kinds);
-            $row = $st->fetch(PDO::FETCH_ASSOC);
-        } else {
-            $row = akh_db()->query(
-                'SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS m FROM task_notification_events'
-            )->fetch(PDO::FETCH_ASSOC);
-        }
-        if (!is_array($row)) {
+        $pending = akh_task_notification_pending_filter();
+        $row = akh_db()->prepare(
+            'SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS m FROM task_notification_events WHERE ' . $pending['sql']
+        );
+        $row->execute($pending['params']);
+        $data = $row->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($data)) {
             return 'empty';
         }
 
-        return hash('sha256', (string) ($row['c'] ?? '0') . '|' . (string) ($row['m'] ?? '0'));
-    } catch (Throwable) {
+        return hash('sha256', (string) ($data['c'] ?? '0') . '|' . (string) ($data['m'] ?? '0'));
+    } catch (Throwable $e) {
+        error_log('akh_task_notification_poll_signature: ' . $e->getMessage());
+
         return 'error';
     }
 }
@@ -187,8 +253,9 @@ function akh_task_notification_pending_rows(?string $taskId = null): array
         return [];
     }
 
-    $bodyCol = akh_task_notification_body_column();
-    $select = "id, task_id, {$bodyCol} AS body, created_at";
+    $bodySelect = akh_task_notification_body_select();
+    $taskRef = akh_task_notification_task_ref_select();
+    $select = "id, {$taskRef}, {$bodySelect}, created_at";
     if (akh_task_notification_has_column('event_kind')) {
         $select .= ', event_kind';
     }
@@ -196,27 +263,24 @@ function akh_task_notification_pending_rows(?string $taskId = null): array
         $select .= ', status';
     }
 
-    $where = [];
-    $params = [];
-    if (akh_task_notification_has_column('status')) {
-        $where[] = "status = 'pending'";
-    } elseif (akh_task_notification_has_column('event_kind')) {
-        $kinds = akh_task_notification_client_kinds();
-        $where[] = 'event_kind IN (' . implode(',', array_fill(0, count($kinds), '?')) . ')';
-        $params = $kinds;
-    }
+    $pending = akh_task_notification_pending_filter();
+    $where = [$pending['sql']];
+    $params = $pending['params'];
 
     if ($taskId !== null && trim($taskId) !== '') {
         require_once __DIR__ . '/tasks.php';
-        $where[] = 'task_id = ?';
-        $params[] = akh_task_normalize_id($taskId);
+        $norm = akh_task_normalize_id($taskId);
+        $refCol = akh_task_notification_task_ref_column();
+        if (akh_task_notification_has_column('task_id') && akh_task_notification_has_column('task_code')) {
+            $where[] = '(task_id = ? OR task_code = ?)';
+            array_push($params, $norm, $norm);
+        } else {
+            $where[] = $refCol . ' = ?';
+            $params[] = $norm;
+        }
     }
 
-    $sql = "SELECT {$select} FROM task_notification_events";
-    if ($where !== []) {
-        $sql .= ' WHERE ' . implode(' AND ', $where);
-    }
-    $sql .= ' ORDER BY id ASC';
+    $sql = "SELECT {$select} FROM task_notification_events WHERE " . implode(' AND ', $where) . ' ORDER BY id ASC';
 
     try {
         $st = akh_db()->prepare($sql);
@@ -224,14 +288,16 @@ function akh_task_notification_pending_rows(?string $taskId = null): array
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
 
         return is_array($rows) ? $rows : [];
-    } catch (Throwable) {
+    } catch (Throwable $e) {
+        error_log('akh_task_notification_pending_rows: ' . $e->getMessage() . ' SQL: ' . $sql);
+
         return [];
     }
 }
 
 function akh_task_notification_mark_task_read(string $taskId): void
 {
-    if (!akh_task_notification_table_exists() || !akh_task_notification_has_column('status')) {
+    if (!akh_task_notification_table_exists()) {
         return;
     }
 
@@ -241,25 +307,59 @@ function akh_task_notification_mark_task_read(string $taskId): void
         return;
     }
 
+    $pending = akh_task_notification_pending_filter();
+    $refCol = akh_task_notification_task_ref_column();
+    if (akh_task_notification_has_column('task_id') && akh_task_notification_has_column('task_code')) {
+        $match = '(task_id = ? OR task_code = ?)';
+        $matchParams = [$taskId, $taskId];
+    } else {
+        $match = $refCol . ' = ?';
+        $matchParams = [$taskId];
+    }
+
     try {
-        akh_db()->prepare(
-            "UPDATE task_notification_events SET status = 'read' WHERE task_id = ? AND status = 'pending'"
-        )->execute([$taskId]);
-    } catch (Throwable) {
-        // best-effort
+        if (akh_task_notification_has_column('status')) {
+            $sql = "UPDATE task_notification_events SET status = 'read' WHERE {$match} AND ({$pending['sql']})";
+            $st = akh_db()->prepare($sql);
+            $st->execute(array_merge($matchParams, $pending['params']));
+        } elseif (akh_task_notification_has_column('is_read')) {
+            $sql = "UPDATE task_notification_events SET is_read = 1 WHERE {$match} AND ({$pending['sql']})";
+            $st = akh_db()->prepare($sql);
+            $st->execute(array_merge($matchParams, $pending['params']));
+        } elseif (akh_task_notification_has_column('read_at')) {
+            $sql = "UPDATE task_notification_events SET read_at = CURRENT_TIMESTAMP WHERE {$match} AND ({$pending['sql']})";
+            $st = akh_db()->prepare($sql);
+            $st->execute(array_merge($matchParams, $pending['params']));
+        }
+    } catch (Throwable $e) {
+        error_log('akh_task_notification_mark_task_read: ' . $e->getMessage());
     }
 }
 
 function akh_task_notification_mark_all_read(): void
 {
-    if (!akh_task_notification_table_exists() || !akh_task_notification_has_column('status')) {
+    if (!akh_task_notification_table_exists()) {
         return;
     }
 
+    $pending = akh_task_notification_pending_filter();
+
     try {
-        akh_db()->exec("UPDATE task_notification_events SET status = 'read' WHERE status = 'pending'");
-    } catch (Throwable) {
-        // best-effort
+        if (akh_task_notification_has_column('status')) {
+            $sql = "UPDATE task_notification_events SET status = 'read' WHERE {$pending['sql']}";
+            $st = akh_db()->prepare($sql);
+            $st->execute($pending['params']);
+        } elseif (akh_task_notification_has_column('is_read')) {
+            $sql = "UPDATE task_notification_events SET is_read = 1 WHERE {$pending['sql']}";
+            $st = akh_db()->prepare($sql);
+            $st->execute($pending['params']);
+        } elseif (akh_task_notification_has_column('read_at')) {
+            $sql = 'UPDATE task_notification_events SET read_at = CURRENT_TIMESTAMP WHERE ' . $pending['sql'];
+            $st = akh_db()->prepare($sql);
+            $st->execute($pending['params']);
+        }
+    } catch (Throwable $e) {
+        error_log('akh_task_notification_mark_all_read: ' . $e->getMessage());
     }
 }
 
@@ -387,4 +487,93 @@ function akh_task_notification_kind_label(string $kind): string
     ];
 
     return $map[$kind] ?? 'Client update';
+}
+
+/**
+ * @param array<string, array<string, mixed>> $alerts
+ * @return ?array<string, mixed>
+ */
+function akh_task_notification_alert_for_code(array $alerts, string $taskCode): ?array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $code = akh_task_normalize_id($taskCode);
+    if ($code === '') {
+        return null;
+    }
+    if (isset($alerts[$code])) {
+        return $alerts[$code];
+    }
+    foreach ($alerts as $key => $alert) {
+        if (akh_task_ids_match((string) $key, $code)) {
+            return $alert;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Studio-board row for a pending client alert (studio task or WhatsApp-only assignment).
+ *
+ * @return ?array<string, mixed>
+ */
+function akh_task_notification_editor_board_row(string $taskId, string $editorUsername): ?array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $taskId = akh_task_normalize_id($taskId);
+    $editorUsername = strtolower(trim($editorUsername));
+    if ($taskId === '' || $editorUsername === '') {
+        return null;
+    }
+
+    $studio = akh_task_by_id($taskId);
+    if (is_array($studio)) {
+        if (strtolower(trim((string) ($studio['assigned_editor'] ?? ''))) === $editorUsername) {
+            return $studio;
+        }
+
+        return null;
+    }
+
+    if (!function_exists('akh_wa_task_by_code')) {
+        require_once __DIR__ . '/whatsapp-tasks.php';
+    }
+    $wa = akh_wa_task_by_code($taskId);
+    if (!is_array($wa)) {
+        return null;
+    }
+
+    $editorId = isset($wa['assigned_editor']) ? (int) $wa['assigned_editor'] : 0;
+    $waEditor = $editorId > 0 ? akh_wa_editor_username_by_id($editorId) : null;
+    if (strtolower(trim((string) $waEditor)) !== $editorUsername) {
+        return null;
+    }
+
+    $title = trim((string) ($wa['project_name'] ?? ''));
+    if ($title === '') {
+        $title = trim((string) ($wa['customer_name'] ?? ''));
+    }
+    if ($title === '') {
+        $title = $taskId;
+    }
+
+    return [
+        'id' => $taskId,
+        'title' => $title,
+        'status' => akh_wa_map_status_to_studio((string) ($wa['status'] ?? 'assigned')),
+        'assigned_editor' => $editorUsername,
+        'client_username' => trim((string) ($wa['customer_name'] ?? '')),
+        'description' => trim((string) ($wa['instructions'] ?? '')),
+        'reference_link' => trim((string) ($wa['reference_link'] ?? '')),
+        'delivery_mode' => '',
+        'drive_link' => trim((string) ($wa['drive_link'] ?? '')),
+        'updated_at' => (string) ($wa['updated_at'] ?? ''),
+        'editor_feedback_notify' => false,
+        'client_feedback' => '',
+        'client_meeting_date' => '',
+        'client_meeting_link' => '',
+        'deliverable_output' => '',
+    ];
 }
