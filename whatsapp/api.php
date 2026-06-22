@@ -56,21 +56,18 @@ try {
 
     if ($action === 'update') {
         $id = (int) ($_POST['id'] ?? 0);
-        $fields = [
-            'task_code' => (string) ($_POST['task_code'] ?? ''),
-            'customer_id' => (string) ($_POST['customer_id'] ?? ''),
-            'customer_name' => (string) ($_POST['customer_name'] ?? ''),
-            'phone' => (string) ($_POST['phone'] ?? ''),
-            'project_name' => (string) ($_POST['project_name'] ?? ''),
-            'task_type' => (string) ($_POST['task_type'] ?? ''),
-            'instructions' => (string) ($_POST['instructions'] ?? ''),
-            'delivery_type' => (string) ($_POST['delivery_type'] ?? ''),
-            'drive_link' => (string) ($_POST['drive_link'] ?? ''),
-            'reference_link' => (string) ($_POST['reference_link'] ?? ''),
-            'comments' => (string) ($_POST['comments'] ?? ''),
-            'status' => (string) ($_POST['status'] ?? ''),
-            'assigned_editor' => (string) ($_POST['assigned_editor'] ?? ''),
+        // Only update fields the client sent — omitting phone (etc.) must not clear DB values.
+        $fieldKeys = [
+            'task_code', 'customer_id', 'customer_name', 'phone', 'project_name', 'task_type',
+            'instructions', 'delivery_type', 'drive_link', 'reference_link', 'comments',
+            'status', 'assigned_editor',
         ];
+        $fields = [];
+        foreach ($fieldKeys as $key) {
+            if (array_key_exists($key, $_POST)) {
+                $fields[$key] = (string) $_POST[$key];
+            }
+        }
 
         $result = akh_wa_task_update($id, $fields);
         if (!$result['ok']) {

@@ -220,7 +220,8 @@
       els.editTitle.textContent = t.task_code ? 'Edit ' + t.task_code : 'Edit task';
     }
     if (els.editMeta) {
-      els.editMeta.textContent = 'Created ' + (t.created_at || '—') + ' · Updated ' + (t.updated_at || '—');
+      var phoneLine = t.phone ? ' · Phone ' + t.phone : '';
+      els.editMeta.textContent = 'Created ' + (t.created_at || '—') + ' · Updated ' + (t.updated_at || '—') + phoneLine;
     }
     if (els.editError) {
       els.editError.textContent = '';

@@ -729,6 +729,7 @@ function akh_wa_task_row_for_json(array $row, array $editors): array
         'assigned_editor' => $editorId,
         'assigned_editor_name' => $editorName,
         'customer_name' => (string) ($row['customer_name'] ?? ''),
+        'phone' => (string) ($row['phone'] ?? ''),
         'created_at' => (string) ($row['created_at'] ?? ''),
         'updated_at' => (string) ($row['updated_at'] ?? ''),
     ];
