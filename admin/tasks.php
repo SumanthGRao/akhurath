@@ -271,7 +271,7 @@ require_once AKH_ROOT . '/includes/header.php';
         <input type="hidden" name="f_status" value="<?php echo h($fStatus); ?>" />
         <label class="field admin-filters__field admin-filters__field--grow">
           <span>Search ID or title</span>
-          <input type="search" name="f_q" value="<?php echo h($fQ); ?>" placeholder="e.g. AS_ or couple name" maxlength="200" />
+          <input type="search" name="f_q" value="<?php echo h($fQ); ?>" placeholder="e.g. AS0001 or couple name" maxlength="200" />
         </label>
         <label class="field admin-filters__field">
           <span>Client</span>

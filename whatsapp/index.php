@@ -119,7 +119,7 @@ $userLabel = akh_wa_dashboard_current() ?? '';
       <table class="wa-table" id="wa-tasks-table">
         <thead>
           <tr>
-            <th scope="col">Code</th>
+            <th scope="col">Task ID</th>
             <th scope="col">Customer</th>
             <th scope="col">Project</th>
             <th scope="col">Type</th>
@@ -170,8 +170,8 @@ $userLabel = akh_wa_dashboard_current() ?? '';
 
         <div class="wa-form-grid">
           <label class="wa-field">
-            <span>Task code</span>
-            <input type="text" name="task_code" id="wa-field-task_code" required maxlength="50" />
+            <span>Task ID</span>
+            <input type="text" name="task_code" id="wa-field-task_code" required maxlength="50" placeholder="AS0001" />
           </label>
           <label class="wa-field">
             <span>Status</span>

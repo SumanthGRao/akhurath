@@ -148,6 +148,39 @@ function akh_wa_tasks_poll_signature(): string
 }
 
 /** @return ?array<string, mixed> */
+function akh_wa_task_by_code(string $taskCode): ?array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    if (!akh_wa_tasks_table_exists()) {
+        return null;
+    }
+
+    $code = akh_task_normalize_id($taskCode);
+    if ($code === '') {
+        return null;
+    }
+
+    $st = akh_db()->prepare('SELECT * FROM whatsapp_tasks WHERE task_code = ? LIMIT 1');
+    $st->execute([$code]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if (is_array($row)) {
+        return $row;
+    }
+
+    if ($code !== $taskCode) {
+        $st->execute([trim($taskCode)]);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+
+        return is_array($row) ? $row : null;
+    }
+
+    return null;
+}
+
+/**
+ * @return ?array<string, mixed>
+ */
 function akh_wa_task_by_id(int $id): ?array
 {
     if ($id <= 0 || !akh_wa_tasks_table_exists()) {
@@ -219,7 +252,8 @@ function akh_wa_task_update(int $id, array $fields): array
         }
 
         if ($col === 'task_code') {
-            $code = trim((string) $fields[$col]);
+            require_once __DIR__ . '/tasks.php';
+            $code = akh_task_normalize_id(trim((string) $fields[$col]));
             if ($code === '') {
                 return ['ok' => false, 'error' => 'Task code is required.'];
             }
@@ -269,30 +303,6 @@ function akh_wa_task_update(int $id, array $fields): array
 function akh_wa_task_has_assigned_editor(array $row): bool
 {
     return isset($row['assigned_editor']) && $row['assigned_editor'] !== null && (string) $row['assigned_editor'] !== '';
-}
-
-function akh_wa_has_studio_task_id_column(): bool
-{
-    static $cached = null;
-    if ($cached !== null) {
-        return $cached;
-    }
-    try {
-        $st = akh_db()->query("SHOW COLUMNS FROM whatsapp_tasks LIKE 'studio_task_id'");
-        $cached = $st !== false && $st->fetch(PDO::FETCH_ASSOC) !== false;
-    } catch (Throwable) {
-        $cached = false;
-    }
-
-    return $cached;
-}
-
-function akh_wa_set_studio_task_id(int $waId, string $studioTaskId): void
-{
-    if (!akh_wa_has_studio_task_id_column() || $waId <= 0 || trim($studioTaskId) === '') {
-        return;
-    }
-    akh_db()->prepare('UPDATE whatsapp_tasks SET studio_task_id = ? WHERE id = ?')->execute([$studioTaskId, $waId]);
 }
 
 function akh_wa_map_status_to_studio(string $waStatus): string
@@ -502,12 +512,12 @@ function akh_wa_studio_create_error_message(array $inputs): string
 }
 
 /**
- * Last-resort studio task insert when akh_task_create rejects sanitized WhatsApp data.
+ * Create editor-board task using whatsapp_tasks.task_code as the sole task id.
  *
  * @param array{title: string, description: string, delivery_mode: string, drive_link: string, reference_link: string, client_username: string} $inputs
  * @return ?array<string, mixed>
  */
-function akh_wa_insert_studio_task_direct(array $inputs, int $waId, string $taskCode): ?array
+function akh_wa_insert_studio_task_direct(array $inputs, string $taskCode): ?array
 {
     require_once __DIR__ . '/tasks.php';
 
@@ -532,8 +542,13 @@ function akh_wa_insert_studio_task_direct(array $inputs, int $waId, string $task
         }
     }
 
+    $taskCode = akh_task_normalize_id($taskCode);
+    if ($taskCode === '' || akh_task_by_id($taskCode) !== null) {
+        return null;
+    }
+
     $task = [
-        'id' => akh_task_generate_id(),
+        'id' => $taskCode,
         'client_username' => strtolower(trim((string) $inputs['client_username'])),
         'title' => akh_task_build_title($couple, 'studio_admin'),
         'description' => $builtDescription,
@@ -554,8 +569,6 @@ function akh_wa_insert_studio_task_direct(array $inputs, int $waId, string $task
         'editor_feedback_notify' => false,
         'client_editor_notify' => false,
         'conversation' => [],
-        'whatsapp_task_id' => $waId,
-        'whatsapp_task_code' => $taskCode,
     ];
 
     $list = akh_tasks_load();
@@ -586,6 +599,13 @@ function akh_wa_editor_username_by_id(int $editorId): ?string
 function akh_wa_find_studio_task_id(int $waId, string $taskCode): string
 {
     require_once __DIR__ . '/tasks.php';
+
+    $code = akh_task_normalize_id($taskCode);
+    $existing = $code !== '' ? akh_task_by_id($code) : null;
+    if ($existing !== null) {
+        return (string) ($existing['id'] ?? $code);
+    }
+
     foreach (akh_tasks_load() as $t) {
         if (!is_array($t)) {
             continue;
@@ -593,12 +613,23 @@ function akh_wa_find_studio_task_id(int $waId, string $taskCode): string
         if ($waId > 0 && (int) ($t['whatsapp_task_id'] ?? 0) === $waId) {
             return trim((string) ($t['id'] ?? ''));
         }
-        if ($taskCode !== '' && (string) ($t['whatsapp_task_code'] ?? '') === $taskCode) {
+        $legacyCode = trim((string) ($t['whatsapp_task_code'] ?? ''));
+        if ($legacyCode !== '' && akh_task_ids_match($legacyCode, $code)) {
             return trim((string) ($t['id'] ?? ''));
         }
     }
 
     return '';
+}
+
+/**
+ * Editor-board task id for a WhatsApp row (same value as task_code).
+ */
+function akh_wa_studio_task_id_for_row(array $waRow): string
+{
+    require_once __DIR__ . '/tasks.php';
+
+    return akh_task_normalize_id((string) ($waRow['task_code'] ?? ''));
 }
 
 /**
@@ -615,18 +646,23 @@ function akh_wa_sync_to_studio(array $waRow): ?string
         return 'Invalid WhatsApp task.';
     }
 
-    $taskCode = (string) ($waRow['task_code'] ?? '');
-    $studioId = akh_wa_has_studio_task_id_column() ? trim((string) ($waRow['studio_task_id'] ?? '')) : '';
-    if ($studioId === '') {
-        $studioId = akh_wa_find_studio_task_id($waId, $taskCode);
+    $taskCode = akh_task_normalize_id((string) ($waRow['task_code'] ?? ''));
+    if ($taskCode === '') {
+        return 'WhatsApp task is missing task_code.';
     }
+
+    $studioId = akh_wa_find_studio_task_id($waId, $taskCode);
+    if ($studioId === '') {
+        $studioId = $taskCode;
+    }
+
     $editorId = isset($waRow['assigned_editor']) ? (int) $waRow['assigned_editor'] : 0;
     $editorUsername = $editorId > 0 ? akh_wa_editor_username_by_id($editorId) : null;
     if ($editorId > 0 && $editorUsername === null) {
         return 'Assigned editor was not found.';
     }
 
-    if ($editorUsername === null && $studioId === '') {
+    if ($editorUsername === null && akh_task_by_id($studioId) === null) {
         return null;
     }
 
@@ -639,31 +675,20 @@ function akh_wa_sync_to_studio(array $waRow): ?string
     $waStatus = akh_wa_task_normalize_status((string) ($waRow['status'] ?? 'new')) ?? 'new';
     $studioStatus = akh_wa_map_status_to_studio($waStatus);
 
-    if ($studioId === '' || akh_task_by_id($studioId) === null) {
-        $created = akh_task_admin_create_for_client(
-            $inputs['client_username'],
-            $title,
-            $description,
-            $deliveryMode,
-            $driveLink,
-            $referenceLink
-        );
-        if ($created === null) {
-            $created = akh_wa_insert_studio_task_direct($inputs, $waId, $taskCode);
-        }
+    if (akh_task_by_id($studioId) === null) {
+        $created = akh_wa_insert_studio_task_direct($inputs, $taskCode);
         if ($created === null) {
             return akh_wa_studio_create_error_message($inputs);
         }
-        $studioId = (string) ($created['id'] ?? '');
+        $studioId = (string) ($created['id'] ?? $taskCode);
         if ($studioId === '') {
             return akh_wa_studio_create_error_message($inputs);
         }
-        akh_wa_set_studio_task_id($waId, $studioId);
     } else {
         $list = akh_tasks_load();
         $updated = false;
         foreach ($list as $i => $t) {
-            if ((string) ($t['id'] ?? '') !== $studioId) {
+            if (!akh_task_ids_match((string) ($t['id'] ?? ''), $studioId)) {
                 continue;
             }
             $list[$i]['title'] = mb_strlen($title) > 200 ? mb_substr($title, 0, 197) . '…' : $title;
@@ -671,8 +696,6 @@ function akh_wa_sync_to_studio(array $waRow): ?string
             $list[$i]['reference_link'] = $referenceLink;
             $list[$i]['delivery_mode'] = $deliveryMode;
             $list[$i]['drive_link'] = $deliveryMode === 'google_drive' ? $driveLink : '';
-            $list[$i]['whatsapp_task_id'] = $waId;
-            $list[$i]['whatsapp_task_code'] = (string) ($waRow['task_code'] ?? '');
             $list[$i]['updated_at'] = gmdate('c');
             $updated = true;
             break;

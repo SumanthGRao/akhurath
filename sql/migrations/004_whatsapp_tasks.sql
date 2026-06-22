@@ -6,7 +6,6 @@ SET NAMES utf8mb4;
 CREATE TABLE IF NOT EXISTS whatsapp_tasks (
   id INT(11) NOT NULL AUTO_INCREMENT,
   task_code VARCHAR(50) NOT NULL,
-  studio_task_id VARCHAR(64) NULL DEFAULT NULL,
   customer_id INT(11) NULL DEFAULT NULL,
   phone VARCHAR(20) NULL DEFAULT NULL,
   project_name VARCHAR(255) NULL DEFAULT NULL,
@@ -23,7 +22,6 @@ CREATE TABLE IF NOT EXISTS whatsapp_tasks (
   customer_name VARCHAR(255) NULL DEFAULT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_whatsapp_tasks_code (task_code),
-  KEY ix_whatsapp_tasks_studio (studio_task_id),
   KEY ix_whatsapp_tasks_status (status),
   KEY ix_whatsapp_tasks_updated (updated_at),
   KEY ix_whatsapp_tasks_editor (assigned_editor)

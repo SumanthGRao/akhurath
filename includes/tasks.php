@@ -39,7 +39,25 @@ function akh_task_editor_seen_file(): string
 }
 
 /**
- * Next AS_#### id from counter + existing tasks (locked).
+ * Canonical task id: AS0001 (matches whatsapp_tasks.task_code).
+ */
+function akh_task_normalize_id(string $id): string
+{
+    $id = trim($id);
+    if (preg_match('/^AS_?(\d+)$/i', $id, $m)) {
+        return sprintf('AS%04d', (int) $m[1]);
+    }
+
+    return $id;
+}
+
+function akh_task_ids_match(string $a, string $b): bool
+{
+    return akh_task_normalize_id($a) === akh_task_normalize_id($b);
+}
+
+/**
+ * Next AS#### id from counter + existing tasks (locked).
  */
 function akh_task_generate_id(): string
 {
@@ -69,7 +87,7 @@ function akh_task_generate_id(): string
                     $next = max($next, max(1, (int) ($j['next'] ?? 1)));
                 }
             }
-            $id = sprintf('AS_%04d', $next);
+            $id = sprintf('AS%04d', $next);
             $nextWrite = $next + 1;
             $out = json_encode(['next' => $nextWrite], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
             akh_kv_set_with_pdo($pdo, 'task_seq', $out);
@@ -81,7 +99,7 @@ function akh_task_generate_id(): string
                 $pdo->rollBack();
             }
 
-            return 'AS_' . strtoupper(bin2hex(random_bytes(3)));
+            return 'AS' . strtoupper(bin2hex(random_bytes(3)));
         }
     }
 
@@ -94,12 +112,12 @@ function akh_task_generate_id(): string
     $boot = akh_task_seq_bootstrap_next($tasks);
     $fp = @fopen($path, 'c+');
     if ($fp === false) {
-        return 'AS_' . strtoupper(bin2hex(random_bytes(3)));
+        return 'AS' . strtoupper(bin2hex(random_bytes(3)));
     }
     if (!flock($fp, LOCK_EX)) {
         fclose($fp);
 
-        return 'AS_' . strtoupper(bin2hex(random_bytes(3)));
+        return 'AS' . strtoupper(bin2hex(random_bytes(3)));
     }
     try {
         rewind($fp);
@@ -111,7 +129,7 @@ function akh_task_generate_id(): string
                 $next = max($next, max(1, (int) ($j['next'] ?? 1)));
             }
         }
-        $id = sprintf('AS_%04d', $next);
+        $id = sprintf('AS%04d', $next);
         $nextWrite = $next + 1;
         $out = json_encode(['next' => $nextWrite], JSON_THROW_ON_ERROR);
         ftruncate($fp, 0);
@@ -121,7 +139,7 @@ function akh_task_generate_id(): string
 
         return $id;
     } catch (\Throwable $e) {
-        return 'AS_' . strtoupper(bin2hex(random_bytes(3)));
+        return 'AS' . strtoupper(bin2hex(random_bytes(3)));
     } finally {
         flock($fp, LOCK_UN);
         fclose($fp);
@@ -133,7 +151,7 @@ function akh_task_seq_bootstrap_next(array $tasks): int
     $max = 0;
     foreach ($tasks as $t) {
         $id = (string) ($t['id'] ?? '');
-        if (preg_match('/^AS_(\d+)$/', $id, $m)) {
+        if (preg_match('/^AS_?(\d+)$/i', $id, $m)) {
             $max = max($max, (int) $m[1]);
         }
     }
@@ -606,7 +624,7 @@ function akh_task_client_append_thread(string $taskId, string $clientUsername, s
     }
     $list = akh_tasks_load();
     foreach ($list as $i => $t) {
-        if (($t['id'] ?? '') !== $taskId) {
+        if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
             continue;
         }
         if (strtolower((string) ($t['client_username'] ?? '')) !== $clientUsername) {
@@ -647,7 +665,7 @@ function akh_task_editor_append_thread(string $taskId, string $editorUsername, s
     }
     $list = akh_tasks_load();
     foreach ($list as $i => $t) {
-        if (($t['id'] ?? '') !== $taskId) {
+        if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
             continue;
         }
         if (($t['assigned_editor'] ?? null) !== $editorUsername) {
@@ -712,7 +730,7 @@ function akh_task_client_clear_editor_notify(string $taskId, string $clientUsern
     $list = akh_tasks_load();
     $changed = false;
     foreach ($list as $i => $t) {
-        if (($t['id'] ?? '') !== $taskId) {
+        if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
             continue;
         }
         if (strtolower((string) ($t['client_username'] ?? '')) !== $c) {
@@ -906,7 +924,7 @@ function akh_tasks_save_locked(array $tasks): bool
 function akh_task_by_id(string $id): ?array
 {
     foreach (akh_tasks_load() as $t) {
-        if (($t['id'] ?? '') === $id) {
+        if (akh_task_ids_match((string) ($t['id'] ?? ''), $id)) {
             return $t;
         }
     }
@@ -1762,7 +1780,7 @@ function akh_task_client_update(
 
     $out = null;
     foreach ($list as $i => $t) {
-        if (($t['id'] ?? '') !== $taskId) {
+        if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
             continue;
         }
         if (strtolower((string) ($t['client_username'] ?? '')) !== $clientUsername) {
@@ -1834,7 +1852,7 @@ function akh_task_client_save_post_delivery(
     $found = false;
     $savedRow = null;
     foreach ($list as $i => $t) {
-        if (($t['id'] ?? '') !== $taskId) {
+        if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
             continue;
         }
         if (strtolower((string) ($t['client_username'] ?? '')) !== $clientUsername) {
@@ -1949,7 +1967,7 @@ function akh_task_editor_clear_feedback_notify(string $taskId, string $editorUse
     $e = strtolower(trim($editorUsername));
     $list = akh_tasks_load();
     foreach ($list as $i => $t) {
-        if (($t['id'] ?? '') !== $taskId) {
+        if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
             continue;
         }
         if (strtolower((string) ($t['assigned_editor'] ?? '')) !== $e) {
@@ -2022,7 +2040,7 @@ function akh_task_claim(string $taskId, string $editorUsername): ?array
     $found = false;
     $parentId = '';
     foreach ($list as $i => $t) {
-        if (($t['id'] ?? '') !== $taskId) {
+        if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
             continue;
         }
         if (!akh_task_editor_pool_eligible($t)) {
@@ -2095,7 +2113,7 @@ function akh_task_set_status(
     $notifyClient = false;
     $prevSt = '';
     foreach ($list as $i => $t) {
-        if (($t['id'] ?? '') !== $taskId) {
+        if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
             continue;
         }
         if (strtolower(trim((string) ($t['assigned_editor'] ?? ''))) !== strtolower(trim($editorUsername))) {
@@ -2252,7 +2270,7 @@ function akh_task_admin_assign(string $taskId, ?string $editorUsername): ?string
     $found = false;
     $parentForSync = '';
     foreach ($list as $i => $t) {
-        if (($t['id'] ?? '') !== $taskId) {
+        if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
             continue;
         }
         if (akh_task_is_bundle_parent($t)) {
@@ -2317,7 +2335,7 @@ function akh_task_admin_set_status(string $taskId, string $newStatus): ?string
     $found = false;
     $parentForSync = '';
     foreach ($list as $i => $t) {
-        if (($t['id'] ?? '') !== $taskId) {
+        if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
             continue;
         }
         if (akh_task_is_bundle_parent($t)) {

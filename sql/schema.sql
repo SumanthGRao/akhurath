@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS contact_enquiries (
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- WhatsApp queue: import sql/migrations/004_whatsapp_tasks.sql (and 005 for studio_task_id).
+-- WhatsApp queue: import sql/migrations/004_whatsapp_tasks.sql.
+-- task_code (e.g. AS0001) is the same id used on the editor board.
 
 CREATE TABLE IF NOT EXISTS task_updates (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
