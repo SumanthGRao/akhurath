@@ -64,18 +64,9 @@ function akh_wa_dashboard_logout(): void
  */
 function akh_wa_client_notification_payload(): array
 {
-    require_once __DIR__ . '/task-notification-events.php';
-    $alerts = akh_task_notification_pending_alerts_grouped();
-    $count = 0;
-    foreach ($alerts as $a) {
-        $count += (int) ($a['count'] ?? 0);
-    }
+    require_once __DIR__ . '/dashboard-alerts.php';
 
-    return [
-        'count' => $count,
-        'alerts' => $alerts,
-        'notify_sig' => akh_task_notification_poll_signature(),
-    ];
+    return akh_dashboard_notification_payload();
 }
 
 function akh_require_wa_dashboard(): void

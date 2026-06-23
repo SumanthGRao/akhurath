@@ -50,6 +50,46 @@
     return s;
   }
 
+  function alertPillMeta(alert) {
+    if (!alert) {
+      return { className: 'wa-alert-pill', label: 'Update' };
+    }
+    var kind = String(alert.kind || '');
+    if (kind === 'meeting_request') {
+      return { className: 'wa-alert-pill wa-alert-pill--meeting', label: 'Meeting' };
+    }
+    if (kind === 'meeting_reminder') {
+      return { className: 'wa-alert-pill wa-alert-pill--reminder', label: 'Soon' };
+    }
+    return { className: 'wa-alert-pill', label: 'Update' };
+  }
+
+  function alertPriority(alert) {
+    if (!alert) return 0;
+    return typeof alert.priority === 'number' ? alert.priority : 0;
+  }
+
+  function processMeetingReminders(reminders) {
+    if (!Array.isArray(reminders)) return;
+    reminders.forEach(function (rem) {
+      var id = String(rem.id || '');
+      var tier = String(rem.tier || '');
+      if (!id || !tier) return;
+      var key = 'akh_meet_rem_' + id + '_' + tier;
+      if (sessionStorage.getItem(key) === '1') return;
+      sessionStorage.setItem(key, '1');
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      try {
+        new Notification(String(rem.title || 'Meeting soon'), {
+          body: String(rem.body || ''),
+          tag: 'akh-wa-meet-' + id + '-' + tier,
+        });
+      } catch (e) {
+        /* ignore */
+      }
+    });
+  }
+
   function alertForTask(task) {
     var code = normalizeTaskCode(task.task_code);
     if (clientAlerts[code]) return clientAlerts[code];
@@ -83,6 +123,9 @@
     }
     if (data && data.notify_sig) {
       currentNotifySig = data.notify_sig;
+    }
+    if (data && data.reminders) {
+      processMeetingReminders(data.reminders);
     }
   }
 
@@ -171,8 +214,12 @@
       var editor = t.assigned_editor_name ? escHtml(t.assigned_editor_name) : '—';
       var alert = alertForTask(t);
       var rowClass = alert ? ' wa-table__row--alert' : '';
+      if (alert && alert.kind === 'meeting_reminder') {
+        rowClass += ' wa-table__row--meeting-reminder';
+      }
+      var pill = alertPillMeta(alert);
       var alertBadge = alert
-        ? '<span class="wa-alert-pill" title="' + escHtml(alert.preview || 'Client update') + '">Update</span> '
+        ? '<span class="' + pill.className + '" title="' + escHtml(alert.preview || pill.label) + '">' + escHtml(pill.label) + '</span> '
         : '';
       return (
         '<tr class="wa-table__row' + rowClass + '" data-task-id="' + t.id + '">' +
@@ -192,6 +239,9 @@
   function applyFiltersLocally() {
     var list = Object.keys(tasksById).map(function (id) { return tasksById[id]; });
     list.sort(function (a, b) {
+      var pa = alertPriority(alertForTask(a));
+      var pb = alertPriority(alertForTask(b));
+      if (pa !== pb) return pb - pa;
       var aa = alertForTask(a) ? 1 : 0;
       var ab = alertForTask(b) ? 1 : 0;
       if (aa !== ab) return ab - aa;
@@ -230,6 +280,9 @@
         updateCounts(data.counts || {});
         if (data.sig) currentSig = data.sig;
         applyNotifyPayload(data);
+        if (data.reminders) {
+          processMeetingReminders(data.reminders);
+        }
         applyFiltersLocally();
         resetCountdown();
       })
@@ -251,6 +304,9 @@
         if (needsNotify && typeof data.notify_count === 'number') {
           setNotifyUi(data.notify_count);
           currentNotifySig = data.notify_sig;
+        }
+        if (data.reminders) {
+          processMeetingReminders(data.reminders);
         }
         if (needsReload || needsNotify) {
           return loadTasks(true);
@@ -445,6 +501,7 @@
     clientAlerts = cfg.alerts;
   }
   setNotifyUi(parseInt(cfg.notifyCount, 10) || 0);
+  processMeetingReminders(cfg.reminders || []);
   applyFiltersLocally();
   bindEvents();
   resetCountdown();

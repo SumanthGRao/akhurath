@@ -33,18 +33,18 @@ try {
             'sig' => akh_wa_tasks_poll_signature(),
             'notify_sig' => $notify['notify_sig'],
             'notify_count' => $notify['count'],
+            'reminders' => $notify['reminders'] ?? [],
         ], JSON_THROW_ON_ERROR);
         exit;
     }
 
     if ($action === 'notify_ack') {
         $taskCode = trim((string) ($_POST['task_code'] ?? ''));
+        require_once AKH_ROOT . '/includes/dashboard-alerts.php';
         if ($taskCode !== '') {
-            require_once AKH_ROOT . '/includes/task-notification-events.php';
-            akh_task_notification_mark_task_read($taskCode);
+            akh_dashboard_mark_task_read($taskCode);
         } else {
-            require_once AKH_ROOT . '/includes/task-notification-events.php';
-            akh_task_notification_mark_all_read();
+            akh_dashboard_mark_all_read();
         }
         $notify = akh_wa_client_notification_payload();
         echo json_encode([
@@ -72,6 +72,7 @@ try {
             'notify_sig' => $notify['notify_sig'],
             'notify_count' => $notify['count'],
             'alerts' => $notify['alerts'],
+            'reminders' => $notify['reminders'] ?? [],
             'counts' => akh_wa_task_status_counts(),
             'tasks' => $tasks,
             'editors' => $editors,

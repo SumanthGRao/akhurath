@@ -691,6 +691,26 @@ body.page-wa-dashboard .site-footer {
   vertical-align: middle;
 }
 
+.wa-alert-pill--meeting {
+  background: rgba(76, 130, 200, 0.22);
+  color: #2f5f9c;
+}
+
+.wa-alert-pill--reminder {
+  background: rgba(196, 92, 42, 0.2);
+  color: #a84820;
+  animation: wa-bell-wiggle 1.2s ease-in-out infinite;
+}
+
+.wa-table__row--alert.wa-table__row--meeting-reminder {
+  animation: wa-row-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes wa-row-pulse {
+  0%, 100% { background: rgba(212, 168, 83, 0.08); }
+  50% { background: rgba(212, 168, 83, 0.18); }
+}
+
 @keyframes wa-bell-wiggle {
   0%, 100% { transform: rotate(0deg); }
   15% { transform: rotate(12deg); }

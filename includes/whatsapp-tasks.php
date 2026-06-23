@@ -112,21 +112,23 @@ function akh_wa_tasks_list(array $filters = []): array
  */
 function akh_wa_tasks_sort_with_alerts(array $rows): array
 {
-    require_once __DIR__ . '/task-notification-events.php';
+    require_once __DIR__ . '/dashboard-alerts.php';
     require_once __DIR__ . '/tasks.php';
 
-    $alerts = akh_task_notification_pending_alerts_grouped();
+    $alerts = akh_dashboard_alerts_grouped();
     usort($rows, static function (array $a, array $b) use ($alerts): int {
         $ca = akh_task_normalize_id((string) ($a['task_code'] ?? ''));
         $cb = akh_task_normalize_id((string) ($b['task_code'] ?? ''));
-        $aa = isset($alerts[$ca]) ? 1 : 0;
-        $ab = isset($alerts[$cb]) ? 1 : 0;
-        if ($aa !== $ab) {
-            return $ab <=> $aa;
+        $aa = $alerts[$ca] ?? null;
+        $ab = $alerts[$cb] ?? null;
+        $pa = is_array($aa) ? (int) ($aa['priority'] ?? 0) : 0;
+        $pb = is_array($ab) ? (int) ($ab['priority'] ?? 0) : 0;
+        if ($pa !== $pb) {
+            return $pb <=> $pa;
         }
-        if ($aa && $ab) {
-            $ta = (string) ($alerts[$ca]['created_at'] ?? '');
-            $tb = (string) ($alerts[$cb]['created_at'] ?? '');
+        if ($pa > 0 && $pb > 0) {
+            $ta = (string) ($aa['created_at'] ?? '');
+            $tb = (string) ($ab['created_at'] ?? '');
             $cmp = strcmp($tb, $ta);
             if ($cmp !== 0) {
                 return $cmp;

@@ -5,7 +5,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once AKH_ROOT . '/includes/whatsapp-dashboard-auth.php';
 require_once AKH_ROOT . '/includes/whatsapp-tasks.php';
-require_once AKH_ROOT . '/includes/tasks.php';
+require_once AKH_ROOT . '/includes/dashboard-alerts.php';
 require_once AKH_ROOT . '/includes/csrf.php';
 
 akh_require_wa_dashboard();
@@ -148,10 +148,22 @@ $waNotify = $dbError === '' ? akh_wa_client_notification_payload() : ['count' =>
             <?php
             $waAlerts = $dbError === '' ? ($waNotify['alerts'] ?? []) : [];
             foreach ($tasksJson as $t):
-              $alert = akh_task_notification_alert_for_code($waAlerts, (string) ($t['task_code'] ?? ''));
+              $alert = akh_dashboard_alert_for_code($waAlerts, (string) ($t['task_code'] ?? ''));
               $rowClass = $alert ? ' wa-table__row--alert' : '';
+              $pillClass = 'wa-alert-pill';
+              $pillLabel = 'Update';
+              if ($alert) {
+                $kind = (string) ($alert['kind'] ?? '');
+                if ($kind === 'meeting_request') {
+                  $pillClass .= ' wa-alert-pill--meeting';
+                  $pillLabel = 'Meeting';
+                } elseif ($kind === 'meeting_reminder') {
+                  $pillClass .= ' wa-alert-pill--reminder';
+                  $pillLabel = 'Soon';
+                }
+              }
               $alertBadge = $alert
-                  ? '<span class="wa-alert-pill" title="' . h((string) ($alert['preview'] ?? 'Client update')) . '">Update</span> '
+                  ? '<span class="' . h($pillClass) . '" title="' . h((string) ($alert['preview'] ?? 'Alert')) . '">' . h($pillLabel) . '</span> '
                   : '';
               ?>
               <tr class="wa-table__row<?php echo $rowClass; ?>" data-task-id="<?php echo (int) $t['id']; ?>">
@@ -274,6 +286,7 @@ $waNotify = $dbError === '' ? akh_wa_client_notification_payload() : ['count' =>
         'notifyCount' => (int) ($waNotify['count'] ?? 0),
         'notifySig' => (string) ($waNotify['notify_sig'] ?? ''),
         'alerts' => $waNotify['alerts'] ?? [],
+        'reminders' => $waNotify['reminders'] ?? [],
     ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR); ?>;
   </script>
   <script src="<?php echo h(base_path('assets/js/whatsapp-dashboard.js') . ($waJsVer !== '' ? '?v=' . rawurlencode($waJsVer) : '')); ?>" defer></script>

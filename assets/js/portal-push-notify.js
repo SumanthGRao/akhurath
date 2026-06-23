@@ -189,6 +189,21 @@
 
   var domUpdate = mountDeskBellHub();
 
+  function processMeetingReminders(reminders) {
+    if (!Array.isArray(reminders)) return;
+    reminders.forEach(function (rem) {
+      var id = String(rem.id || '');
+      var tier = String(rem.tier || '');
+      if (!id || !tier) return;
+      var key = 'akh_meet_rem_' + id + '_' + tier;
+      if (sessionStorage.getItem(key) === '1') return;
+      sessionStorage.setItem(key, '1');
+      var title = String(rem.title || site);
+      var body = String(rem.body || 'Meeting starting soon.');
+      tryNotify(title, body, 'akh-meet-' + id + '-' + tier);
+    });
+  }
+
   function osNoticeFromPoll(data, fallbackBody) {
     if (data && Array.isArray(data.notices) && data.notices.length > 0) {
       var n = data.notices[0];
@@ -241,6 +256,10 @@
 
     if (typeof domUpdate === 'function') {
       domUpdate(data);
+    }
+
+    if (Array.isArray(data.reminders)) {
+      processMeetingReminders(data.reminders);
     }
 
     pollReady = true;

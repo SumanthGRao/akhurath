@@ -285,11 +285,11 @@ function akh_task_editor_unseen_new_count(string $editorUsername): int
 
 function akh_task_editor_board_bell_count(string $editorUsername): int
 {
-    require_once __DIR__ . '/task-notification-events.php';
+    require_once __DIR__ . '/dashboard-alerts.php';
 
     return akh_task_editor_unseen_new_count($editorUsername)
         + akh_task_editor_unread_feedback_count($editorUsername)
-        + akh_task_notification_pending_count_for_editor($editorUsername);
+        + count(akh_dashboard_alerts_for_editor($editorUsername));
 }
 
 /**
@@ -329,7 +329,9 @@ function akh_task_poll_signature_all(): string
     }
     sort($parts);
 
-    return sha1(implode("\n", $parts) . '|' . akh_task_notification_poll_signature());
+    require_once __DIR__ . '/dashboard-alerts.php';
+
+    return sha1(implode("\n", $parts) . '|' . akh_dashboard_alerts_poll_signature());
 }
 
 /** Fingerprint of one client’s tasks (for client dashboard refresh). */
@@ -459,8 +461,8 @@ function akh_task_editor_notice_rows(string $editorUsername): array
         }
     }
 
-    require_once __DIR__ . '/task-notification-events.php';
-    foreach (akh_task_notification_pending_alerts_for_editor($editorUsername) as $taskId => $alert) {
+    require_once __DIR__ . '/dashboard-alerts.php';
+    foreach (akh_dashboard_alerts_for_editor($editorUsername) as $taskId => $alert) {
         if (in_array($taskId, $seenIds, true)) {
             continue;
         }
@@ -471,7 +473,7 @@ function akh_task_editor_notice_rows(string $editorUsername): array
         }
         $detail = trim((string) ($alert['preview'] ?? ''));
         if ($detail === '') {
-            $detail = akh_task_notification_kind_label((string) ($alert['kind'] ?? 'client_update'));
+            $detail = akh_dashboard_alert_kind_label($alert);
         }
         if (mb_strlen($detail) > 220) {
             $detail = mb_substr($detail, 0, 219) . '…';
@@ -480,7 +482,7 @@ function akh_task_editor_notice_rows(string $editorUsername): array
             'task_id' => $taskId,
             'anchor_id' => $taskId,
             'title' => $title,
-            'label' => akh_task_notification_kind_label((string) ($alert['kind'] ?? 'client_update')),
+            'label' => akh_dashboard_alert_kind_label($alert),
             'detail' => $detail,
         ];
         $seenIds[] = $taskId;
@@ -525,6 +527,7 @@ function akh_task_admin_notice_rows(): array
 function akh_task_ajax_poll_editor(string $editorUsername): array
 {
     $editorUsername = strtolower(trim($editorUsername));
+    require_once __DIR__ . '/meeting-requests.php';
 
     return [
         'ok' => true,
@@ -532,6 +535,7 @@ function akh_task_ajax_poll_editor(string $editorUsername): array
         'pool' => akh_task_editor_pool_count(),
         'sig' => akh_task_poll_signature_all(),
         'notices' => akh_task_editor_notice_rows($editorUsername),
+        'reminders' => akh_meeting_request_upcoming_reminders(),
     ];
 }
 
@@ -826,8 +830,8 @@ function akh_task_ajax_editor_view_ack(string $editorUsername, string $taskId, s
             return ['ok' => false, 'error' => 'not_yours'];
         }
         akh_task_editor_clear_feedback_notify($taskId, $editorUsername);
-        require_once __DIR__ . '/task-notification-events.php';
-        akh_task_notification_mark_task_read($taskId);
+        require_once __DIR__ . '/dashboard-alerts.php';
+        akh_dashboard_mark_task_read($taskId);
     } else {
         return ['ok' => false, 'error' => 'bad_kind'];
     }

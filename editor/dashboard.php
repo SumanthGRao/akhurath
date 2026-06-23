@@ -7,6 +7,7 @@ require_once AKH_ROOT . '/includes/editor-auth.php';
 require_once AKH_ROOT . '/includes/editor-attendance.php';
 require_once AKH_ROOT . '/includes/editor-leave.php';
 require_once AKH_ROOT . '/includes/tasks.php';
+require_once AKH_ROOT . '/includes/dashboard-alerts.php';
 require_once AKH_ROOT . '/includes/task-thread-panel.php';
 require_once AKH_ROOT . '/includes/csrf.php';
 
@@ -125,8 +126,8 @@ $newTasks = array_values(array_filter($all, static function (array $t): bool {
 $mine = array_values(array_filter($all, static function (array $t) use ($editor): bool {
     return strtolower(trim((string) ($t['assigned_editor'] ?? ''))) === strtolower(trim($editor));
 }));
-require_once AKH_ROOT . '/includes/task-notification-events.php';
-$clientNotifyAlerts = akh_task_notification_pending_alerts_for_editor($editor);
+require_once AKH_ROOT . '/includes/dashboard-alerts.php';
+$dashboardAlerts = akh_dashboard_alerts_for_editor($editor);
 $mineIds = [];
 foreach ($mine as $t) {
     $nid = akh_task_normalize_id((string) ($t['id'] ?? ''));
@@ -134,7 +135,7 @@ foreach ($mine as $t) {
         $mineIds[$nid] = true;
     }
 }
-foreach (array_keys($clientNotifyAlerts) as $alertTaskId) {
+foreach (array_keys($dashboardAlerts) as $alertTaskId) {
     if (isset($mineIds[$alertTaskId])) {
         continue;
     }
@@ -144,17 +145,19 @@ foreach (array_keys($clientNotifyAlerts) as $alertTaskId) {
         $mineIds[$alertTaskId] = true;
     }
 }
-usort($mine, static function (array $a, array $b) use ($clientNotifyAlerts): int {
+usort($mine, static function (array $a, array $b) use ($dashboardAlerts): int {
     $aid = akh_task_normalize_id((string) ($a['id'] ?? ''));
     $bid = akh_task_normalize_id((string) ($b['id'] ?? ''));
-    $aAlert = isset($clientNotifyAlerts[$aid]) ? 1 : 0;
-    $bAlert = isset($clientNotifyAlerts[$bid]) ? 1 : 0;
-    if ($aAlert !== $bAlert) {
-        return $bAlert <=> $aAlert;
+    $aa = $dashboardAlerts[$aid] ?? null;
+    $ab = $dashboardAlerts[$bid] ?? null;
+    $pa = is_array($aa) ? (int) ($aa['priority'] ?? 0) : 0;
+    $pb = is_array($ab) ? (int) ($ab['priority'] ?? 0) : 0;
+    if ($pa !== $pb) {
+        return $pb <=> $pa;
     }
-    if ($aAlert && $bAlert) {
-        $ta = (string) ($clientNotifyAlerts[$aid]['created_at'] ?? '');
-        $tb = (string) ($clientNotifyAlerts[$bid]['created_at'] ?? '');
+    if ($pa > 0 && $pb > 0) {
+        $ta = (string) ($aa['created_at'] ?? '');
+        $tb = (string) ($ab['created_at'] ?? '');
         $cmp = strcmp($tb, $ta);
         if ($cmp !== 0) {
             return $cmp;
@@ -330,8 +333,8 @@ require_once AKH_ROOT . '/includes/header.php';
               $headline = (string) ($t['title'] ?? '');
               $stSlug = preg_replace('/[^a-z_]/', '', $st);
               $tidNorm = akh_task_normalize_id($tid);
-              $clientAlert = $clientNotifyAlerts[$tidNorm] ?? null;
-              $notify = ($t['editor_feedback_notify'] ?? false) === true || $clientAlert !== null;
+              $taskAlert = $dashboardAlerts[$tidNorm] ?? null;
+              $notify = ($t['editor_feedback_notify'] ?? false) === true || $taskAlert !== null;
               $isOpen = $openTicketId !== '' && $openTicketId === $tid;
               $opts = ['assigned', 'in_progress', 'review', 'delivered', 'reverted', 'closed'];
               ?>
@@ -380,10 +383,18 @@ require_once AKH_ROOT . '/includes/header.php';
                       <?php if ($dm === 'google_drive' && trim((string) ($t['drive_link'] ?? '')) !== ''): ?>
                         <p class="ticket__line"><a class="text-link" href="<?php echo h((string) $t['drive_link']); ?>" target="_blank" rel="noopener noreferrer">Client Drive link</a></p>
                       <?php endif; ?>
-                      <?php if ($clientAlert !== null): ?>
+                      <?php if ($taskAlert !== null): ?>
                         <div class="ticket__block ticket__block--clientfb">
-                          <h3 class="ticket__block-title">Client update request</h3>
-                          <div class="ticket__prose"><?php echo nl2br(h((string) ($clientAlert['preview'] ?? 'Client requested an update.'))); ?></div>
+                          <h3 class="ticket__block-title"><?php echo h(akh_dashboard_alert_kind_label($taskAlert)); ?></h3>
+                          <div class="ticket__prose"><?php echo nl2br(h((string) ($taskAlert['preview'] ?? ''))); ?></div>
+                          <?php if (trim((string) ($taskAlert['meet_link'] ?? '')) !== ''): ?>
+                            <p class="ticket__line" style="margin-bottom:0">
+                              <a class="text-link" href="<?php echo h((string) $taskAlert['meet_link']); ?>" target="_blank" rel="noopener noreferrer">Join Google Meet</a>
+                            </p>
+                          <?php endif; ?>
+                          <?php if (trim((string) ($taskAlert['start_time'] ?? '')) !== ''): ?>
+                            <p class="ticket__line portal-muted" style="margin-bottom:0"><strong>Starts:</strong> <?php echo h((string) $taskAlert['start_time']); ?></p>
+                          <?php endif; ?>
                         </div>
                       <?php endif; ?>
                       <?php if (trim((string) ($t['client_feedback'] ?? '')) !== '' || trim((string) ($t['client_meeting_date'] ?? '')) !== ''): ?>
