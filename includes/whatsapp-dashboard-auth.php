@@ -28,7 +28,7 @@ function akh_wa_dashboard_refresh_seconds(): int
         return 300;
     }
 
-    return max(60, (int) AKH_WA_DASHBOARD_REFRESH_SECONDS);
+    return max(30, (int) AKH_WA_DASHBOARD_REFRESH_SECONDS);
 }
 
 function akh_wa_dashboard_login(string $username, string $password): bool

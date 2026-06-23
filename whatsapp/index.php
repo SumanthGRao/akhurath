@@ -49,7 +49,15 @@ foreach ($initialTasks as $row) {
 
 $totalTasks = array_sum($initialCounts);
 $userLabel = akh_wa_dashboard_current() ?? '';
-$waNotify = $dbError === '' ? akh_wa_client_notification_payload() : ['count' => 0, 'alerts' => [], 'notify_sig' => 'missing'];
+$waNotify = ['count' => 0, 'alerts' => [], 'notify_sig' => 'missing', 'reminders' => []];
+$meetingRows = [];
+if (akh_meeting_requests_table_exists()) {
+    $waNotify = akh_dashboard_notification_payload();
+    $meetingRows = akh_meeting_request_active_rows();
+} elseif ($dbError === '') {
+    $waNotify = akh_wa_client_notification_payload();
+}
+$meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filemtime(AKH_ROOT . '/assets/js/meeting-alerts.js') : '1';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -98,6 +106,28 @@ $waNotify = $dbError === '' ? akh_wa_client_notification_payload() : ['count' =>
   </header>
 
   <main id="main" class="wa-main">
+    <?php if ($meetingRows !== []): ?>
+      <section class="wa-meeting-banner wa-meeting-banner--pulse" id="wa-meeting-banner" aria-live="polite">
+        <h2 class="wa-meeting-banner__title">📅 Meeting requests</h2>
+        <ul class="wa-meeting-banner__list">
+          <?php foreach ($meetingRows as $mr): ?>
+            <?php
+            $mCode = (string) ($mr['task_code'] ?? '');
+            $mPreview = akh_meeting_request_preview_from_row($mr);
+            $mLink = trim((string) ($mr['meet_link'] ?? ''));
+            ?>
+            <li class="wa-meeting-banner__item">
+              <strong class="wa-meeting-banner__code"><?php echo h($mCode); ?></strong>
+              <span class="wa-meeting-banner__text"><?php echo h($mPreview); ?></span>
+              <?php if ($mLink !== ''): ?>
+                <a class="wa-btn wa-btn--sm wa-btn--ghost" href="<?php echo h($mLink); ?>" target="_blank" rel="noopener noreferrer">Meet link</a>
+              <?php endif; ?>
+            </li>
+          <?php endforeach; ?>
+        </ul>
+      </section>
+    <?php endif; ?>
+
     <?php if ($dbError !== ''): ?>
       <p class="wa-banner wa-banner--err" role="alert"><?php echo h($dbError); ?></p>
     <?php else: ?>
@@ -271,6 +301,9 @@ $waNotify = $dbError === '' ? akh_wa_client_notification_payload() : ['count' =>
     </form>
   </dialog>
 
+  <?php require_once AKH_ROOT . '/includes/meeting-join-modal.php'; ?>
+
+  <script src="<?php echo h(base_path('assets/js/meeting-alerts.js')); ?>?v=<?php echo h($meetJsVer); ?>"></script>
   <script>
     window.WA_DASHBOARD = <?php echo json_encode([
         'apiUrl' => $apiUrl,

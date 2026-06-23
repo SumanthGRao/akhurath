@@ -77,51 +77,18 @@ function akh_dashboard_alerts_for_editor(string $editorUsername): array
         return [];
     }
 
-    $assigned = [];
-    foreach (akh_tasks_load() as $t) {
-        if (strtolower(trim((string) ($t['assigned_editor'] ?? ''))) !== $editorUsername) {
+    $owned = akh_meeting_request_assigned_task_codes_for_editor($editorUsername);
+    $out = [];
+
+    foreach (akh_dashboard_alerts_grouped() as $taskId => $alert) {
+        if (!isset($owned[$taskId])) {
             continue;
         }
-        $id = akh_task_normalize_id((string) ($t['id'] ?? ''));
-        if ($id !== '') {
-            $assigned[$id] = true;
-        }
+        $out[$taskId] = $alert;
     }
 
-    if (function_exists('akh_db')) {
-        try {
-            $st = akh_db()->query("SHOW TABLES LIKE 'whatsapp_tasks'");
-            if ($st !== false && $st->fetch(PDO::FETCH_NUM) !== false) {
-                $waSt = akh_db()->prepare(
-                    "SELECT wt.task_code, u.username
-                     FROM whatsapp_tasks wt
-                     INNER JOIN users u ON u.id = wt.assigned_editor AND u.role = 'editor'
-                     WHERE wt.assigned_editor IS NOT NULL"
-                );
-                $waSt->execute();
-                while ($row = $waSt->fetch(PDO::FETCH_ASSOC)) {
-                    if (!is_array($row)) {
-                        continue;
-                    }
-                    if (strtolower(trim((string) ($row['username'] ?? ''))) !== $editorUsername) {
-                        continue;
-                    }
-                    $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
-                    if ($code !== '') {
-                        $assigned[$code] = true;
-                    }
-                }
-            }
-        } catch (Throwable) {
-            // best-effort
-        }
-    }
-
-    $out = [];
-    foreach (akh_dashboard_alerts_grouped() as $taskId => $alert) {
-        if (isset($assigned[$taskId])) {
-            $out[$taskId] = $alert;
-        }
+    foreach (akh_meeting_request_pending_alerts_for_editor($editorUsername) as $taskId => $alert) {
+        $out[$taskId] = akh_dashboard_merge_alert($out[$taskId] ?? null, $alert);
     }
 
     return $out;

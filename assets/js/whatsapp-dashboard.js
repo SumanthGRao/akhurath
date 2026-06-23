@@ -69,27 +69,6 @@
     return typeof alert.priority === 'number' ? alert.priority : 0;
   }
 
-  function processMeetingReminders(reminders) {
-    if (!Array.isArray(reminders)) return;
-    reminders.forEach(function (rem) {
-      var id = String(rem.id || '');
-      var tier = String(rem.tier || '');
-      if (!id || !tier) return;
-      var key = 'akh_meet_rem_' + id + '_' + tier;
-      if (sessionStorage.getItem(key) === '1') return;
-      sessionStorage.setItem(key, '1');
-      if (!('Notification' in window) || Notification.permission !== 'granted') return;
-      try {
-        new Notification(String(rem.title || 'Meeting soon'), {
-          body: String(rem.body || ''),
-          tag: 'akh-wa-meet-' + id + '-' + tier,
-        });
-      } catch (e) {
-        /* ignore */
-      }
-    });
-  }
-
   function alertForTask(task) {
     var code = normalizeTaskCode(task.task_code);
     if (clientAlerts[code]) return clientAlerts[code];
@@ -122,10 +101,13 @@
       setNotifyUi(data.notify_count);
     }
     if (data && data.notify_sig) {
+      if (window.AkhMeetingAlerts) {
+        AkhMeetingAlerts.onNotifyChange(data.notify_sig, data.notify_count);
+      }
       currentNotifySig = data.notify_sig;
     }
-    if (data && data.reminders) {
-      processMeetingReminders(data.reminders);
+    if (data && data.reminders && window.AkhMeetingAlerts) {
+      AkhMeetingAlerts.processReminders(data.reminders);
     }
   }
 
@@ -214,6 +196,9 @@
       var editor = t.assigned_editor_name ? escHtml(t.assigned_editor_name) : '—';
       var alert = alertForTask(t);
       var rowClass = alert ? ' wa-table__row--alert' : '';
+      if (alert && String(alert.kind || '').indexOf('meeting_') === 0) {
+        rowClass += ' wa-table__row--meeting-blink';
+      }
       if (alert && alert.kind === 'meeting_reminder') {
         rowClass += ' wa-table__row--meeting-reminder';
       }
@@ -305,8 +290,8 @@
           setNotifyUi(data.notify_count);
           currentNotifySig = data.notify_sig;
         }
-        if (data.reminders) {
-          processMeetingReminders(data.reminders);
+        if (data.reminders && window.AkhMeetingAlerts) {
+          AkhMeetingAlerts.processReminders(data.reminders);
         }
         if (needsReload || needsNotify) {
           return loadTasks(true);
@@ -496,17 +481,19 @@
     }
   }
 
+  if (window.AkhMeetingAlerts) {
+    AkhMeetingAlerts.init({ notifySig: cfg.notifySig || '', reminders: cfg.reminders || [] });
+  }
   indexTasks(cfg.tasks || []);
   if (cfg.alerts) {
     clientAlerts = cfg.alerts;
   }
   setNotifyUi(parseInt(cfg.notifyCount, 10) || 0);
-  processMeetingReminders(cfg.reminders || []);
   applyFiltersLocally();
   bindEvents();
   resetCountdown();
   countdownTimer = setInterval(tickCountdown, 1000);
   refreshTimer = setInterval(function () {
     pollChanges();
-  }, Math.min(refreshSeconds * 1000, 60000));
+  }, 30000);
 })();

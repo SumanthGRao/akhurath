@@ -190,18 +190,9 @@
   var domUpdate = mountDeskBellHub();
 
   function processMeetingReminders(reminders) {
-    if (!Array.isArray(reminders)) return;
-    reminders.forEach(function (rem) {
-      var id = String(rem.id || '');
-      var tier = String(rem.tier || '');
-      if (!id || !tier) return;
-      var key = 'akh_meet_rem_' + id + '_' + tier;
-      if (sessionStorage.getItem(key) === '1') return;
-      sessionStorage.setItem(key, '1');
-      var title = String(rem.title || site);
-      var body = String(rem.body || 'Meeting starting soon.');
-      tryNotify(title, body, 'akh-meet-' + id + '-' + tier);
-    });
+    if (window.AkhMeetingAlerts) {
+      AkhMeetingAlerts.processReminders(reminders);
+    }
   }
 
   function osNoticeFromPoll(data, fallbackBody) {
@@ -244,6 +235,9 @@
         } else if (b > lastBell) {
           var edOs = osNoticeFromPoll(data, 'Update on your task board.');
           tryNotify(edOs.title, edOs.body, 'akh-editor-bell');
+          if (window.AkhMeetingAlerts) {
+            AkhMeetingAlerts.playChime(1);
+          }
         }
       } else if (cfg.mode === 'client' && b > lastBell) {
         var clOs = osNoticeFromPoll(data, 'Your editor posted an update.');

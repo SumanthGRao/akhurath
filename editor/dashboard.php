@@ -171,6 +171,20 @@ $editorBellCount = akh_task_editor_board_bell_count($editor);
 $editorBoardSig = akh_task_poll_signature_all();
 $editorBellNotices = akh_task_editor_notice_rows($editor);
 $pageCsrf = akh_csrf_token();
+require_once AKH_ROOT . '/includes/meeting-requests.php';
+$editorMeetingRows = [];
+$ownedCodes = akh_meeting_request_assigned_task_codes_for_editor($editor);
+foreach (akh_meeting_request_active_rows() as $mr) {
+    $c = (string) ($mr['task_code'] ?? '');
+    if ($c !== '' && isset($ownedCodes[$c])) {
+        $editorMeetingRows[] = $mr;
+    }
+}
+$editorReminders = array_values(array_filter(
+    akh_meeting_request_upcoming_reminders(),
+    static fn (array $r): bool => isset($ownedCodes[(string) ($r['task_code'] ?? '')])
+));
+$meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filemtime(AKH_ROOT . '/assets/js/meeting-alerts.js') : '1';
 
 $attendanceOn = AKH_EDITOR_ATTENDANCE_ENABLED && akh_editor_attendance_is_clocked_in($editor);
 $attendanceSinceTs = AKH_EDITOR_ATTENDANCE_ENABLED ? akh_editor_attendance_open_shift_started_at_for($editor) : null;
@@ -213,6 +227,28 @@ require_once AKH_ROOT . '/includes/header.php';
       <?php endif; ?>
       <?php if ($error !== ''): ?>
         <p class="banner banner--err" role="alert"><?php echo h($error); ?></p>
+      <?php endif; ?>
+
+      <?php if ($editorMeetingRows !== []): ?>
+        <section class="portal-meeting-banner portal-meeting-banner--pulse" aria-label="Meeting requests">
+          <h2 class="portal-meeting-banner__title">📅 Your meeting requests</h2>
+          <ul class="portal-meeting-banner__list">
+            <?php foreach ($editorMeetingRows as $mr): ?>
+              <?php
+              $mCode = (string) ($mr['task_code'] ?? '');
+              $mPreview = akh_meeting_request_preview_from_row($mr);
+              $mLink = trim((string) ($mr['meet_link'] ?? ''));
+              ?>
+              <li class="portal-meeting-banner__item">
+                <a class="text-link portal-meeting-banner__code" href="#ticket-<?php echo h($mCode); ?>"><?php echo h($mCode); ?></a>
+                <span><?php echo h($mPreview); ?></span>
+                <?php if ($mLink !== ''): ?>
+                  <a class="btn btn--ghost btn--sm" href="<?php echo h($mLink); ?>" target="_blank" rel="noopener noreferrer">Join link</a>
+                <?php endif; ?>
+              </li>
+            <?php endforeach; ?>
+          </ul>
+        </section>
       <?php endif; ?>
 
       <?php if (AKH_EDITOR_ATTENDANCE_ENABLED): ?>
@@ -335,11 +371,15 @@ require_once AKH_ROOT . '/includes/header.php';
               $tidNorm = akh_task_normalize_id($tid);
               $taskAlert = $dashboardAlerts[$tidNorm] ?? null;
               $notify = ($t['editor_feedback_notify'] ?? false) === true || $taskAlert !== null;
+              $ticketBlink = $notify ? ' ticket--notify' : '';
+              if ($taskAlert !== null && str_starts_with((string) ($taskAlert['kind'] ?? ''), 'meeting_')) {
+                  $ticketBlink .= ' ticket--meeting-blink';
+              }
               $isOpen = $openTicketId !== '' && $openTicketId === $tid;
               $opts = ['assigned', 'in_progress', 'review', 'delivered', 'reverted', 'closed'];
               ?>
               <details
-                class="ticket ticket--st-<?php echo h($stSlug); ?><?php echo $notify ? ' ticket--notify' : ''; ?>"
+                class="ticket ticket--st-<?php echo h($stSlug); ?><?php echo $ticketBlink; ?>"
                 <?php echo akh_task_ticket_style_attr($t); ?>
                 id="ticket-<?php echo h($tid); ?>"
                 data-task-id="<?php echo h($tid); ?>"
@@ -454,6 +494,7 @@ require_once AKH_ROOT . '/includes/header.php';
       </p>
     </div>
   </main>
+  <?php require_once AKH_ROOT . '/includes/meeting-join-modal.php'; ?>
   <?php
   $akhPushJs = AKH_ROOT . '/assets/js/portal-push-notify.js';
   $akhPushVer = is_file($akhPushJs) ? (string) filemtime($akhPushJs) : '1';
@@ -466,10 +507,17 @@ require_once AKH_ROOT . '/includes/header.php';
       bell: <?php echo (int) $editorBellCount; ?>,
       pool: <?php echo (int) count($newTasks); ?>,
       sig: <?php echo json_encode($editorBoardSig, JSON_THROW_ON_ERROR); ?>,
-      notices: <?php echo json_encode($editorBellNotices, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES); ?>
+      notices: <?php echo json_encode($editorBellNotices, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES); ?>,
+      reminders: <?php echo json_encode($editorReminders, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES); ?>
     };
   </script>
+  <script src="<?php echo h(base_path('assets/js/meeting-alerts.js')); ?>?v=<?php echo h($meetJsVer); ?>"></script>
   <script defer src="<?php echo h(base_path('assets/js/portal-push-notify.js')); ?>?v=<?php echo h($akhPushVer); ?>"></script>
+  <script>
+    if (window.AkhMeetingAlerts && window._akhPortalPush) {
+      AkhMeetingAlerts.init({ notifySig: '', reminders: window._akhPortalPush.reminders || [] });
+    }
+  </script>
   <script>
     (function () {
       var csrf = <?php echo json_encode($pageCsrf, JSON_THROW_ON_ERROR); ?>;

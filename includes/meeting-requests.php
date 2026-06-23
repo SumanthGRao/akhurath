@@ -2,6 +2,45 @@
 
 declare(strict_types=1);
 
+/** @var array<string, bool>|null */
+$GLOBALS['akh_meeting_request_columns'] = null;
+
+/** @return array<string, bool> */
+function akh_meeting_request_columns(): array
+{
+    if (is_array($GLOBALS['akh_meeting_request_columns'] ?? null)) {
+        return $GLOBALS['akh_meeting_request_columns'];
+    }
+
+    $cols = [];
+    if (!akh_meeting_requests_table_exists()) {
+        $GLOBALS['akh_meeting_request_columns'] = $cols;
+
+        return $cols;
+    }
+
+    try {
+        $st = akh_db()->query('SHOW COLUMNS FROM meeting_requests');
+        while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
+            $name = strtolower((string) ($row['Field'] ?? ''));
+            if ($name !== '') {
+                $cols[$name] = true;
+            }
+        }
+    } catch (Throwable) {
+        $cols = [];
+    }
+
+    $GLOBALS['akh_meeting_request_columns'] = $cols;
+
+    return $cols;
+}
+
+function akh_meeting_request_has_column(string $column): bool
+{
+    return (akh_meeting_request_columns()[strtolower($column)] ?? false) === true;
+}
+
 function akh_meeting_requests_table_exists(): bool
 {
     if (!function_exists('akh_db')) {
@@ -28,30 +67,45 @@ function akh_meeting_request_site_timezone(): DateTimeZone
     }
 }
 
-/** @return list<string> */
-function akh_meeting_request_pending_statuses(): array
+/** Statuses that mean “handled” — everything else is an active alert. */
+function akh_meeting_request_dismissed_statuses(): array
 {
-    return ['pending', 'new', 'requested', 'open'];
+    return ['read', 'acknowledged', 'dismissed', 'cancelled', 'canceled', 'declined', 'completed', 'done', 'closed'];
 }
 
-/** @return list<string> */
-function akh_meeting_request_reminder_blocked_statuses(): array
+/** @return array{sql: string, params: list<mixed>} */
+function akh_meeting_request_active_filter(): array
 {
-    return ['cancelled', 'canceled', 'declined', 'completed', 'done', 'closed'];
+    $dismissed = akh_meeting_request_dismissed_statuses();
+    $placeholders = implode(',', array_fill(0, count($dismissed), '?'));
+
+    return [
+        'sql' => "(status IS NULL OR TRIM(status) = '' OR LOWER(TRIM(status)) NOT IN ({$placeholders}))",
+        'params' => $dismissed,
+    ];
+}
+
+/** @return array{sql: string, params: list<mixed>} */
+function akh_meeting_request_reminder_blocked_filter(): array
+{
+    return akh_meeting_request_active_filter();
 }
 
 /**
- * @return array{sql: string, params: list<mixed>}
+ * @param array<string, mixed> $row
+ * @return array<string, mixed>
  */
-function akh_meeting_request_pending_filter(): array
+function akh_meeting_request_normalize_row(array $row): array
 {
-    $statuses = akh_meeting_request_pending_statuses();
-    $placeholders = implode(',', array_fill(0, count($statuses), '?'));
+    require_once __DIR__ . '/tasks.php';
 
-    return [
-        'sql' => "(status IS NULL OR TRIM(status) = '' OR LOWER(TRIM(status)) IN ({$placeholders}))",
-        'params' => $statuses,
-    ];
+    $code = trim((string) ($row['task_code'] ?? ''));
+    if ($code === '' && akh_meeting_request_has_column('task_id')) {
+        $code = trim((string) ($row['task_id'] ?? ''));
+    }
+    $row['task_code'] = akh_task_normalize_id($code);
+
+    return $row;
 }
 
 function akh_meeting_request_parse_datetime(string $raw): ?DateTimeImmutable
@@ -62,7 +116,7 @@ function akh_meeting_request_parse_datetime(string $raw): ?DateTimeImmutable
     }
 
     $tz = akh_meeting_request_site_timezone();
-    $formats = ['Y-m-d H:i:s', 'Y-m-d H:i', DateTimeInterface::ATOM, 'Y-m-d\TH:i:sP'];
+    $formats = ['Y-m-d H:i:s', 'Y-m-d H:i', 'd-m-Y H:i:s', 'd-m-Y H:i', DateTimeInterface::ATOM, 'Y-m-d\TH:i:sP'];
     foreach ($formats as $fmt) {
         $dt = DateTimeImmutable::createFromFormat($fmt, $raw, $tz);
         if ($dt instanceof DateTimeImmutable) {
@@ -77,14 +131,32 @@ function akh_meeting_request_parse_datetime(string $raw): ?DateTimeImmutable
     }
 }
 
-/**
- * @param array<string, mixed> $row
- */
+/** @param array<string, mixed> $row */
+function akh_meeting_request_effective_start(array $row): ?DateTimeImmutable
+{
+    $start = akh_meeting_request_parse_datetime((string) ($row['start_time'] ?? ''));
+    if ($start !== null) {
+        return $start;
+    }
+
+    $text = trim((string) ($row['requested_time_text'] ?? ''));
+    if ($text !== '') {
+        return akh_meeting_request_parse_datetime($text);
+    }
+
+    return akh_meeting_request_parse_datetime((string) ($row['slot_selected'] ?? ''));
+}
+
+/** @param array<string, mixed> $row */
 function akh_meeting_request_preview_from_row(array $row): string
 {
     $slot = trim((string) ($row['requested_time_text'] ?? ''));
     if ($slot === '') {
         $slot = trim((string) ($row['slot_selected'] ?? ''));
+    }
+    $start = akh_meeting_request_effective_start($row);
+    if ($slot === '' && $start !== null) {
+        $slot = $start->format('M j, g:i A');
     }
     $customer = trim((string) ($row['customer_name'] ?? ''));
     $project = trim((string) ($row['project_name'] ?? ''));
@@ -99,8 +171,8 @@ function akh_meeting_request_preview_from_row(array $row): string
         $parts[] = $slot;
     }
     $preview = implode(' — ', $parts);
-    if (mb_strlen($preview) > 120) {
-        $preview = mb_substr($preview, 0, 119) . '…';
+    if (mb_strlen($preview) > 140) {
+        $preview = mb_substr($preview, 0, 139) . '…';
     }
 
     return $preview;
@@ -109,46 +181,51 @@ function akh_meeting_request_preview_from_row(array $row): string
 /**
  * @return list<array<string, mixed>>
  */
-function akh_meeting_request_pending_rows(): array
+function akh_meeting_request_active_rows(): array
 {
     if (!akh_meeting_requests_table_exists()) {
         return [];
     }
 
-    $pending = akh_meeting_request_pending_filter();
-    $sql = 'SELECT id, task_code, phone, slot_selected, meet_link, start_time, end_time, created_at,
-            requested_time_text, customer_name, project_name, status, calendar_event_id, updated_at
-            FROM meeting_requests WHERE ' . $pending['sql'] . ' ORDER BY id ASC';
+    $active = akh_meeting_request_active_filter();
+    $sql = 'SELECT * FROM meeting_requests WHERE ' . $active['sql'] . ' ORDER BY id DESC LIMIT 200';
 
     try {
         $st = akh_db()->prepare($sql);
-        $st->execute($pending['params']);
+        $st->execute($active['params']);
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!is_array($rows)) {
+            return [];
+        }
+        $out = [];
+        foreach ($rows as $row) {
+            if (is_array($row)) {
+                $out[] = akh_meeting_request_normalize_row($row);
+            }
+        }
 
-        return is_array($rows) ? $rows : [];
+        return $out;
     } catch (Throwable $e) {
-        error_log('akh_meeting_request_pending_rows: ' . $e->getMessage());
+        error_log('akh_meeting_request_active_rows: ' . $e->getMessage());
 
         return [];
     }
 }
 
-/**
- * @return array<string, array<string, mixed>>
- */
+/** @return array<string, array<string, mixed>> */
 function akh_meeting_request_pending_alerts_grouped(): array
 {
-    require_once __DIR__ . '/tasks.php';
-
     $out = [];
-    foreach (akh_meeting_request_pending_rows() as $row) {
-        $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+    foreach (akh_meeting_request_active_rows() as $row) {
+        $code = (string) ($row['task_code'] ?? '');
         if ($code === '') {
             continue;
         }
         $id = (int) ($row['id'] ?? 0);
         $preview = akh_meeting_request_preview_from_row($row);
         $created = (string) ($row['created_at'] ?? '');
+        $start = akh_meeting_request_effective_start($row);
+        $startLabel = $start !== null ? $start->format('Y-m-d H:i') : (string) ($row['start_time'] ?? '');
         if (!isset($out[$code])) {
             $out[$code] = [
                 'count' => 0,
@@ -158,7 +235,7 @@ function akh_meeting_request_pending_alerts_grouped(): array
                 'priority' => 90,
                 'created_at' => $created,
                 'meet_link' => trim((string) ($row['meet_link'] ?? '')),
-                'start_time' => (string) ($row['start_time'] ?? ''),
+                'start_time' => $startLabel,
                 'meeting_id' => $id,
             ];
         }
@@ -168,7 +245,7 @@ function akh_meeting_request_pending_alerts_grouped(): array
             $out[$code]['preview'] = $preview;
             $out[$code]['created_at'] = $created;
             $out[$code]['meet_link'] = trim((string) ($row['meet_link'] ?? ''));
-            $out[$code]['start_time'] = (string) ($row['start_time'] ?? '');
+            $out[$code]['start_time'] = $startLabel;
             $out[$code]['meeting_id'] = $id;
         }
     }
@@ -177,8 +254,6 @@ function akh_meeting_request_pending_alerts_grouped(): array
 }
 
 /**
- * Meetings starting within 10 minutes (reminder tiers at 10 and 5 minutes).
- *
  * @return list<array{id: int, task_code: string, tier: string, minutes_until: int, title: string, body: string, meet_link: string, start_time: string}>
  */
 function akh_meeting_request_upcoming_reminders(): array
@@ -187,43 +262,14 @@ function akh_meeting_request_upcoming_reminders(): array
         return [];
     }
 
-    require_once __DIR__ . '/tasks.php';
-
-    $inactive = akh_meeting_request_reminder_blocked_statuses();
-    $inactivePh = implode(',', array_fill(0, count($inactive), '?'));
-    $sql = "SELECT id, task_code, meet_link, start_time, end_time, customer_name, project_name, status
-            FROM meeting_requests
-            WHERE start_time IS NOT NULL AND TRIM(start_time) <> ''
-              AND LOWER(TRIM(status)) NOT IN ({$inactivePh})
-            ORDER BY start_time ASC";
-
-    try {
-        $st = akh_db()->prepare($sql);
-        $st->execute($inactive);
-        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Throwable $e) {
-        error_log('akh_meeting_request_upcoming_reminders: ' . $e->getMessage());
-
-        return [];
-    }
-
-    if (!is_array($rows)) {
-        return [];
-    }
-
+    $rows = akh_meeting_request_active_rows();
     $tz = akh_meeting_request_site_timezone();
     $now = new DateTimeImmutable('now', $tz);
     $out = [];
 
     foreach ($rows as $row) {
-        if (!is_array($row)) {
-            continue;
-        }
-        $start = akh_meeting_request_parse_datetime((string) ($row['start_time'] ?? ''));
-        if ($start === null) {
-            continue;
-        }
-        if ($start <= $now) {
+        $start = akh_meeting_request_effective_start($row);
+        if ($start === null || $start <= $now) {
             continue;
         }
         $seconds = $start->getTimestamp() - $now->getTimestamp();
@@ -233,17 +279,17 @@ function akh_meeting_request_upcoming_reminders(): array
         }
 
         $tier = $minutes <= 5 ? '5' : '10';
-        $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+        $code = (string) ($row['task_code'] ?? '');
         if ($code === '') {
             continue;
         }
         $customer = trim((string) ($row['customer_name'] ?? ''));
         $project = trim((string) ($row['project_name'] ?? ''));
         $title = $project !== '' ? $project : ($customer !== '' ? $customer : $code);
-        $body = $tier === '5'
-            ? "Meeting for {$code} starts in about {$minutes} minute(s)."
-            : "Meeting for {$code} starts in about {$minutes} minute(s).";
         $meetLink = trim((string) ($row['meet_link'] ?? ''));
+        $body = $tier === '5'
+            ? "Meeting {$code} starts in {$minutes} min — join now."
+            : "Meeting {$code} starts in {$minutes} min.";
 
         $out[] = [
             'id' => (int) ($row['id'] ?? 0),
@@ -260,9 +306,7 @@ function akh_meeting_request_upcoming_reminders(): array
     return $out;
 }
 
-/**
- * @return array<string, array<string, mixed>>
- */
+/** @return array<string, array<string, mixed>> */
 function akh_meeting_request_reminder_alert_highlights(): array
 {
     $out = [];
@@ -295,10 +339,53 @@ function akh_meeting_request_reminder_alert_highlights(): array
     return $out;
 }
 
-/**
- * @return array<string, array<string, mixed>>
- */
-function akh_meeting_request_pending_alerts_for_editor(string $editorUsername): array
+/** @return array<string, bool> */
+function akh_meeting_request_assigned_task_codes(): array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $assigned = [];
+    foreach (akh_tasks_load() as $t) {
+        $editor = strtolower(trim((string) ($t['assigned_editor'] ?? '')));
+        if ($editor === '') {
+            continue;
+        }
+        $id = akh_task_normalize_id((string) ($t['id'] ?? ''));
+        if ($id !== '') {
+            $assigned[$id] = true;
+        }
+    }
+
+    if (!function_exists('akh_db')) {
+        return $assigned;
+    }
+
+    try {
+        $st = akh_db()->query("SHOW TABLES LIKE 'whatsapp_tasks'");
+        if ($st === false || $st->fetch(PDO::FETCH_NUM) === false) {
+            return $assigned;
+        }
+        $waSt = akh_db()->query(
+            'SELECT task_code FROM whatsapp_tasks WHERE assigned_editor IS NOT NULL AND TRIM(task_code) <> ""'
+        );
+        while ($row = $waSt->fetch(PDO::FETCH_ASSOC)) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+            if ($code !== '') {
+                $assigned[$code] = true;
+            }
+        }
+    } catch (Throwable) {
+        // best-effort
+    }
+
+    return $assigned;
+}
+
+/** @return array<string, bool> */
+function akh_meeting_request_assigned_task_codes_for_editor(string $editorUsername): array
 {
     require_once __DIR__ . '/tasks.php';
 
@@ -318,43 +405,50 @@ function akh_meeting_request_pending_alerts_for_editor(string $editorUsername): 
         }
     }
 
-    if (function_exists('akh_db')) {
-        try {
-            $st = akh_db()->query("SHOW TABLES LIKE 'whatsapp_tasks'");
-            if ($st !== false && $st->fetch(PDO::FETCH_NUM) !== false) {
-                $waSt = akh_db()->prepare(
-                    "SELECT wt.task_code, u.username
-                     FROM whatsapp_tasks wt
-                     INNER JOIN users u ON u.id = wt.assigned_editor AND u.role = 'editor'
-                     WHERE wt.assigned_editor IS NOT NULL"
-                );
-                $waSt->execute();
-                while ($row = $waSt->fetch(PDO::FETCH_ASSOC)) {
-                    if (!is_array($row)) {
-                        continue;
-                    }
-                    if (strtolower(trim((string) ($row['username'] ?? ''))) !== $editorUsername) {
-                        continue;
-                    }
-                    $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
-                    if ($code !== '') {
-                        $assigned[$code] = true;
-                    }
-                }
-            }
-        } catch (Throwable) {
-            // best-effort
-        }
+    if (!function_exists('akh_db')) {
+        return $assigned;
     }
 
+    try {
+        $st = akh_db()->query("SHOW TABLES LIKE 'whatsapp_tasks'");
+        if ($st === false || $st->fetch(PDO::FETCH_NUM) === false) {
+            return $assigned;
+        }
+        $waSt = akh_db()->prepare(
+            "SELECT wt.task_code
+             FROM whatsapp_tasks wt
+             INNER JOIN users u ON u.id = wt.assigned_editor AND u.role = 'editor'
+             WHERE wt.assigned_editor IS NOT NULL AND LOWER(u.username) = ?"
+        );
+        $waSt->execute([$editorUsername]);
+        while ($row = $waSt->fetch(PDO::FETCH_ASSOC)) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+            if ($code !== '') {
+                $assigned[$code] = true;
+            }
+        }
+    } catch (Throwable) {
+        // best-effort
+    }
+
+    return $assigned;
+}
+
+/** @return array<string, array<string, mixed>> */
+function akh_meeting_request_pending_alerts_for_editor(string $editorUsername): array
+{
+    $owned = akh_meeting_request_assigned_task_codes_for_editor($editorUsername);
     $out = [];
     foreach (akh_meeting_request_pending_alerts_grouped() as $taskId => $alert) {
-        if (isset($assigned[$taskId])) {
+        if (isset($owned[$taskId])) {
             $out[$taskId] = $alert;
         }
     }
     foreach (akh_meeting_request_reminder_alert_highlights() as $taskId => $alert) {
-        if (!isset($assigned[$taskId])) {
+        if (!isset($owned[$taskId])) {
             continue;
         }
         $existing = $out[$taskId] ?? null;
@@ -373,16 +467,16 @@ function akh_meeting_request_poll_signature(): string
     }
 
     try {
-        $pending = akh_meeting_request_pending_filter();
+        $active = akh_meeting_request_active_filter();
         $st = akh_db()->prepare(
-            'SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS m FROM meeting_requests WHERE ' . $pending['sql']
+            'SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS m FROM meeting_requests WHERE ' . $active['sql']
         );
-        $st->execute($pending['params']);
+        $st->execute($active['params']);
         $row = $st->fetch(PDO::FETCH_ASSOC);
         $reminders = akh_meeting_request_upcoming_reminders();
         $remSig = [];
         foreach ($reminders as $r) {
-            $remSig[] = (string) ($r['id'] ?? '') . ':' . (string) ($r['tier'] ?? '');
+            $remSig[] = (string) ($r['id'] ?? '') . ':' . (string) ($r['tier'] ?? '') . ':' . (string) ($r['minutes_until'] ?? '');
         }
         sort($remSig);
 
@@ -406,13 +500,19 @@ function akh_meeting_request_mark_task_read(string $taskCode): void
         return;
     }
 
-    $pending = akh_meeting_request_pending_filter();
+    $active = akh_meeting_request_active_filter();
+    $matchSql = 'task_code = ?';
+    $params = [$taskCode];
+    if (akh_meeting_request_has_column('task_id')) {
+        $matchSql = '(task_code = ? OR task_id = ?)';
+        $params = [$taskCode, $taskCode];
+    }
 
     try {
         $sql = "UPDATE meeting_requests SET status = 'read', updated_at = CURRENT_TIMESTAMP
-                WHERE task_code = ? AND ({$pending['sql']})";
+                WHERE {$matchSql} AND ({$active['sql']})";
         $st = akh_db()->prepare($sql);
-        $st->execute(array_merge([$taskCode], $pending['params']));
+        $st->execute(array_merge($params, $active['params']));
     } catch (Throwable $e) {
         error_log('akh_meeting_request_mark_task_read: ' . $e->getMessage());
     }
@@ -424,12 +524,12 @@ function akh_meeting_request_mark_all_read(): void
         return;
     }
 
-    $pending = akh_meeting_request_pending_filter();
+    $active = akh_meeting_request_active_filter();
 
     try {
-        $sql = "UPDATE meeting_requests SET status = 'read', updated_at = CURRENT_TIMESTAMP WHERE {$pending['sql']}";
+        $sql = "UPDATE meeting_requests SET status = 'read', updated_at = CURRENT_TIMESTAMP WHERE {$active['sql']}";
         $st = akh_db()->prepare($sql);
-        $st->execute($pending['params']);
+        $st->execute($active['params']);
     } catch (Throwable $e) {
         error_log('akh_meeting_request_mark_all_read: ' . $e->getMessage());
     }
@@ -443,4 +543,9 @@ function akh_meeting_request_kind_label(string $kind): string
     ];
 
     return $map[$kind] ?? 'Meeting';
+}
+
+function akh_meeting_requests_table_ready(): bool
+{
+    return akh_meeting_requests_table_exists() && akh_meeting_request_columns() !== [];
 }

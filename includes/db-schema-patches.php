@@ -14,6 +14,12 @@ function akh_db_apply_runtime_patches(PDO $pdo): void
     }
     $done = true;
 
+    akh_db_patch_task_notification_status($pdo);
+    akh_db_patch_meeting_requests_table($pdo);
+}
+
+function akh_db_patch_task_notification_status(PDO $pdo): void
+{
     try {
         $schema = (string) $pdo->query('SELECT DATABASE()')->fetchColumn();
         if ($schema === '') {
@@ -48,6 +54,28 @@ function akh_db_apply_runtime_patches(PDO $pdo): void
             'ALTER TABLE task_notification_events ADD KEY ix_task_notification_status (status)'
         );
     } catch (Throwable $e) {
-        error_log('akh_db_apply_runtime_patches: ' . $e->getMessage());
+        error_log('akh_db_patch_task_notification_status: ' . $e->getMessage());
+    }
+}
+
+function akh_db_patch_meeting_requests_table(PDO $pdo): void
+{
+    try {
+        $tbl = $pdo->query("SHOW TABLES LIKE 'meeting_requests'");
+        if ($tbl !== false && $tbl->fetch(PDO::FETCH_NUM) !== false) {
+            return;
+        }
+
+        $migration = AKH_ROOT . '/sql/migrations/009_meeting_requests.sql';
+        if (!is_file($migration)) {
+            return;
+        }
+        $sql = file_get_contents($migration);
+        if (!is_string($sql) || trim($sql) === '') {
+            return;
+        }
+        $pdo->exec($sql);
+    } catch (Throwable $e) {
+        error_log('akh_db_patch_meeting_requests_table: ' . $e->getMessage());
     }
 }
