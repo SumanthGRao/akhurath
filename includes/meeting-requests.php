@@ -451,8 +451,7 @@ function akh_meeting_request_pending_alerts_for_editor(string $editorUsername): 
         if (!isset($owned[$taskId])) {
             continue;
         }
-        $existing = $out[$taskId] ?? null;
-        if (!is_array($existing) || (int) ($alert['priority'] ?? 0) >= (int) ($existing['priority'] ?? 0)) {
+        if (!isset($out[$taskId]) || (int) ($alert['priority'] ?? 0) >= (int) ($out[$taskId]['priority'] ?? 0)) {
             $out[$taskId] = $alert;
         }
     }
@@ -548,4 +547,103 @@ function akh_meeting_request_kind_label(string $kind): string
 function akh_meeting_requests_table_ready(): bool
 {
     return akh_meeting_requests_table_exists() && akh_meeting_request_columns() !== [];
+}
+
+/**
+ * Pending (unread) meeting request rows only.
+ *
+ * @return list<array<string, mixed>>
+ */
+function akh_meeting_request_pending_rows(): array
+{
+    if (!akh_meeting_requests_table_exists()) {
+        return [];
+    }
+
+    $pending = akh_meeting_request_active_filter();
+    $sql = 'SELECT * FROM meeting_requests WHERE ' . $pending['sql'] . ' ORDER BY id DESC LIMIT 100';
+
+    try {
+        $st = akh_db()->prepare($sql);
+        $st->execute($pending['params']);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!is_array($rows)) {
+            return [];
+        }
+        $out = [];
+        foreach ($rows as $row) {
+            if (is_array($row)) {
+                $out[] = akh_meeting_request_normalize_row($row);
+            }
+        }
+
+        return $out;
+    } catch (Throwable $e) {
+        error_log('akh_meeting_request_pending_rows: ' . $e->getMessage());
+
+        return [];
+    }
+}
+
+/**
+ * All non-cancelled meetings for the Meetings tab (includes read / scheduled).
+ *
+ * @return list<array<string, mixed>>
+ */
+function akh_meeting_request_list_for_dashboard(): array
+{
+    if (!akh_meeting_requests_table_exists()) {
+        return [];
+    }
+
+    $blocked = akh_meeting_request_reminder_blocked_statuses();
+    $placeholders = implode(',', array_fill(0, count($blocked), '?'));
+    $sql = "SELECT * FROM meeting_requests
+            WHERE (status IS NULL OR TRIM(status) = '' OR LOWER(TRIM(status)) NOT IN ({$placeholders}))
+            ORDER BY COALESCE(start_time, created_at) DESC, id DESC
+            LIMIT 200";
+
+    try {
+        $st = akh_db()->prepare($sql);
+        $st->execute($blocked);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!is_array($rows)) {
+            return [];
+        }
+        $pendingCodes = [];
+        foreach (akh_meeting_request_pending_alerts_grouped() as $code => $_a) {
+            $pendingCodes[$code] = true;
+        }
+        $out = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $norm = akh_meeting_request_normalize_row($row);
+            $code = (string) ($norm['task_code'] ?? '');
+            $start = akh_meeting_request_effective_start($norm);
+            $out[] = [
+                'id' => (int) ($norm['id'] ?? 0),
+                'task_code' => $code,
+                'customer_name' => (string) ($norm['customer_name'] ?? ''),
+                'project_name' => (string) ($norm['project_name'] ?? ''),
+                'phone' => (string) ($norm['phone'] ?? ''),
+                'slot_selected' => (string) ($norm['slot_selected'] ?? ''),
+                'requested_time_text' => (string) ($norm['requested_time_text'] ?? ''),
+                'start_time' => $start !== null ? $start->format('Y-m-d H:i') : (string) ($norm['start_time'] ?? ''),
+                'end_time' => (string) ($norm['end_time'] ?? ''),
+                'meet_link' => trim((string) ($norm['meet_link'] ?? '')),
+                'status' => (string) ($norm['status'] ?? ''),
+                'created_at' => (string) ($norm['created_at'] ?? ''),
+                'preview' => akh_meeting_request_preview_from_row($norm),
+                'is_unread' => isset($pendingCodes[$code]),
+            ];
+        }
+
+        return $out;
+    } catch (Throwable $e) {
+        error_log('akh_meeting_request_list_for_dashboard: ' . $e->getMessage());
+
+        return [];
+    }
 }

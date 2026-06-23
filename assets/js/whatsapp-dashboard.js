@@ -10,6 +10,11 @@
   var currentSig = cfg.initialSig || '';
   var currentNotifySig = cfg.notifySig || '';
   var clientAlerts = cfg.alerts || {};
+  var notices = cfg.notices || [];
+  var meetings = cfg.meetings || [];
+  var reminderTasks = {};
+  var activeTab = 'tasks';
+  var bellOpen = false;
   var filterStatus = cfg.filterStatus || '';
   var filterQ = cfg.filterQ || '';
   var refreshSeconds = Math.max(60, parseInt(cfg.refreshSeconds, 10) || 300);
@@ -38,6 +43,15 @@
     editTitle: document.getElementById('wa-edit-title'),
     notifyBell: document.getElementById('wa-notify-bell'),
     notifyCount: document.getElementById('wa-notify-count'),
+    notifyDropdown: document.getElementById('wa-notify-dropdown'),
+    notifyList: document.getElementById('wa-notify-list'),
+    notifySub: document.getElementById('wa-notify-dropdown-sub'),
+    notifyMarkAll: document.getElementById('wa-notify-mark-all'),
+    panelTasks: document.getElementById('wa-panel-tasks'),
+    panelMeetings: document.getElementById('wa-panel-meetings'),
+    meetingsBody: document.getElementById('wa-meetings-body'),
+    meetingsBadge: document.getElementById('wa-meetings-badge'),
+    meetingBanner: document.getElementById('wa-meeting-banner'),
   };
 
   function normalizeTaskCode(code) {
@@ -80,6 +94,21 @@
     return null;
   }
 
+  function isReminderTask(taskCode) {
+    var code = normalizeTaskCode(taskCode);
+    return !!(reminderTasks[code] || reminderTasks[taskCode]);
+  }
+
+  function rebuildReminderTasks(reminders) {
+    reminderTasks = {};
+    (reminders || []).forEach(function (rem) {
+      var mins = parseInt(rem.minutes_until, 10);
+      if (isNaN(mins) || mins > 10) return;
+      var code = normalizeTaskCode(rem.task_code);
+      if (code) reminderTasks[code] = true;
+    });
+  }
+
   function setNotifyUi(count) {
     var n = typeof count === 'number' ? count : 0;
     if (els.notifyCount) els.notifyCount.textContent = String(n);
@@ -91,14 +120,79 @@
     } else {
       document.title = baseTitle;
     }
+    renderNoticeDropdown();
+  }
+
+  function renderNoticeDropdown() {
+    if (!els.notifyList) return;
+
+    var list = notices || [];
+    if (els.notifySub) {
+      els.notifySub.textContent = list.length === 0
+        ? 'Nothing new'
+        : list.length + ' unread update' + (list.length === 1 ? '' : 's');
+    }
+    if (els.notifyMarkAll) {
+      els.notifyMarkAll.hidden = list.length === 0;
+    }
+
+    if (list.length === 0) {
+      els.notifyList.innerHTML = '<li class="wa-bell-dropdown__empty">No unread updates right now.</li>';
+      return;
+    }
+
+    els.notifyList.innerHTML = list.map(function (n) {
+      var code = escHtml(n.task_code || '');
+      var label = escHtml(n.label || 'Update');
+      var preview = escHtml(n.preview || '');
+      var kind = String(n.kind || '');
+      var kindClass = kind.indexOf('meeting_') === 0 ? ' wa-bell-dropdown__item--meeting' : '';
+      var linkBtn = n.meet_link
+        ? ' <a class="wa-bell-dropdown__link" href="' + escHtml(n.meet_link) + '" target="_blank" rel="noopener noreferrer">Meet link</a>'
+        : '';
+      return (
+        '<li class="wa-bell-dropdown__item' + kindClass + '">' +
+        '<div class="wa-bell-dropdown__item-head">' +
+        '<strong class="wa-bell-dropdown__code">' + code + '</strong>' +
+        '<span class="wa-bell-dropdown__label">' + label + '</span>' +
+        '</div>' +
+        '<p class="wa-bell-dropdown__preview">' + preview + linkBtn + '</p>' +
+        '<div class="wa-bell-dropdown__item-actions">' +
+        '<button type="button" class="wa-btn wa-btn--sm wa-btn--ghost" data-wa-notice-open="' + code + '">Open task</button>' +
+        '<button type="button" class="wa-btn wa-btn--sm wa-btn--ghost" data-wa-notice-read="' + escHtml(n.task_code || '') + '">Mark read</button>' +
+        '</div>' +
+        '</li>'
+      );
+    }).join('');
+  }
+
+  function setBellOpen(open) {
+    bellOpen = !!open;
+    if (els.notifyDropdown) {
+      els.notifyDropdown.hidden = !bellOpen;
+    }
+    if (els.notifyBell) {
+      els.notifyBell.setAttribute('aria-expanded', bellOpen ? 'true' : 'false');
+    }
   }
 
   function applyNotifyPayload(data) {
     if (data && data.alerts) {
       clientAlerts = data.alerts;
     }
+    if (data && data.notices) {
+      notices = data.notices;
+    }
+    if (data && data.meetings) {
+      meetings = data.meetings;
+      renderMeetingsTable();
+      updateMeetingsBadge();
+      updateMeetingBanner();
+    }
     if (data && typeof data.notify_count === 'number') {
       setNotifyUi(data.notify_count);
+    } else {
+      renderNoticeDropdown();
     }
     if (data && data.notify_sig) {
       if (window.AkhMeetingAlerts) {
@@ -106,9 +200,36 @@
       }
       currentNotifySig = data.notify_sig;
     }
-    if (data && data.reminders && window.AkhMeetingAlerts) {
-      AkhMeetingAlerts.processReminders(data.reminders);
+    if (data && data.reminders) {
+      rebuildReminderTasks(data.reminders);
+      if (window.AkhMeetingAlerts) {
+        AkhMeetingAlerts.processReminders(data.reminders);
+      }
     }
+  }
+
+  function updateMeetingsBadge() {
+    if (!els.meetingsBadge) return;
+    var n = (meetings || []).length;
+    els.meetingsBadge.textContent = String(n);
+    els.meetingsBadge.classList.toggle('wa-tabs__badge--hidden', n === 0);
+  }
+
+  function updateMeetingBanner() {
+    if (!els.meetingBanner) return;
+    var pending = (meetings || []).filter(function (m) { return m.is_unread; });
+    els.meetingBanner.hidden = pending.length === 0;
+    if (pending.length === 0) return;
+    var list = els.meetingBanner.querySelector('.wa-meeting-banner__list');
+    if (!list) return;
+    list.innerHTML = pending.map(function (m) {
+      return (
+        '<li class="wa-meeting-banner__item">' +
+        '<strong class="wa-meeting-banner__code">' + escHtml(m.task_code) + '</strong>' +
+        '<span class="wa-meeting-banner__text">' + escHtml(m.preview || '') + '</span>' +
+        '</li>'
+      );
+    }).join('');
   }
 
   function ackNotifications(taskCode) {
@@ -195,11 +316,11 @@
     els.body.innerHTML = tasks.map(function (t) {
       var editor = t.assigned_editor_name ? escHtml(t.assigned_editor_name) : '—';
       var alert = alertForTask(t);
-      var rowClass = alert ? ' wa-table__row--alert' : '';
-      if (alert && String(alert.kind || '').indexOf('meeting_') === 0) {
-        rowClass += ' wa-table__row--meeting-blink';
+      var rowClass = '';
+      if (alert) {
+        rowClass += ' wa-table__row--unread';
       }
-      if (alert && alert.kind === 'meeting_reminder') {
+      if (isReminderTask(t.task_code)) {
         rowClass += ' wa-table__row--meeting-reminder';
       }
       var pill = alertPillMeta(alert);
@@ -219,6 +340,73 @@
         '</tr>'
       );
     }).join('');
+  }
+
+  function renderMeetingsTable() {
+    if (!els.meetingsBody) return;
+
+    var list = meetings || [];
+    if (list.length === 0) {
+      els.meetingsBody.innerHTML = '<tr class="wa-table__empty"><td colspan="7">No meetings scheduled yet.</td></tr>';
+      return;
+    }
+
+    els.meetingsBody.innerHTML = list.map(function (m) {
+      var rowClass = m.is_unread ? ' wa-meetings-row--unread' : '';
+      var when = escHtml(m.start_time || m.requested_time_text || m.slot_selected || '—');
+      var status = escHtml(m.status || 'pending');
+      var link = String(m.meet_link || '').trim();
+      var linkCell = link
+        ? '<a class="wa-meetings-link" href="' + escHtml(link) + '" target="_blank" rel="noopener noreferrer">Open Meet</a>'
+        : '<span class="wa-cell-muted">—</span>';
+      var phone = m.phone ? ' · ' + escHtml(m.phone) : '';
+      var actions = '<button type="button" class="wa-btn wa-btn--sm wa-btn--ghost" data-wa-meeting-task="' + escHtml(m.task_code) + '">Find task</button>';
+      if (m.is_unread) {
+        actions += ' <button type="button" class="wa-btn wa-btn--sm wa-btn--ghost" data-wa-meeting-read="' + escHtml(m.task_code) + '">Mark read</button>';
+      }
+      return (
+        '<tr class="wa-meetings-row' + rowClass + '">' +
+        '<td><code class="wa-code">' + escHtml(m.task_code) + '</code></td>' +
+        '<td>' + escHtml(m.customer_name || '—') + phone + '</td>' +
+        '<td>' + escHtml(m.project_name || '—') + '</td>' +
+        '<td>' + when + '</td>' +
+        '<td><span class="wa-badge wa-badge--meeting">' + status + '</span></td>' +
+        '<td>' + linkCell + '</td>' +
+        '<td class="wa-meetings-actions">' + actions + '</td>' +
+        '</tr>'
+      );
+    }).join('');
+  }
+
+  function switchTab(tab) {
+    activeTab = tab === 'meetings' ? 'meetings' : 'tasks';
+    document.querySelectorAll('[data-wa-tab]').forEach(function (btn) {
+      var t = btn.getAttribute('data-wa-tab');
+      btn.classList.toggle('is-active', t === activeTab);
+    });
+    if (els.panelTasks) {
+      els.panelTasks.hidden = activeTab !== 'tasks';
+      els.panelTasks.classList.toggle('wa-panel--hidden', activeTab !== 'tasks');
+    }
+    if (els.panelMeetings) {
+      els.panelMeetings.hidden = activeTab !== 'meetings';
+      els.panelMeetings.classList.toggle('wa-panel--hidden', activeTab !== 'meetings');
+    }
+    if (activeTab === 'meetings') {
+      renderMeetingsTable();
+    }
+  }
+
+  function findTaskIdByCode(code) {
+    var norm = normalizeTaskCode(code);
+    var ids = Object.keys(tasksById);
+    for (var i = 0; i < ids.length; i++) {
+      var t = tasksById[ids[i]];
+      if (normalizeTaskCode(t.task_code) === norm) {
+        return t.id;
+      }
+    }
+    return 0;
   }
 
   function applyFiltersLocally() {
@@ -265,9 +453,6 @@
         updateCounts(data.counts || {});
         if (data.sig) currentSig = data.sig;
         applyNotifyPayload(data);
-        if (data.reminders) {
-          processMeetingReminders(data.reminders);
-        }
         applyFiltersLocally();
         resetCountdown();
       })
@@ -286,12 +471,15 @@
       .then(function (data) {
         var needsReload = data.sig && data.sig !== currentSig;
         var needsNotify = data.notify_sig && data.notify_sig !== currentNotifySig;
-        if (needsNotify && typeof data.notify_count === 'number') {
-          setNotifyUi(data.notify_count);
-          currentNotifySig = data.notify_sig;
+        if (needsNotify) {
+          applyNotifyPayload(data);
         }
-        if (data.reminders && window.AkhMeetingAlerts) {
-          AkhMeetingAlerts.processReminders(data.reminders);
+        if (data.reminders) {
+          rebuildReminderTasks(data.reminders);
+          if (window.AkhMeetingAlerts) {
+            AkhMeetingAlerts.processReminders(data.reminders);
+          }
+          applyFiltersLocally();
         }
         if (needsReload || needsNotify) {
           return loadTasks(true);
@@ -431,6 +619,12 @@
       });
     });
 
+    document.querySelectorAll('[data-wa-tab]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        switchTab(btn.getAttribute('data-wa-tab') || 'tasks');
+      });
+    });
+
     if (els.search) {
       els.search.addEventListener('input', function () {
         filterQ = els.search.value;
@@ -468,6 +662,24 @@
       });
     }
 
+    if (els.meetingsBody) {
+      els.meetingsBody.addEventListener('click', function (ev) {
+        var readBtn = ev.target.closest('[data-wa-meeting-read]');
+        if (readBtn) {
+          var code = readBtn.getAttribute('data-wa-meeting-read');
+          if (code) ackNotifications(code).catch(function () {});
+          return;
+        }
+        var taskBtn = ev.target.closest('[data-wa-meeting-task]');
+        if (taskBtn) {
+          var taskCode = taskBtn.getAttribute('data-wa-meeting-task');
+          switchTab('tasks');
+          var tid = findTaskIdByCode(taskCode);
+          if (tid) openEdit(tid);
+        }
+      });
+    }
+
     if (els.editForm) {
       els.editForm.addEventListener('submit', saveEdit);
     }
@@ -475,20 +687,70 @@
     if (els.editCancel) els.editCancel.addEventListener('click', closeEdit);
 
     if (els.notifyBell) {
-      els.notifyBell.addEventListener('click', function () {
-        ackNotifications(0).catch(function () {});
+      els.notifyBell.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        setBellOpen(!bellOpen);
       });
     }
+
+    if (els.notifyMarkAll) {
+      els.notifyMarkAll.addEventListener('click', function () {
+        ackNotifications(0).then(function () {
+          setBellOpen(false);
+        }).catch(function () {});
+      });
+    }
+
+    if (els.notifyList) {
+      els.notifyList.addEventListener('click', function (ev) {
+        var readBtn = ev.target.closest('[data-wa-notice-read]');
+        if (readBtn) {
+          var code = readBtn.getAttribute('data-wa-notice-read');
+          if (code) ackNotifications(code).catch(function () {});
+          return;
+        }
+        var openBtn = ev.target.closest('[data-wa-notice-open]');
+        if (openBtn) {
+          var taskCode = openBtn.getAttribute('data-wa-notice-open');
+          setBellOpen(false);
+          switchTab('tasks');
+          var tid = findTaskIdByCode(taskCode);
+          if (tid) openEdit(tid);
+        }
+      });
+    }
+
+    document.addEventListener('click', function (ev) {
+      if (!bellOpen) return;
+      if (ev.target.closest('.wa-bell-wrap')) return;
+      setBellOpen(false);
+    });
+
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && bellOpen) {
+        setBellOpen(false);
+      }
+    });
   }
 
   if (window.AkhMeetingAlerts) {
     AkhMeetingAlerts.init({ notifySig: cfg.notifySig || '', reminders: cfg.reminders || [] });
   }
+  rebuildReminderTasks(cfg.reminders || []);
   indexTasks(cfg.tasks || []);
   if (cfg.alerts) {
     clientAlerts = cfg.alerts;
   }
+  if (cfg.notices) {
+    notices = cfg.notices;
+  }
+  if (cfg.meetings) {
+    meetings = cfg.meetings;
+  }
   setNotifyUi(parseInt(cfg.notifyCount, 10) || 0);
+  renderMeetingsTable();
+  updateMeetingsBadge();
+  updateMeetingBanner();
   applyFiltersLocally();
   bindEvents();
   resetCountdown();

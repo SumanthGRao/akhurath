@@ -51,9 +51,11 @@ $totalTasks = array_sum($initialCounts);
 $userLabel = akh_wa_dashboard_current() ?? '';
 $waNotify = ['count' => 0, 'alerts' => [], 'notify_sig' => 'missing', 'reminders' => []];
 $meetingRows = [];
+$waMeetings = [];
 if (akh_meeting_requests_table_exists()) {
     $waNotify = akh_dashboard_notification_payload();
-    $meetingRows = akh_meeting_request_active_rows();
+    $meetingRows = akh_meeting_request_pending_rows();
+    $waMeetings = $waNotify['meetings'] ?? [];
 } elseif ($dbError === '') {
     $waNotify = akh_wa_client_notification_payload();
 }
@@ -84,16 +86,31 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
         </div>
       </div>
       <div class="wa-topbar__actions">
-        <button
-          type="button"
-          class="wa-bell<?php echo (int) ($waNotify['count'] ?? 0) > 0 ? ' wa-bell--active' : ''; ?>"
-          id="wa-notify-bell"
-          title="Client updates needing attention"
-        >
-          <span class="wa-bell__icon" aria-hidden="true">🔔</span>
-          <span class="wa-bell__count" id="wa-notify-count"><?php echo (int) ($waNotify['count'] ?? 0); ?></span>
-          <span class="visually-hidden"><?php echo (int) ($waNotify['count'] ?? 0); ?> client updates</span>
-        </button>
+        <div class="wa-bell-wrap">
+          <button
+            type="button"
+            class="wa-bell<?php echo (int) ($waNotify['count'] ?? 0) > 0 ? ' wa-bell--active' : ''; ?>"
+            id="wa-notify-bell"
+            aria-expanded="false"
+            aria-haspopup="true"
+            aria-controls="wa-notify-dropdown"
+            title="Unread client updates and meeting requests"
+          >
+            <span class="wa-bell__icon" aria-hidden="true">🔔</span>
+            <span class="wa-bell__count" id="wa-notify-count"><?php echo (int) ($waNotify['count'] ?? 0); ?></span>
+            <span class="visually-hidden"><?php echo (int) ($waNotify['count'] ?? 0); ?> unread updates</span>
+          </button>
+          <div class="wa-bell-dropdown" id="wa-notify-dropdown" hidden>
+            <div class="wa-bell-dropdown__head">
+              <strong>Updates</strong>
+              <span class="wa-bell-dropdown__sub" id="wa-notify-dropdown-sub">Nothing new</span>
+            </div>
+            <ul class="wa-bell-dropdown__list" id="wa-notify-list"></ul>
+            <div class="wa-bell-dropdown__foot">
+              <button type="button" class="wa-btn wa-btn--ghost wa-btn--sm" id="wa-notify-mark-all" hidden>Mark all read</button>
+            </div>
+          </div>
+        </div>
         <div class="wa-refresh" id="wa-refresh-indicator" aria-live="polite">
           <span class="wa-refresh__dot" aria-hidden="true"></span>
           <span class="wa-refresh__text">Next refresh in <strong id="wa-refresh-countdown"><?php echo (int) $refreshSec; ?></strong>s</span>
@@ -106,31 +123,42 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
   </header>
 
   <main id="main" class="wa-main">
+    <?php if ($dbError !== ''): ?>
+      <p class="wa-banner wa-banner--err" role="alert"><?php echo h($dbError); ?></p>
+    <?php else: ?>
+
     <?php if ($meetingRows !== []): ?>
-      <section class="wa-meeting-banner wa-meeting-banner--pulse" id="wa-meeting-banner" aria-live="polite">
-        <h2 class="wa-meeting-banner__title">📅 Meeting requests</h2>
+      <section class="wa-meeting-banner" id="wa-meeting-banner" aria-live="polite">
+        <h2 class="wa-meeting-banner__title">📅 New meeting requests</h2>
+        <p class="wa-meeting-banner__hint">Open the <strong>Meetings</strong> tab for links and full details. Rows stop highlighting after you mark them read.</p>
         <ul class="wa-meeting-banner__list">
           <?php foreach ($meetingRows as $mr): ?>
             <?php
             $mCode = (string) ($mr['task_code'] ?? '');
             $mPreview = akh_meeting_request_preview_from_row($mr);
-            $mLink = trim((string) ($mr['meet_link'] ?? ''));
             ?>
             <li class="wa-meeting-banner__item">
               <strong class="wa-meeting-banner__code"><?php echo h($mCode); ?></strong>
               <span class="wa-meeting-banner__text"><?php echo h($mPreview); ?></span>
-              <?php if ($mLink !== ''): ?>
-                <a class="wa-btn wa-btn--sm wa-btn--ghost" href="<?php echo h($mLink); ?>" target="_blank" rel="noopener noreferrer">Meet link</a>
-              <?php endif; ?>
             </li>
           <?php endforeach; ?>
         </ul>
       </section>
     <?php endif; ?>
 
-    <?php if ($dbError !== ''): ?>
-      <p class="wa-banner wa-banner--err" role="alert"><?php echo h($dbError); ?></p>
-    <?php else: ?>
+    <nav class="wa-tabs" aria-label="Dashboard views">
+      <button type="button" class="wa-tabs__btn is-active" data-wa-tab="tasks" id="wa-tab-tasks">Tasks</button>
+      <button type="button" class="wa-tabs__btn" data-wa-tab="meetings" id="wa-tab-meetings">
+        Meetings
+        <?php if (count($waMeetings) > 0): ?>
+          <span class="wa-tabs__badge" id="wa-meetings-badge"><?php echo count($waMeetings); ?></span>
+        <?php else: ?>
+          <span class="wa-tabs__badge wa-tabs__badge--hidden" id="wa-meetings-badge">0</span>
+        <?php endif; ?>
+      </button>
+    </nav>
+
+    <div class="wa-panel" id="wa-panel-tasks">
 
     <section class="wa-stats" aria-label="Task counts by status">
       <?php foreach (akh_wa_task_statuses() as $st): ?>
@@ -179,7 +207,7 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
             $waAlerts = $dbError === '' ? ($waNotify['alerts'] ?? []) : [];
             foreach ($tasksJson as $t):
               $alert = akh_dashboard_alert_for_code($waAlerts, (string) ($t['task_code'] ?? ''));
-              $rowClass = $alert ? ' wa-table__row--alert' : '';
+              $rowClass = $alert ? ' wa-table__row--unread' : '';
               $pillClass = 'wa-alert-pill';
               $pillLabel = 'Update';
               if ($alert) {
@@ -212,6 +240,32 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
           <?php endif; ?>
         </tbody>
       </table>
+    </div>
+
+    </div>
+
+    <div class="wa-panel wa-panel--hidden" id="wa-panel-meetings" hidden>
+      <div class="wa-meetings-wrap">
+        <p class="wa-meetings-intro">Scheduled and requested meetings. Unread requests are highlighted. Join popup appears about 5 minutes before start time.</p>
+        <div class="wa-table-wrap">
+          <table class="wa-table wa-meetings-table" id="wa-meetings-table">
+            <thead>
+              <tr>
+                <th scope="col">Task</th>
+                <th scope="col">Customer</th>
+                <th scope="col">Project</th>
+                <th scope="col">When</th>
+                <th scope="col">Status</th>
+                <th scope="col">Meet link</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="wa-meetings-body">
+              <tr class="wa-table__empty"><td colspan="7">Loading meetings…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <?php endif; ?>
@@ -319,7 +373,9 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
         'notifyCount' => (int) ($waNotify['count'] ?? 0),
         'notifySig' => (string) ($waNotify['notify_sig'] ?? ''),
         'alerts' => $waNotify['alerts'] ?? [],
+        'notices' => $waNotify['notices'] ?? [],
         'reminders' => $waNotify['reminders'] ?? [],
+        'meetings' => $waMeetings,
     ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR); ?>;
   </script>
   <script src="<?php echo h(base_path('assets/js/whatsapp-dashboard.js') . ($waJsVer !== '' ? '?v=' . rawurlencode($waJsVer) : '')); ?>" defer></script>

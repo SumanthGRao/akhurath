@@ -45,9 +45,11 @@ function akh_dashboard_merge_alert(?array $base, array $incoming): array
 }
 
 /**
+ * Unread client updates + pending meeting requests (no time-based reminders).
+ *
  * @return array<string, array<string, mixed>>
  */
-function akh_dashboard_alerts_grouped(): array
+function akh_dashboard_unread_alerts_grouped(): array
 {
     $merged = akh_task_notification_pending_alerts_grouped();
     foreach ($merged as $code => $alert) {
@@ -58,11 +60,15 @@ function akh_dashboard_alerts_grouped(): array
         $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $alert);
     }
 
-    foreach (akh_meeting_request_reminder_alert_highlights() as $code => $alert) {
-        $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $alert);
-    }
-
     return $merged;
+}
+
+/**
+ * @return array<string, array<string, mixed>>
+ */
+function akh_dashboard_alerts_grouped(): array
+{
+    return akh_dashboard_unread_alerts_grouped();
 }
 
 /**
@@ -80,7 +86,7 @@ function akh_dashboard_alerts_for_editor(string $editorUsername): array
     $owned = akh_meeting_request_assigned_task_codes_for_editor($editorUsername);
     $out = [];
 
-    foreach (akh_dashboard_alerts_grouped() as $taskId => $alert) {
+    foreach (akh_dashboard_unread_alerts_grouped() as $taskId => $alert) {
         if (!isset($owned[$taskId])) {
             continue;
         }
@@ -107,18 +113,41 @@ function akh_dashboard_alerts_poll_signature(): string
  */
 function akh_dashboard_notification_payload(): array
 {
-    $alerts = akh_dashboard_alerts_grouped();
-    $count = 0;
-    foreach ($alerts as $a) {
-        $count += (int) ($a['count'] ?? 0);
-    }
+    $alerts = akh_dashboard_unread_alerts_grouped();
+    $count = count($alerts);
 
     return [
         'count' => $count,
         'alerts' => $alerts,
+        'notices' => akh_dashboard_notice_rows($alerts),
         'notify_sig' => akh_dashboard_alerts_poll_signature(),
         'reminders' => akh_meeting_request_upcoming_reminders(),
+        'meetings' => akh_meeting_request_list_for_dashboard(),
     ];
+}
+
+/**
+ * @param array<string, array<string, mixed>> $alerts
+ * @return list<array{task_code: string, kind: string, label: string, preview: string, meet_link: string}>
+ */
+function akh_dashboard_notice_rows(array $alerts): array
+{
+    $out = [];
+    foreach ($alerts as $code => $alert) {
+        $out[] = [
+            'task_code' => (string) $code,
+            'kind' => (string) ($alert['kind'] ?? 'client_update'),
+            'label' => akh_dashboard_alert_kind_label($alert),
+            'preview' => (string) ($alert['preview'] ?? ''),
+            'meet_link' => (string) ($alert['meet_link'] ?? ''),
+        ];
+    }
+
+    usort($out, static function (array $a, array $b): int {
+        return strcmp((string) ($b['task_code'] ?? ''), (string) ($a['task_code'] ?? ''));
+    });
+
+    return $out;
 }
 
 /**

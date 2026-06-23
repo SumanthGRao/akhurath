@@ -33,7 +33,9 @@ try {
             'sig' => akh_wa_tasks_poll_signature(),
             'notify_sig' => $notify['notify_sig'],
             'notify_count' => $notify['count'],
+            'notices' => $notify['notices'] ?? [],
             'reminders' => $notify['reminders'] ?? [],
+            'meetings' => $notify['meetings'] ?? [],
         ], JSON_THROW_ON_ERROR);
         exit;
     }
@@ -52,6 +54,8 @@ try {
             'notify_sig' => $notify['notify_sig'],
             'notify_count' => $notify['count'],
             'alerts' => $notify['alerts'],
+            'notices' => $notify['notices'] ?? [],
+            'meetings' => $notify['meetings'] ?? [],
         ], JSON_THROW_ON_ERROR);
         exit;
     }
@@ -72,7 +76,9 @@ try {
             'notify_sig' => $notify['notify_sig'],
             'notify_count' => $notify['count'],
             'alerts' => $notify['alerts'],
+            'notices' => $notify['notices'] ?? [],
             'reminders' => $notify['reminders'] ?? [],
+            'meetings' => $notify['meetings'] ?? [],
             'counts' => akh_wa_task_status_counts(),
             'tasks' => $tasks,
             'editors' => $editors,

@@ -174,7 +174,7 @@ $pageCsrf = akh_csrf_token();
 require_once AKH_ROOT . '/includes/meeting-requests.php';
 $editorMeetingRows = [];
 $ownedCodes = akh_meeting_request_assigned_task_codes_for_editor($editor);
-foreach (akh_meeting_request_active_rows() as $mr) {
+foreach (akh_meeting_request_pending_rows() as $mr) {
     $c = (string) ($mr['task_code'] ?? '');
     if ($c !== '' && isset($ownedCodes[$c])) {
         $editorMeetingRows[] = $mr;
@@ -184,6 +184,13 @@ $editorReminders = array_values(array_filter(
     akh_meeting_request_upcoming_reminders(),
     static fn (array $r): bool => isset($ownedCodes[(string) ($r['task_code'] ?? '')])
 ));
+$editorReminderCodes = [];
+foreach ($editorReminders as $r) {
+    $c = akh_task_normalize_id((string) ($r['task_code'] ?? ''));
+    if ($c !== '') {
+        $editorReminderCodes[$c] = true;
+    }
+}
 $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filemtime(AKH_ROOT . '/assets/js/meeting-alerts.js') : '1';
 
 $attendanceOn = AKH_EDITOR_ATTENDANCE_ENABLED && akh_editor_attendance_is_clocked_in($editor);
@@ -230,7 +237,7 @@ require_once AKH_ROOT . '/includes/header.php';
       <?php endif; ?>
 
       <?php if ($editorMeetingRows !== []): ?>
-        <section class="portal-meeting-banner portal-meeting-banner--pulse" aria-label="Meeting requests">
+        <section class="portal-meeting-banner" aria-label="Meeting requests">
           <h2 class="portal-meeting-banner__title">📅 Your meeting requests</h2>
           <ul class="portal-meeting-banner__list">
             <?php foreach ($editorMeetingRows as $mr): ?>
@@ -372,8 +379,8 @@ require_once AKH_ROOT . '/includes/header.php';
               $taskAlert = $dashboardAlerts[$tidNorm] ?? null;
               $notify = ($t['editor_feedback_notify'] ?? false) === true || $taskAlert !== null;
               $ticketBlink = $notify ? ' ticket--notify' : '';
-              if ($taskAlert !== null && str_starts_with((string) ($taskAlert['kind'] ?? ''), 'meeting_')) {
-                  $ticketBlink .= ' ticket--meeting-blink';
+              if (isset($editorReminderCodes[$tidNorm])) {
+                  $ticketBlink .= ' ticket--meeting-reminder-blink';
               }
               $isOpen = $openTicketId !== '' && $openTicketId === $tid;
               $opts = ['assigned', 'in_progress', 'review', 'delivered', 'reverted', 'closed'];

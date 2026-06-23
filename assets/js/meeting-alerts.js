@@ -143,8 +143,7 @@
       sessionStorage.setItem(key, '1');
       if (tier === '5') {
         showJoinModal(rem);
-      } else {
-        playChime(1);
+      } else if (tier === '10') {
         tryOsNotify(String(rem.title || 'Meeting soon'), String(rem.body || ''), 'akh-meet-' + id + '-' + tier);
       }
     });
@@ -153,9 +152,6 @@
   function onNotifyChange(sig, count) {
     if (!sig || sig === lastNotifySig) {
       return;
-    }
-    if (lastNotifySig && typeof count === 'number' && count > 0) {
-      playChime(1);
     }
     lastNotifySig = sig;
   }
