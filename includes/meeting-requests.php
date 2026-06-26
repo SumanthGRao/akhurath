@@ -67,10 +67,254 @@ function akh_meeting_request_site_timezone(): DateTimeZone
     }
 }
 
-/** Statuses that mean “handled” — everything else is an active alert. */
+/** Statuses that mean “handled” — cancelled / completed meetings (Meetings tab list). */
 function akh_meeting_request_dismissed_statuses(): array
 {
     return ['read', 'acknowledged', 'dismissed', 'cancelled', 'canceled', 'declined', 'completed', 'done', 'closed'];
+}
+
+/** New client meeting requests awaiting ops attention on the WA dashboard. */
+function akh_meeting_request_new_request_statuses(): array
+{
+    return ['pending', 'new', 'requested', 'unread', 'open'];
+}
+
+function akh_meeting_request_columns_invalidate(): void
+{
+    $GLOBALS['akh_meeting_request_columns'] = null;
+}
+
+function akh_meeting_request_wa_ack_kv_key(): string
+{
+    return 'wa_dashboard_meeting_acks';
+}
+
+/** @return array<string, array{last_id: int, at: int}> */
+function akh_meeting_request_wa_ack_codes(): array
+{
+    if (isset($GLOBALS['akh_meeting_request_wa_ack_codes']) && is_array($GLOBALS['akh_meeting_request_wa_ack_codes'])) {
+        return $GLOBALS['akh_meeting_request_wa_ack_codes'];
+    }
+
+    require_once __DIR__ . '/app-kv.php';
+    $raw = akh_kv_get(akh_meeting_request_wa_ack_kv_key());
+    if (!is_string($raw) || trim($raw) === '') {
+        $GLOBALS['akh_meeting_request_wa_ack_codes'] = [];
+
+        return $GLOBALS['akh_meeting_request_wa_ack_codes'];
+    }
+
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        $GLOBALS['akh_meeting_request_wa_ack_codes'] = [];
+
+        return $GLOBALS['akh_meeting_request_wa_ack_codes'];
+    }
+
+    $out = [];
+    foreach ($decoded as $code => $meta) {
+        $norm = akh_meeting_request_normalize_task_code((string) $code);
+        if ($norm === '') {
+            continue;
+        }
+        if (is_array($meta)) {
+            $out[$norm] = [
+                'last_id' => (int) ($meta['last_id'] ?? 0),
+                'at' => (int) ($meta['at'] ?? 0),
+            ];
+        } else {
+            $out[$norm] = ['last_id' => 0, 'at' => (int) $meta];
+        }
+    }
+    $GLOBALS['akh_meeting_request_wa_ack_codes'] = $out;
+
+    return $out;
+}
+
+function akh_meeting_request_wa_ack_codes_invalidate(): void
+{
+    unset($GLOBALS['akh_meeting_request_wa_ack_codes']);
+}
+
+function akh_meeting_request_normalize_task_code(string $code): string
+{
+    require_once __DIR__ . '/tasks.php';
+
+    return akh_task_normalize_id(trim($code));
+}
+
+function akh_meeting_request_wa_ack_is_read(string $taskCode, int $meetingRowId = 0): bool
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $acks = akh_meeting_request_wa_ack_codes();
+    foreach (akh_task_id_match_variants($taskCode) as $variant) {
+        $norm = akh_task_normalize_id($variant);
+        if ($norm === '' || !isset($acks[$norm])) {
+            continue;
+        }
+        $lastId = (int) ($acks[$norm]['last_id'] ?? 0);
+        if ($meetingRowId > 0) {
+            return $meetingRowId <= $lastId;
+        }
+
+        return $lastId > 0;
+    }
+
+    return false;
+}
+
+function akh_meeting_request_wa_ack_store(string $taskCode): void
+{
+    require_once __DIR__ . '/app-kv.php';
+    require_once __DIR__ . '/tasks.php';
+
+    if (!akh_meeting_requests_table_exists()) {
+        return;
+    }
+
+    $variants = akh_task_id_match_variants($taskCode);
+    if ($variants === []) {
+        return;
+    }
+
+    $placeholder = implode(',', array_fill(0, count($variants), '?'));
+    $matchSql = "TRIM(task_code) IN ({$placeholder})";
+    $params = $variants;
+    if (akh_meeting_request_has_column('task_id')) {
+        $matchSql = "(TRIM(task_code) IN ({$placeholder}) OR TRIM(task_id) IN ({$placeholder}))";
+        $params = array_merge($variants, $variants);
+    }
+
+    $maxId = 0;
+    try {
+        $st = akh_db()->prepare("SELECT COALESCE(MAX(id), 0) FROM meeting_requests WHERE {$matchSql}");
+        $st->execute($params);
+        $maxId = (int) $st->fetchColumn();
+    } catch (Throwable $e) {
+        error_log('akh_meeting_request_wa_ack_store: ' . $e->getMessage());
+    }
+
+    $acks = akh_meeting_request_wa_ack_codes();
+    $now = time();
+    foreach (akh_task_id_match_variants($taskCode) as $variant) {
+        $norm = akh_task_normalize_id($variant);
+        if ($norm !== '') {
+            $prev = (int) ($acks[$norm]['last_id'] ?? 0);
+            $acks[$norm] = ['last_id' => max($prev, $maxId), 'at' => $now];
+        }
+    }
+
+    akh_kv_set(akh_meeting_request_wa_ack_kv_key(), json_encode($acks, JSON_UNESCAPED_SLASHES) ?: '{}');
+    akh_meeting_request_wa_ack_codes_invalidate();
+}
+
+/**
+ * @param array<string, mixed> $row
+ */
+function akh_meeting_request_row_is_dashboard_unread(array $row): bool
+{
+    $rowId = (int) ($row['id'] ?? 0);
+    $code = (string) ($row['task_code'] ?? '');
+    if ($code !== '' && akh_meeting_request_wa_ack_is_read($code, $rowId)) {
+        return false;
+    }
+
+    if (akh_meeting_request_has_column('dashboard_read_at')) {
+        $readAt = trim((string) ($row['dashboard_read_at'] ?? ''));
+        if ($readAt !== '') {
+            return false;
+        }
+    }
+
+    if (!akh_meeting_request_has_column('status')) {
+        return true;
+    }
+
+    $status = strtolower(trim((string) ($row['status'] ?? '')));
+    if ($status === '') {
+        return true;
+    }
+
+    return in_array($status, akh_meeting_request_new_request_statuses(), true);
+}
+
+/** @return array{sql: string, params: list<mixed>} */
+function akh_meeting_request_unread_filter(): array
+{
+    $parts = [];
+    $params = [];
+
+    if (akh_meeting_request_has_column('dashboard_read_at')) {
+        $parts[] = 'dashboard_read_at IS NULL';
+    }
+
+    if (akh_meeting_request_has_column('status')) {
+        $unread = akh_meeting_request_new_request_statuses();
+        $placeholders = implode(',', array_fill(0, count($unread), '?'));
+        $parts[] = "(status IS NULL OR TRIM(status) = '' OR LOWER(TRIM(status)) IN ({$placeholders}))";
+        $params = array_merge($params, $unread);
+    }
+
+    if ($parts === []) {
+        return akh_meeting_request_active_filter();
+    }
+
+    return ['sql' => '(' . implode(' AND ', $parts) . ')', 'params' => $params];
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function akh_meeting_request_unread_rows(): array
+{
+    if (!akh_meeting_requests_table_exists()) {
+        return [];
+    }
+
+    $unread = akh_meeting_request_unread_filter();
+    $sql = 'SELECT * FROM meeting_requests WHERE ' . $unread['sql'] . ' ORDER BY id DESC LIMIT 100';
+
+    try {
+        $st = akh_db()->prepare($sql);
+        $st->execute($unread['params']);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!is_array($rows)) {
+            return [];
+        }
+        $out = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $norm = akh_meeting_request_normalize_row($row);
+            if (akh_meeting_request_row_is_dashboard_unread($norm)) {
+                $out[] = $norm;
+            }
+        }
+
+        return $out;
+    } catch (Throwable $e) {
+        error_log('akh_meeting_request_unread_rows: ' . $e->getMessage());
+
+        return [];
+    }
+}
+
+function akh_meeting_request_mark_columns_sql(): string
+{
+    $sets = [];
+    if (akh_meeting_request_has_column('status')) {
+        $sets[] = "status = 'read'";
+    }
+    if (akh_meeting_request_has_column('dashboard_read_at')) {
+        $sets[] = 'dashboard_read_at = CURRENT_TIMESTAMP';
+    }
+    if (akh_meeting_request_has_column('is_read')) {
+        $sets[] = 'is_read = 1';
+    }
+
+    return implode(', ', $sets);
 }
 
 /** @return array{sql: string, params: list<mixed>} */
@@ -216,8 +460,8 @@ function akh_meeting_request_active_rows(): array
 function akh_meeting_request_pending_alerts_grouped(): array
 {
     $out = [];
-    foreach (akh_meeting_request_active_rows() as $row) {
-        $code = (string) ($row['task_code'] ?? '');
+    foreach (akh_meeting_request_unread_rows() as $row) {
+        $code = akh_meeting_request_normalize_task_code((string) ($row['task_code'] ?? ''));
         if ($code === '') {
             continue;
         }
@@ -268,6 +512,9 @@ function akh_meeting_request_upcoming_reminders(): array
     $out = [];
 
     foreach ($rows as $row) {
+        if (akh_meeting_request_wa_ack_is_read((string) ($row['task_code'] ?? ''), (int) ($row['id'] ?? 0))) {
+            continue;
+        }
         $start = akh_meeting_request_effective_start($row);
         if ($start === null || $start <= $now) {
             continue;
@@ -466,11 +713,11 @@ function akh_meeting_request_poll_signature(): string
     }
 
     try {
-        $active = akh_meeting_request_active_filter();
+        $unread = akh_meeting_request_unread_filter();
         $st = akh_db()->prepare(
-            'SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS m FROM meeting_requests WHERE ' . $active['sql']
+            'SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS m FROM meeting_requests WHERE ' . $unread['sql']
         );
-        $st->execute($active['params']);
+        $st->execute($unread['params']);
         $row = $st->fetch(PDO::FETCH_ASSOC);
         $reminders = akh_meeting_request_upcoming_reminders();
         $remSig = [];
@@ -478,8 +725,9 @@ function akh_meeting_request_poll_signature(): string
             $remSig[] = (string) ($r['id'] ?? '') . ':' . (string) ($r['tier'] ?? '') . ':' . (string) ($r['minutes_until'] ?? '');
         }
         sort($remSig);
+        $ackSig = md5(json_encode(akh_meeting_request_wa_ack_codes(), JSON_UNESCAPED_SLASHES) ?: '');
 
-        return hash('sha256', (string) ($row['c'] ?? '0') . '|' . (string) ($row['m'] ?? '0') . '|' . implode(',', $remSig));
+        return hash('sha256', (string) ($row['c'] ?? '0') . '|' . (string) ($row['m'] ?? '0') . '|' . implode(',', $remSig) . '|' . $ackSig);
     } catch (Throwable $e) {
         error_log('akh_meeting_request_poll_signature: ' . $e->getMessage());
 
@@ -504,7 +752,6 @@ function akh_meeting_request_mark_task_read(string $taskCode): void
         return;
     }
 
-    $active = akh_meeting_request_active_filter();
     $placeholder = implode(',', array_fill(0, count($variants), '?'));
     $matchSql = "TRIM(task_code) IN ({$placeholder})";
     $params = $variants;
@@ -513,18 +760,19 @@ function akh_meeting_request_mark_task_read(string $taskCode): void
         $params = array_merge($variants, $variants);
     }
 
+    $setSql = akh_meeting_request_mark_columns_sql();
+
     try {
-        $setRead = "status = 'read'";
-        if (akh_meeting_request_has_column('updated_at')) {
-            $setRead .= ', updated_at = CURRENT_TIMESTAMP';
+        if ($setSql !== '') {
+            $sql = "UPDATE meeting_requests SET {$setSql} WHERE {$matchSql}";
+            $st = akh_db()->prepare($sql);
+            $st->execute($params);
         }
-        $sql = "UPDATE meeting_requests SET {$setRead}
-                WHERE {$matchSql} AND ({$active['sql']})";
-        $st = akh_db()->prepare($sql);
-        $st->execute(array_merge($params, $active['params']));
     } catch (Throwable $e) {
         error_log('akh_meeting_request_mark_task_read: ' . $e->getMessage());
     }
+
+    akh_meeting_request_wa_ack_store($taskCode);
 }
 
 function akh_meeting_request_mark_all_read(): void
@@ -533,18 +781,29 @@ function akh_meeting_request_mark_all_read(): void
         return;
     }
 
-    $active = akh_meeting_request_active_filter();
+    $codes = [];
+    foreach (akh_meeting_request_unread_rows() as $row) {
+        $code = (string) ($row['task_code'] ?? '');
+        if ($code !== '') {
+            $codes[] = $code;
+        }
+    }
+
+    $unread = akh_meeting_request_unread_filter();
+    $setSql = akh_meeting_request_mark_columns_sql();
 
     try {
-        $setRead = "status = 'read'";
-        if (akh_meeting_request_has_column('updated_at')) {
-            $setRead .= ', updated_at = CURRENT_TIMESTAMP';
+        if ($setSql !== '') {
+            $sql = "UPDATE meeting_requests SET {$setSql} WHERE {$unread['sql']}";
+            $st = akh_db()->prepare($sql);
+            $st->execute($unread['params']);
         }
-        $sql = "UPDATE meeting_requests SET {$setRead} WHERE {$active['sql']}";
-        $st = akh_db()->prepare($sql);
-        $st->execute($active['params']);
     } catch (Throwable $e) {
         error_log('akh_meeting_request_mark_all_read: ' . $e->getMessage());
+    }
+
+    foreach ($codes as $code) {
+        akh_meeting_request_wa_ack_store($code);
     }
 }
 
@@ -570,33 +829,7 @@ function akh_meeting_requests_table_ready(): bool
  */
 function akh_meeting_request_pending_rows(): array
 {
-    if (!akh_meeting_requests_table_exists()) {
-        return [];
-    }
-
-    $pending = akh_meeting_request_active_filter();
-    $sql = 'SELECT * FROM meeting_requests WHERE ' . $pending['sql'] . ' ORDER BY id DESC LIMIT 100';
-
-    try {
-        $st = akh_db()->prepare($sql);
-        $st->execute($pending['params']);
-        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
-        if (!is_array($rows)) {
-            return [];
-        }
-        $out = [];
-        foreach ($rows as $row) {
-            if (is_array($row)) {
-                $out[] = akh_meeting_request_normalize_row($row);
-            }
-        }
-
-        return $out;
-    } catch (Throwable $e) {
-        error_log('akh_meeting_request_pending_rows: ' . $e->getMessage());
-
-        return [];
-    }
+    return akh_meeting_request_unread_rows();
 }
 
 /**
@@ -627,21 +860,17 @@ function akh_meeting_request_list_for_dashboard(): array
         if (!is_array($rows)) {
             return [];
         }
-        $pendingCodes = [];
-        foreach (akh_meeting_request_pending_alerts_grouped() as $code => $_a) {
-            $pendingCodes[$code] = true;
-        }
         $out = [];
         foreach ($rows as $row) {
             if (!is_array($row)) {
                 continue;
             }
             $norm = akh_meeting_request_normalize_row($row);
-            $code = (string) ($norm['task_code'] ?? '');
+            $code = akh_meeting_request_normalize_task_code((string) ($norm['task_code'] ?? ''));
             $start = akh_meeting_request_effective_start($norm);
             $out[] = [
                 'id' => (int) ($norm['id'] ?? 0),
-                'task_code' => $code,
+                'task_code' => $code !== '' ? $code : (string) ($norm['task_code'] ?? ''),
                 'customer_name' => (string) ($norm['customer_name'] ?? ''),
                 'project_name' => (string) ($norm['project_name'] ?? ''),
                 'phone' => (string) ($norm['phone'] ?? ''),
@@ -653,7 +882,7 @@ function akh_meeting_request_list_for_dashboard(): array
                 'status' => (string) ($norm['status'] ?? ''),
                 'created_at' => (string) ($norm['created_at'] ?? ''),
                 'preview' => akh_meeting_request_preview_from_row($norm),
-                'is_unread' => isset($pendingCodes[$code]),
+                'is_unread' => akh_meeting_request_row_is_dashboard_unread($norm),
             ];
         }
 

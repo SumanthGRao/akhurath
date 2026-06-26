@@ -16,6 +16,7 @@ function akh_db_apply_runtime_patches(PDO $pdo): void
 
     akh_db_patch_task_notification_status($pdo);
     akh_db_patch_meeting_requests_table($pdo);
+    akh_db_patch_meeting_requests_dashboard_read($pdo);
 }
 
 function akh_db_patch_task_notification_status(PDO $pdo): void
@@ -77,5 +78,45 @@ function akh_db_patch_meeting_requests_table(PDO $pdo): void
         $pdo->exec($sql);
     } catch (Throwable $e) {
         error_log('akh_db_patch_meeting_requests_table: ' . $e->getMessage());
+    }
+}
+
+function akh_db_patch_meeting_requests_dashboard_read(PDO $pdo): void
+{
+    try {
+        $schema = (string) $pdo->query('SELECT DATABASE()')->fetchColumn();
+        if ($schema === '') {
+            return;
+        }
+
+        $tbl = $pdo->query("SHOW TABLES LIKE 'meeting_requests'");
+        if ($tbl === false || $tbl->fetch(PDO::FETCH_NUM) === false) {
+            return;
+        }
+
+        $col = $pdo->prepare(
+            'SELECT 1 FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1'
+        );
+        $col->execute([$schema, 'meeting_requests', 'dashboard_read_at']);
+        if ($col->fetchColumn() !== false) {
+            return;
+        }
+
+        $after = 'status';
+        $col->execute([$schema, 'meeting_requests', 'status']);
+        if ($col->fetchColumn() === false) {
+            $after = '';
+        }
+        $afterSql = $after !== '' ? " AFTER {$after}" : '';
+        $pdo->exec(
+            "ALTER TABLE meeting_requests ADD COLUMN dashboard_read_at DATETIME NULL DEFAULT NULL{$afterSql}"
+        );
+
+        if (function_exists('akh_meeting_request_columns_invalidate')) {
+            akh_meeting_request_columns_invalidate();
+        }
+    } catch (Throwable $e) {
+        error_log('akh_db_patch_meeting_requests_dashboard_read: ' . $e->getMessage());
     }
 }

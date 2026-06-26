@@ -249,6 +249,7 @@
         AkhMeetingAlerts.processReminders(data.reminders);
       }
     }
+    applyFiltersLocally();
   }
 
   function updateMeetingsBadge() {
@@ -463,11 +464,10 @@
   }
 
   function findTaskIdByCode(code) {
-    var norm = normalizeTaskCode(code);
     var ids = Object.keys(tasksById);
     for (var i = 0; i < ids.length; i++) {
       var t = tasksById[ids[i]];
-      if (normalizeTaskCode(t.task_code) === norm) {
+      if (taskIdsMatch(t.task_code, code)) {
         return t.id;
       }
     }
