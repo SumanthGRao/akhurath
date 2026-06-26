@@ -126,15 +126,27 @@ function akh_task_notification_task_ref_column(): string
 }
 
 /**
+ * @return list<string>
+ */
+function akh_task_notification_read_statuses(): array
+{
+    return ['read', 'acknowledged', 'dismissed', 'done', 'closed', 'handled', 'resolved'];
+}
+
+/**
  * @return array{sql: string, params: list<mixed>}
  */
 function akh_task_notification_pending_filter(): array
 {
     if (akh_task_notification_has_column('status')) {
-        return [
-            'sql' => "(status IS NULL OR TRIM(status) = '' OR LOWER(TRIM(status)) IN ('pending', 'unread', 'new', 'open'))",
-            'params' => [],
-        ];
+        $read = akh_task_notification_read_statuses();
+        $placeholders = implode(',', array_fill(0, count($read), '?'));
+        $parts = ["(status IS NULL OR TRIM(status) = '' OR LOWER(TRIM(status)) NOT IN ({$placeholders}))"];
+        if (akh_task_notification_has_column('is_read')) {
+            $parts[] = '(is_read = 0 OR is_read IS NULL)';
+        }
+
+        return ['sql' => '(' . implode(' AND ', $parts) . ')', 'params' => $read];
     }
     if (akh_task_notification_has_column('is_read')) {
         return ['sql' => '(is_read = 0 OR is_read IS NULL)', 'params' => []];
@@ -150,6 +162,55 @@ function akh_task_notification_pending_filter(): array
     }
 
     return ['sql' => '1=1', 'params' => []];
+}
+
+/**
+ * @return array{sql: string, params: list<string>}
+ */
+function akh_task_notification_task_match_clause(string $taskId): array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $variants = akh_task_id_match_variants($taskId);
+    if ($variants === []) {
+        return ['sql' => '0', 'params' => []];
+    }
+
+    $clauses = [];
+    $params = [];
+    $placeholder = implode(',', array_fill(0, count($variants), '?'));
+
+    foreach (['task_id', 'task_code'] as $col) {
+        if (!akh_task_notification_has_column($col)) {
+            continue;
+        }
+        $clauses[] = "TRIM({$col}) IN ({$placeholder})";
+        foreach ($variants as $v) {
+            $params[] = $v;
+        }
+    }
+
+    if ($clauses === []) {
+        return ['sql' => '0', 'params' => []];
+    }
+
+    return ['sql' => '(' . implode(' OR ', $clauses) . ')', 'params' => $params];
+}
+
+function akh_task_notification_mark_columns_sql(): string
+{
+    $sets = [];
+    if (akh_task_notification_has_column('status')) {
+        $sets[] = "status = 'read'";
+    }
+    if (akh_task_notification_has_column('is_read')) {
+        $sets[] = 'is_read = 1';
+    }
+    if (akh_task_notification_has_column('read_at')) {
+        $sets[] = 'read_at = CURRENT_TIMESTAMP';
+    }
+
+    return implode(', ', $sets);
 }
 
 function akh_task_notification_insert(string $eventKind, string $taskId, string $body): void
@@ -269,14 +330,12 @@ function akh_task_notification_pending_rows(?string $taskId = null): array
 
     if ($taskId !== null && trim($taskId) !== '') {
         require_once __DIR__ . '/tasks.php';
-        $norm = akh_task_normalize_id($taskId);
-        $refCol = akh_task_notification_task_ref_column();
-        if (akh_task_notification_has_column('task_id') && akh_task_notification_has_column('task_code')) {
-            $where[] = '(task_id = ? OR task_code = ?)';
-            array_push($params, $norm, $norm);
-        } else {
-            $where[] = $refCol . ' = ?';
-            $params[] = $norm;
+        $match = akh_task_notification_task_match_clause($taskId);
+        if ($match['sql'] !== '0') {
+            $where[] = $match['sql'];
+            foreach ($match['params'] as $p) {
+                $params[] = $p;
+            }
         }
     }
 
@@ -302,35 +361,28 @@ function akh_task_notification_mark_task_read(string $taskId): void
     }
 
     require_once __DIR__ . '/tasks.php';
-    $taskId = akh_task_normalize_id(trim($taskId));
+    $taskId = trim($taskId);
     if ($taskId === '') {
         return;
     }
 
     $pending = akh_task_notification_pending_filter();
-    $refCol = akh_task_notification_task_ref_column();
-    if (akh_task_notification_has_column('task_id') && akh_task_notification_has_column('task_code')) {
-        $match = '(task_id = ? OR task_code = ?)';
-        $matchParams = [$taskId, $taskId];
-    } else {
-        $match = $refCol . ' = ?';
-        $matchParams = [$taskId];
+    $match = akh_task_notification_task_match_clause($taskId);
+    if ($match['sql'] === '0') {
+        return;
+    }
+
+    $setSql = akh_task_notification_mark_columns_sql();
+    if ($setSql === '') {
+        error_log('akh_task_notification_mark_task_read: no read columns on task_notification_events');
+
+        return;
     }
 
     try {
-        if (akh_task_notification_has_column('status')) {
-            $sql = "UPDATE task_notification_events SET status = 'read' WHERE {$match} AND ({$pending['sql']})";
-            $st = akh_db()->prepare($sql);
-            $st->execute(array_merge($matchParams, $pending['params']));
-        } elseif (akh_task_notification_has_column('is_read')) {
-            $sql = "UPDATE task_notification_events SET is_read = 1 WHERE {$match} AND ({$pending['sql']})";
-            $st = akh_db()->prepare($sql);
-            $st->execute(array_merge($matchParams, $pending['params']));
-        } elseif (akh_task_notification_has_column('read_at')) {
-            $sql = "UPDATE task_notification_events SET read_at = CURRENT_TIMESTAMP WHERE {$match} AND ({$pending['sql']})";
-            $st = akh_db()->prepare($sql);
-            $st->execute(array_merge($matchParams, $pending['params']));
-        }
+        $sql = "UPDATE task_notification_events SET {$setSql} WHERE {$match['sql']} AND ({$pending['sql']})";
+        $st = akh_db()->prepare($sql);
+        $st->execute(array_merge($match['params'], $pending['params']));
     } catch (Throwable $e) {
         error_log('akh_task_notification_mark_task_read: ' . $e->getMessage());
     }
@@ -343,21 +395,17 @@ function akh_task_notification_mark_all_read(): void
     }
 
     $pending = akh_task_notification_pending_filter();
+    $setSql = akh_task_notification_mark_columns_sql();
+    if ($setSql === '') {
+        error_log('akh_task_notification_mark_all_read: no read columns on task_notification_events');
+
+        return;
+    }
 
     try {
-        if (akh_task_notification_has_column('status')) {
-            $sql = "UPDATE task_notification_events SET status = 'read' WHERE {$pending['sql']}";
-            $st = akh_db()->prepare($sql);
-            $st->execute($pending['params']);
-        } elseif (akh_task_notification_has_column('is_read')) {
-            $sql = "UPDATE task_notification_events SET is_read = 1 WHERE {$pending['sql']}";
-            $st = akh_db()->prepare($sql);
-            $st->execute($pending['params']);
-        } elseif (akh_task_notification_has_column('read_at')) {
-            $sql = 'UPDATE task_notification_events SET read_at = CURRENT_TIMESTAMP WHERE ' . $pending['sql'];
-            $st = akh_db()->prepare($sql);
-            $st->execute($pending['params']);
-        }
+        $sql = "UPDATE task_notification_events SET {$setSql} WHERE {$pending['sql']}";
+        $st = akh_db()->prepare($sql);
+        $st->execute($pending['params']);
     } catch (Throwable $e) {
         error_log('akh_task_notification_mark_all_read: ' . $e->getMessage());
     }

@@ -84,15 +84,54 @@
     return typeof alert.priority === 'number' ? alert.priority : 0;
   }
 
+  function taskNumericId(code) {
+    var s = String(code || '').trim().toUpperCase();
+    var m = s.match(/^AS_?0*(\d+)$/);
+    if (m) return parseInt(m[1], 10);
+    if (/^\d+$/.test(s)) return parseInt(s, 10);
+    return null;
+  }
+
+  function taskIdsMatch(a, b) {
+    if (normalizeTaskCode(a) === normalizeTaskCode(b)) return true;
+    var na = taskNumericId(a);
+    var nb = taskNumericId(b);
+    return na !== null && nb !== null && na === nb;
+  }
+
   function alertForTask(task) {
     var code = normalizeTaskCode(task.task_code);
     if (clientAlerts[code]) return clientAlerts[code];
     if (clientAlerts[task.task_code]) return clientAlerts[task.task_code];
     var keys = Object.keys(clientAlerts || {});
     for (var i = 0; i < keys.length; i++) {
-      if (normalizeTaskCode(keys[i]) === code) return clientAlerts[keys[i]];
+      if (taskIdsMatch(keys[i], code) || taskIdsMatch(keys[i], task.task_code)) {
+        return clientAlerts[keys[i]];
+      }
     }
     return null;
+  }
+
+  function removeAlertLocal(taskCode) {
+    var keys = Object.keys(clientAlerts || {});
+    keys.forEach(function (k) {
+      if (taskIdsMatch(k, taskCode)) {
+        delete clientAlerts[k];
+      }
+    });
+    notices = (notices || []).filter(function (n) {
+      return !taskIdsMatch(n.task_code, taskCode);
+    });
+    meetings = (meetings || []).map(function (m) {
+      if (taskIdsMatch(m.task_code, taskCode)) {
+        return Object.assign({}, m, { is_unread: false });
+      }
+      return m;
+    });
+    var remaining = Object.keys(clientAlerts).length;
+    setNotifyUi(remaining);
+    renderNoticeDropdown();
+    renderMeetingsTable();
   }
 
   function isReminderTask(taskCode) {
@@ -252,12 +291,20 @@
 
   function ackNotifications(taskCode) {
     var payload = {};
-    if (taskCode) {
-      payload.task_code = normalizeTaskCode(taskCode);
+    var code = taskCode ? normalizeTaskCode(taskCode) : '';
+    if (code) {
+      payload.task_code = code;
+      removeAlertLocal(code);
+      applyFiltersLocally();
     }
     return post('notify_ack', payload).then(function (data) {
       applyNotifyPayload(data);
       applyFiltersLocally();
+    }).catch(function (err) {
+      if (code) {
+        loadTasks(true);
+      }
+      throw err;
     });
   }
 
@@ -688,7 +735,11 @@
         var readBtn = ev.target.closest('[data-wa-meeting-read]');
         if (readBtn) {
           var code = readBtn.getAttribute('data-wa-meeting-read');
-          if (code) ackNotifications(code).catch(function () {});
+          if (code) {
+            ackNotifications(code).catch(function () {
+              loadTasks(true);
+            });
+          }
           return;
         }
         var taskBtn = ev.target.closest('[data-wa-meeting-task]');
@@ -716,9 +767,16 @@
 
     if (els.notifyMarkAll) {
       els.notifyMarkAll.addEventListener('click', function () {
+        clientAlerts = {};
+        notices = [];
+        setNotifyUi(0);
+        renderNoticeDropdown();
+        applyFiltersLocally();
         ackNotifications(0).then(function () {
           setBellOpen(false);
-        }).catch(function () {});
+        }).catch(function () {
+          loadTasks(true);
+        });
       });
     }
 
@@ -727,7 +785,11 @@
         var readBtn = ev.target.closest('[data-wa-notice-read]');
         if (readBtn) {
           var code = readBtn.getAttribute('data-wa-notice-read');
-          if (code) ackNotifications(code).catch(function () {});
+          if (code) {
+            ackNotifications(code).catch(function () {
+              loadTasks(true);
+            });
+          }
           return;
         }
         var openBtn = ev.target.closest('[data-wa-notice-open]');

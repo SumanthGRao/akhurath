@@ -494,17 +494,23 @@ function akh_meeting_request_mark_task_read(string $taskCode): void
     }
 
     require_once __DIR__ . '/tasks.php';
-    $taskCode = akh_task_normalize_id(trim($taskCode));
+    $taskCode = trim($taskCode);
     if ($taskCode === '') {
         return;
     }
 
+    $variants = akh_task_id_match_variants($taskCode);
+    if ($variants === []) {
+        return;
+    }
+
     $active = akh_meeting_request_active_filter();
-    $matchSql = 'task_code = ?';
-    $params = [$taskCode];
+    $placeholder = implode(',', array_fill(0, count($variants), '?'));
+    $matchSql = "TRIM(task_code) IN ({$placeholder})";
+    $params = $variants;
     if (akh_meeting_request_has_column('task_id')) {
-        $matchSql = '(task_code = ? OR task_id = ?)';
-        $params = [$taskCode, $taskCode];
+        $matchSql = "(TRIM(task_code) IN ({$placeholder}) OR TRIM(task_id) IN ({$placeholder}))";
+        $params = array_merge($variants, $variants);
     }
 
     try {

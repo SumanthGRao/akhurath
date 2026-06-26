@@ -52,9 +52,64 @@ function akh_task_normalize_id(string $id): string
     return $id;
 }
 
+/** Numeric suffix for AS#### / bare digits (51 matches AS0051). */
+function akh_task_numeric_id(string $id): ?int
+{
+    $id = trim($id);
+    if ($id === '') {
+        return null;
+    }
+    if (preg_match('/^AS_?0*(\d+)$/i', $id, $m)) {
+        return (int) $m[1];
+    }
+    if (preg_match('/^\d+$/', $id)) {
+        return (int) $id;
+    }
+
+    return null;
+}
+
+/**
+ * All task id strings that may appear in DB rows for one logical task.
+ *
+ * @return list<string>
+ */
+function akh_task_id_match_variants(string $taskId): array
+{
+    $variants = [];
+    $add = static function (string $v) use (&$variants): void {
+        $v = trim($v);
+        if ($v !== '' && !in_array($v, $variants, true)) {
+            $variants[] = $v;
+        }
+    };
+
+    $raw = trim($taskId);
+    $norm = akh_task_normalize_id($raw);
+    $add($raw);
+    $add($norm);
+
+    $num = akh_task_numeric_id($norm !== '' ? $norm : $raw);
+    if ($num !== null && $num > 0) {
+        $add(sprintf('AS%04d', $num));
+        $add(sprintf('AS_%04d', $num));
+        $add(sprintf('AS_%d', $num));
+        $add((string) $num);
+        $add(sprintf('%04d', $num));
+    }
+
+    return $variants;
+}
+
 function akh_task_ids_match(string $a, string $b): bool
 {
-    return akh_task_normalize_id($a) === akh_task_normalize_id($b);
+    if (akh_task_normalize_id($a) === akh_task_normalize_id($b)) {
+        return true;
+    }
+    $na = akh_task_numeric_id($a);
+    $nb = akh_task_numeric_id($b);
+
+    return $na !== null && $nb !== null && $na === $nb;
 }
 
 /**

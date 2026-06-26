@@ -186,8 +186,13 @@ function akh_dashboard_alert_kind_label(array $alert): string
 
 function akh_dashboard_mark_task_read(string $taskCode): void
 {
-    akh_task_notification_mark_task_read($taskCode);
-    akh_meeting_request_mark_task_read($taskCode);
+    require_once __DIR__ . '/tasks.php';
+    $canonical = akh_task_normalize_id(trim($taskCode));
+    if ($canonical === '') {
+        $canonical = trim($taskCode);
+    }
+    akh_task_notification_mark_task_read($canonical !== '' ? $canonical : $taskCode);
+    akh_meeting_request_mark_task_read($canonical !== '' ? $canonical : $taskCode);
 }
 
 function akh_dashboard_mark_all_read(): void
