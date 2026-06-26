@@ -49,15 +49,22 @@ foreach ($initialTasks as $row) {
 
 $totalTasks = array_sum($initialCounts);
 $userLabel = akh_wa_dashboard_current() ?? '';
-$waNotify = ['count' => 0, 'alerts' => [], 'notify_sig' => 'missing', 'reminders' => []];
-$meetingRows = [];
+$waNotify = ['count' => 0, 'alerts' => [], 'notices' => [], 'notify_sig' => 'missing', 'reminders' => [], 'meetings' => []];
+$meetingReminders = [];
 $waMeetings = [];
-if (akh_meeting_requests_table_exists()) {
-    $waNotify = akh_dashboard_notification_payload();
-    $meetingRows = akh_meeting_request_pending_rows();
-    $waMeetings = $waNotify['meetings'] ?? [];
-} elseif ($dbError === '') {
-    $waNotify = akh_wa_client_notification_payload();
+try {
+    if (akh_meeting_requests_table_exists()) {
+        $waNotify = akh_dashboard_notification_payload();
+        $meetingReminders = $waNotify['reminders'] ?? [];
+        $waMeetings = $waNotify['meetings'] ?? [];
+    } elseif ($dbError === '') {
+        $waNotify = akh_wa_client_notification_payload();
+    }
+} catch (Throwable $e) {
+    error_log('whatsapp/index notify: ' . $e->getMessage());
+    if ($dbError === '') {
+        $dbError = 'Could not load notifications. Try refreshing — if this persists, contact support.';
+    }
 }
 $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filemtime(AKH_ROOT . '/assets/js/meeting-alerts.js') : '1';
 ?>
@@ -127,23 +134,30 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
       <p class="wa-banner wa-banner--err" role="alert"><?php echo h($dbError); ?></p>
     <?php else: ?>
 
-    <?php if ($meetingRows !== []): ?>
-      <section class="wa-meeting-banner" id="wa-meeting-banner" aria-live="polite">
-        <h2 class="wa-meeting-banner__title">📅 New meeting requests</h2>
-        <p class="wa-meeting-banner__hint">Open the <strong>Meetings</strong> tab for links and full details. Rows stop highlighting after you mark them read.</p>
+    <?php if ($meetingReminders !== []): ?>
+      <section class="wa-meeting-banner wa-meeting-banner--soon" id="wa-meeting-banner" aria-live="polite">
+        <h2 class="wa-meeting-banner__title">⏰ Meeting starting soon</h2>
+        <p class="wa-meeting-banner__hint">Join popup appears about 5 minutes before start. Use the Meet link below or open the <strong>Meetings</strong> tab.</p>
         <ul class="wa-meeting-banner__list">
-          <?php foreach ($meetingRows as $mr): ?>
+          <?php foreach ($meetingReminders as $rem): ?>
             <?php
-            $mCode = (string) ($mr['task_code'] ?? '');
-            $mPreview = akh_meeting_request_preview_from_row($mr);
+            $mCode = (string) ($rem['task_code'] ?? '');
+            $mMins = (int) ($rem['minutes_until'] ?? 0);
+            $mLink = trim((string) ($rem['meet_link'] ?? ''));
+            $mBody = (string) ($rem['body'] ?? '');
             ?>
             <li class="wa-meeting-banner__item">
               <strong class="wa-meeting-banner__code"><?php echo h($mCode); ?></strong>
-              <span class="wa-meeting-banner__text"><?php echo h($mPreview); ?></span>
+              <span class="wa-meeting-banner__text"><?php echo h($mBody !== '' ? $mBody : "Starts in {$mMins} min"); ?></span>
+              <?php if ($mLink !== ''): ?>
+                <a class="wa-btn wa-btn--sm wa-btn--ghost" href="<?php echo h($mLink); ?>" target="_blank" rel="noopener noreferrer">Join Meet</a>
+              <?php endif; ?>
             </li>
           <?php endforeach; ?>
         </ul>
       </section>
+    <?php else: ?>
+      <section class="wa-meeting-banner wa-meeting-banner--soon" id="wa-meeting-banner" hidden aria-live="polite"></section>
     <?php endif; ?>
 
     <nav class="wa-tabs" aria-label="Dashboard views">
@@ -359,7 +373,8 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
 
   <script src="<?php echo h(base_path('assets/js/meeting-alerts.js')); ?>?v=<?php echo h($meetJsVer); ?>"></script>
   <script>
-    window.WA_DASHBOARD = <?php echo json_encode([
+    <?php
+    $waDashboardJson = [
         'apiUrl' => $apiUrl,
         'csrf' => $csrf,
         'refreshSeconds' => $refreshSec,
@@ -376,7 +391,18 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
         'notices' => $waNotify['notices'] ?? [],
         'reminders' => $waNotify['reminders'] ?? [],
         'meetings' => $waMeetings,
-    ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR); ?>;
+    ];
+    try {
+        $waDashboardJs = json_encode($waDashboardJson, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
+    } catch (Throwable) {
+        $waDashboardJson['tasks'] = [];
+        $waDashboardJson['alerts'] = [];
+        $waDashboardJson['notices'] = [];
+        $waDashboardJson['meetings'] = [];
+        $waDashboardJs = json_encode($waDashboardJson, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+    }
+    ?>
+    window.WA_DASHBOARD = <?php echo $waDashboardJs; ?>;
   </script>
   <script src="<?php echo h(base_path('assets/js/whatsapp-dashboard.js') . ($waJsVer !== '' ? '?v=' . rawurlencode($waJsVer) : '')); ?>" defer></script>
 </body>

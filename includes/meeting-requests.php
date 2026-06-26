@@ -508,7 +508,11 @@ function akh_meeting_request_mark_task_read(string $taskCode): void
     }
 
     try {
-        $sql = "UPDATE meeting_requests SET status = 'read', updated_at = CURRENT_TIMESTAMP
+        $setRead = "status = 'read'";
+        if (akh_meeting_request_has_column('updated_at')) {
+            $setRead .= ', updated_at = CURRENT_TIMESTAMP';
+        }
+        $sql = "UPDATE meeting_requests SET {$setRead}
                 WHERE {$matchSql} AND ({$active['sql']})";
         $st = akh_db()->prepare($sql);
         $st->execute(array_merge($params, $active['params']));
@@ -526,7 +530,11 @@ function akh_meeting_request_mark_all_read(): void
     $active = akh_meeting_request_active_filter();
 
     try {
-        $sql = "UPDATE meeting_requests SET status = 'read', updated_at = CURRENT_TIMESTAMP WHERE {$active['sql']}";
+        $setRead = "status = 'read'";
+        if (akh_meeting_request_has_column('updated_at')) {
+            $setRead .= ', updated_at = CURRENT_TIMESTAMP';
+        }
+        $sql = "UPDATE meeting_requests SET {$setRead} WHERE {$active['sql']}";
         $st = akh_db()->prepare($sql);
         $st->execute($active['params']);
     } catch (Throwable $e) {
@@ -596,11 +604,14 @@ function akh_meeting_request_list_for_dashboard(): array
         return [];
     }
 
-    $blocked = akh_meeting_request_reminder_blocked_statuses();
+    $blocked = akh_meeting_request_dismissed_statuses();
     $placeholders = implode(',', array_fill(0, count($blocked), '?'));
+    $orderBy = akh_meeting_request_has_column('created_at')
+        ? 'COALESCE(start_time, created_at) DESC, id DESC'
+        : (akh_meeting_request_has_column('start_time') ? 'start_time DESC, id DESC' : 'id DESC');
     $sql = "SELECT * FROM meeting_requests
             WHERE (status IS NULL OR TRIM(status) = '' OR LOWER(TRIM(status)) NOT IN ({$placeholders}))
-            ORDER BY COALESCE(start_time, created_at) DESC, id DESC
+            ORDER BY {$orderBy}
             LIMIT 200";
 
     try {

@@ -663,6 +663,11 @@ body.page-wa-dashboard .site-footer {
 .wa-bell--active {
   border-color: rgba(212, 168, 83, 0.55);
   color: var(--wa-accent);
+  animation: none;
+}
+
+.wa-bell--active .wa-bell__icon {
+  animation: none;
 }
 
 .wa-bell__count {
@@ -889,6 +894,12 @@ body.page-wa-dashboard .site-footer {
   45% { transform: rotate(8deg); }
   60% { transform: rotate(-6deg); }
   75% { transform: rotate(0deg); }
+}
+
+.wa-meeting-banner--soon {
+  border-color: rgba(196, 92, 42, 0.45);
+  background: rgba(196, 92, 42, 0.08);
+  animation: wa-row-reminder-pulse 1.6s ease-in-out infinite;
 }
 
 .wa-meeting-banner {

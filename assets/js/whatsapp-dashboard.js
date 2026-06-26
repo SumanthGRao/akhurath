@@ -12,6 +12,7 @@
   var clientAlerts = cfg.alerts || {};
   var notices = cfg.notices || [];
   var meetings = cfg.meetings || [];
+  var reminderList = cfg.reminders || [];
   var reminderTasks = {};
   var activeTab = 'tasks';
   var bellOpen = false;
@@ -201,7 +202,10 @@
       currentNotifySig = data.notify_sig;
     }
     if (data && data.reminders) {
+      reminderList = data.reminders;
+      cfg.reminders = data.reminders;
       rebuildReminderTasks(data.reminders);
+      updateMeetingBanner();
       if (window.AkhMeetingAlerts) {
         AkhMeetingAlerts.processReminders(data.reminders);
       }
@@ -217,19 +221,33 @@
 
   function updateMeetingBanner() {
     if (!els.meetingBanner) return;
-    var pending = (meetings || []).filter(function (m) { return m.is_unread; });
-    els.meetingBanner.hidden = pending.length === 0;
-    if (pending.length === 0) return;
-    var list = els.meetingBanner.querySelector('.wa-meeting-banner__list');
-    if (!list) return;
-    list.innerHTML = pending.map(function (m) {
+    var list = reminderList || [];
+    els.meetingBanner.hidden = list.length === 0;
+    if (list.length === 0) {
+      els.meetingBanner.innerHTML = '';
+      return;
+    }
+
+    var items = list.map(function (rem) {
+      var code = escHtml(rem.task_code || '');
+      var mins = parseInt(rem.minutes_until, 10) || 0;
+      var body = escHtml(rem.body || ('Starts in ' + mins + ' min'));
+      var link = String(rem.meet_link || '').trim();
+      var linkHtml = link
+        ? ' <a class="wa-btn wa-btn--sm wa-btn--ghost" href="' + escHtml(link) + '" target="_blank" rel="noopener noreferrer">Join Meet</a>'
+        : '';
       return (
         '<li class="wa-meeting-banner__item">' +
-        '<strong class="wa-meeting-banner__code">' + escHtml(m.task_code) + '</strong>' +
-        '<span class="wa-meeting-banner__text">' + escHtml(m.preview || '') + '</span>' +
+        '<strong class="wa-meeting-banner__code">' + code + '</strong>' +
+        '<span class="wa-meeting-banner__text">' + body + '</span>' + linkHtml +
         '</li>'
       );
     }).join('');
+
+    els.meetingBanner.innerHTML =
+      '<h2 class="wa-meeting-banner__title">⏰ Meeting starting soon</h2>' +
+      '<p class="wa-meeting-banner__hint">Join popup appears about 5 minutes before start. Use the Meet link below or open the <strong>Meetings</strong> tab.</p>' +
+      '<ul class="wa-meeting-banner__list">' + items + '</ul>';
   }
 
   function ackNotifications(taskCode) {
@@ -475,7 +493,10 @@
           applyNotifyPayload(data);
         }
         if (data.reminders) {
+          reminderList = data.reminders;
+          cfg.reminders = data.reminders;
           rebuildReminderTasks(data.reminders);
+          updateMeetingBanner();
           if (window.AkhMeetingAlerts) {
             AkhMeetingAlerts.processReminders(data.reminders);
           }
@@ -735,6 +756,9 @@
 
   if (window.AkhMeetingAlerts) {
     AkhMeetingAlerts.init({ notifySig: cfg.notifySig || '', reminders: cfg.reminders || [] });
+  }
+  if (cfg.reminders) {
+    reminderList = cfg.reminders;
   }
   rebuildReminderTasks(cfg.reminders || []);
   indexTasks(cfg.tasks || []);
