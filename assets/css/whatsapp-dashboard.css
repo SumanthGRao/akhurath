@@ -17,6 +17,7 @@
   --wa-status-assigned: #a78bfa;
   --wa-status-editing: #f59e0b;
   --wa-status-review: #38bdf8;
+  --wa-status-preview-sent: #c084fc;
   --wa-status-delivered: #34d399;
   --wa-status-closed: #94a3b8;
 }
@@ -316,6 +317,7 @@ body.page-wa-dashboard .site-footer {
 .wa-stat--assigned .wa-stat__count { color: var(--wa-status-assigned); }
 .wa-stat--editing .wa-stat__count { color: var(--wa-status-editing); }
 .wa-stat--review .wa-stat__count { color: var(--wa-status-review); }
+.wa-stat--preview_sent .wa-stat__count { color: var(--wa-status-preview-sent); }
 .wa-stat--delivered .wa-stat__count { color: var(--wa-status-delivered); }
 .wa-stat--closed .wa-stat__count { color: var(--wa-status-closed); }
 
@@ -480,6 +482,7 @@ body.page-wa-dashboard .site-footer {
 .wa-badge--assigned { background: rgba(167, 139, 250, 0.2); color: #c4b5fd; }
 .wa-badge--editing { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
 .wa-badge--review { background: rgba(56, 189, 248, 0.2); color: #7dd3fc; }
+.wa-badge--preview_sent { background: rgba(192, 132, 252, 0.2); color: #d8b4fe; }
 .wa-badge--delivered { background: rgba(52, 211, 153, 0.2); color: #6ee7b7; }
 .wa-badge--closed { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
 

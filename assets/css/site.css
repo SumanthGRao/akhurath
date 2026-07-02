@@ -3960,6 +3960,11 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   background: rgba(90, 120, 160, 0.15);
 }
 
+.task-badge--preview_sent {
+  background: rgba(120, 90, 160, 0.16);
+  color: #4a3068;
+}
+
 .task-badge--delivered {
   background: rgba(60, 120, 80, 0.15);
   color: #1f4d32;

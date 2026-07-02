@@ -5,7 +5,7 @@ declare(strict_types=1);
 /** @return list<string> */
 function akh_wa_task_statuses(): array
 {
-    return ['new', 'assigned', 'editing', 'review', 'delivered', 'closed'];
+    return ['new', 'assigned', 'editing', 'review', 'preview_sent', 'delivered', 'closed'];
 }
 
 function akh_wa_task_status_label(string $status): string
@@ -16,6 +16,7 @@ function akh_wa_task_status_label(string $status): string
         'assigned' => 'Assigned',
         'editing' => 'Editing',
         'review' => 'Review',
+        'preview_sent' => 'Preview sent',
         'delivered' => 'Delivered',
         'closed' => 'Closed',
     ];
@@ -357,6 +358,7 @@ function akh_wa_map_status_to_studio(string $waStatus): string
         'assigned' => 'assigned',
         'editing' => 'in_progress',
         'review' => 'review',
+        'preview_sent' => 'preview_sent',
         'delivered' => 'delivered',
         'closed' => 'closed',
     ];
@@ -371,6 +373,7 @@ function akh_wa_map_status_from_studio(string $studioStatus): ?string
         'assigned' => 'assigned',
         'in_progress' => 'editing',
         'review' => 'review',
+        'preview_sent' => 'preview_sent',
         'delivered' => 'delivered',
         'reverted' => 'review',
         'closed' => 'closed',

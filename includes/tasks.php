@@ -673,6 +673,7 @@ function akh_task_status_hue(string $status): int
         'assigned' => 218,
         'in_progress' => 205,
         'review' => 262,
+        'preview_sent' => 280,
         'delivered' => 132,
         'reverted' => 28,
         'closed' => 268,
@@ -1065,6 +1066,7 @@ function akh_task_status_label(string $status): string
         'assigned' => 'Assigned',
         'in_progress' => 'In progress',
         'review' => 'Internal review',
+        'preview_sent' => 'Preview sent',
         'delivered' => 'Delivered',
         'reverted' => 'Returned for revision',
         'closed' => 'Closed',
@@ -1163,9 +1165,10 @@ function akh_task_pipeline_rank(string $status): int
         'assigned' => 1,
         'in_progress' => 2,
         'review' => 3,
-        'reverted' => 4,
-        'delivered' => 5,
-        'closed' => 6,
+        'preview_sent' => 4,
+        'reverted' => 5,
+        'delivered' => 6,
+        'closed' => 7,
     ];
 
     return $map[$status] ?? 0;
@@ -1174,7 +1177,7 @@ function akh_task_pipeline_rank(string $status): int
 /** @return list<string> */
 function akh_task_pipeline_statuses_in_order(): array
 {
-    return ['new', 'assigned', 'in_progress', 'review', 'reverted', 'delivered', 'closed'];
+    return ['new', 'assigned', 'in_progress', 'review', 'preview_sent', 'reverted', 'delivered', 'closed'];
 }
 
 function akh_task_pipeline_status_from_rank(int $rank): string
@@ -2193,7 +2196,7 @@ function akh_task_set_status(
     string $deliverableOutput = '',
     string $statusComment = ''
 ): ?array {
-    $allowed = ['assigned', 'in_progress', 'review', 'delivered', 'reverted', 'closed'];
+    $allowed = ['assigned', 'in_progress', 'review', 'preview_sent', 'delivered', 'reverted', 'closed'];
     if (!in_array($newStatus, $allowed, true)) {
         return null;
     }
@@ -2302,6 +2305,7 @@ function akh_task_status_counts(): array
         'assigned' => 0,
         'in_progress' => 0,
         'review' => 0,
+        'preview_sent' => 0,
         'delivered' => 0,
         'reverted' => 0,
         'closed' => 0,
@@ -2424,7 +2428,7 @@ function akh_task_admin_assign(string $taskId, ?string $editorUsername): ?string
  */
 function akh_task_admin_set_status(string $taskId, string $newStatus): ?string
 {
-    $allowed = ['new', 'assigned', 'in_progress', 'review', 'delivered', 'reverted', 'closed'];
+    $allowed = ['new', 'assigned', 'in_progress', 'review', 'preview_sent', 'delivered', 'reverted', 'closed'];
     if (!in_array($newStatus, $allowed, true)) {
         return 'Invalid status.';
     }

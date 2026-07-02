@@ -383,7 +383,7 @@ require_once AKH_ROOT . '/includes/header.php';
                   $ticketBlink .= ' ticket--meeting-reminder-blink';
               }
               $isOpen = $openTicketId !== '' && $openTicketId === $tid;
-              $opts = ['assigned', 'in_progress', 'review', 'delivered', 'reverted', 'closed'];
+              $opts = ['assigned', 'in_progress', 'review', 'preview_sent', 'delivered', 'reverted', 'closed'];
               ?>
               <details
                 class="ticket ticket--st-<?php echo h($stSlug); ?><?php echo $ticketBlink; ?>"
