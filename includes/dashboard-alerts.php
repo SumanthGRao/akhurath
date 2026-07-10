@@ -87,7 +87,7 @@ function akh_dashboard_alerts_for_editor(string $editorUsername): array
     $out = [];
 
     foreach (akh_dashboard_unread_alerts_grouped() as $taskId => $alert) {
-        if (!isset($owned[$taskId])) {
+        if (!akh_meeting_request_editor_owns_code($owned, $taskId)) {
             continue;
         }
         $out[$taskId] = $alert;

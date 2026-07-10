@@ -73,10 +73,10 @@ function akh_meeting_request_dismissed_statuses(): array
     return ['read', 'acknowledged', 'dismissed', 'cancelled', 'canceled', 'declined', 'completed', 'done', 'closed'];
 }
 
-/** New client meeting requests awaiting ops attention on the WA dashboard. */
+/** Legacy bot / schema status values treated as a fresh client request (informational). */
 function akh_meeting_request_new_request_statuses(): array
 {
-    return ['pending', 'new', 'requested', 'unread', 'open'];
+    return ['pending', 'new', 'requested', 'unread', 'open', 'scheduled', 'confirmed', 'accepted', 'booked', 'active', 'waiting'];
 }
 
 function akh_meeting_request_columns_invalidate(): void
@@ -227,37 +227,25 @@ function akh_meeting_request_row_is_dashboard_unread(array $row): bool
         }
     }
 
-    if (!akh_meeting_request_has_column('status')) {
-        return true;
+    if (akh_meeting_request_has_column('status')) {
+        $status = strtolower(trim((string) ($row['status'] ?? '')));
+        if ($status !== '' && in_array($status, akh_meeting_request_dismissed_statuses(), true)) {
+            return false;
+        }
     }
 
-    $status = strtolower(trim((string) ($row['status'] ?? '')));
-    if ($status === '') {
-        return true;
-    }
-
-    return in_array($status, akh_meeting_request_new_request_statuses(), true);
+    return true;
 }
 
 /** @return array{sql: string, params: list<mixed>} */
 function akh_meeting_request_unread_filter(): array
 {
-    $parts = [];
-    $params = [];
+    $active = akh_meeting_request_active_filter();
+    $parts = [$active['sql']];
+    $params = $active['params'];
 
     if (akh_meeting_request_has_column('dashboard_read_at')) {
         $parts[] = 'dashboard_read_at IS NULL';
-    }
-
-    if (akh_meeting_request_has_column('status')) {
-        $unread = akh_meeting_request_new_request_statuses();
-        $placeholders = implode(',', array_fill(0, count($unread), '?'));
-        $parts[] = "(status IS NULL OR TRIM(status) = '' OR LOWER(TRIM(status)) IN ({$placeholders}))";
-        $params = array_merge($params, $unread);
-    }
-
-    if ($parts === []) {
-        return akh_meeting_request_active_filter();
     }
 
     return ['sql' => '(' . implode(' AND ', $parts) . ')', 'params' => $params];
@@ -684,18 +672,38 @@ function akh_meeting_request_assigned_task_codes_for_editor(string $editorUserna
     return $assigned;
 }
 
+function akh_meeting_request_editor_owns_code(array $ownedCodes, string $taskCode): bool
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $code = akh_task_normalize_id(trim($taskCode));
+    if ($code === '') {
+        return false;
+    }
+    if (isset($ownedCodes[$code])) {
+        return true;
+    }
+    foreach (array_keys($ownedCodes) as $owned) {
+        if (akh_task_ids_match((string) $owned, $code)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /** @return array<string, array<string, mixed>> */
 function akh_meeting_request_pending_alerts_for_editor(string $editorUsername): array
 {
     $owned = akh_meeting_request_assigned_task_codes_for_editor($editorUsername);
     $out = [];
     foreach (akh_meeting_request_pending_alerts_grouped() as $taskId => $alert) {
-        if (isset($owned[$taskId])) {
+        if (akh_meeting_request_editor_owns_code($owned, $taskId)) {
             $out[$taskId] = $alert;
         }
     }
     foreach (akh_meeting_request_reminder_alert_highlights() as $taskId => $alert) {
-        if (!isset($owned[$taskId])) {
+        if (!akh_meeting_request_editor_owns_code($owned, $taskId)) {
             continue;
         }
         if (!isset($out[$taskId]) || (int) ($alert['priority'] ?? 0) >= (int) ($out[$taskId]['priority'] ?? 0)) {

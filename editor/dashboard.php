@@ -176,13 +176,16 @@ $editorMeetingRows = [];
 $ownedCodes = akh_meeting_request_assigned_task_codes_for_editor($editor);
 foreach (akh_meeting_request_pending_rows() as $mr) {
     $c = (string) ($mr['task_code'] ?? '');
-    if ($c !== '' && isset($ownedCodes[$c])) {
+    if ($c !== '' && akh_meeting_request_editor_owns_code($ownedCodes, $c)) {
         $editorMeetingRows[] = $mr;
     }
 }
 $editorReminders = array_values(array_filter(
     akh_meeting_request_upcoming_reminders(),
-    static fn (array $r): bool => isset($ownedCodes[(string) ($r['task_code'] ?? '')])
+    static fn (array $r): bool => akh_meeting_request_editor_owns_code(
+        $ownedCodes,
+        (string) ($r['task_code'] ?? '')
+    )
 ));
 $editorReminderCodes = [];
 foreach ($editorReminders as $r) {
