@@ -709,10 +709,6 @@ function akh_wa_sync_to_studio(array $waRow): ?string
         return 'Assigned editor was not found.';
     }
 
-    if ($editorUsername === null && akh_task_by_id($studioId) === null) {
-        return null;
-    }
-
     $inputs = akh_wa_prepare_studio_task_inputs($waRow);
     $title = $inputs['title'];
     $description = $inputs['description'];
@@ -768,9 +764,56 @@ function akh_wa_sync_to_studio(array $waRow): ?string
         if ($assignErr !== null) {
             return $assignErr;
         }
+        if ($waStatus === 'new') {
+            $studio = akh_task_by_id($studioId);
+            if (is_array($studio) && (string) ($studio['status'] ?? '') !== 'new') {
+                $statusErr = akh_task_admin_set_status($studioId, 'new');
+                if ($statusErr !== null) {
+                    return $statusErr;
+                }
+            }
+        }
     }
 
     return null;
+}
+
+/**
+ * Mirror unassigned WhatsApp queue rows onto the editor pool (app_kv tasks).
+ */
+function akh_wa_sync_whatsapp_pool_to_studio_board(): int
+{
+    if (!akh_wa_tasks_table_exists() || !function_exists('akh_db')) {
+        return 0;
+    }
+
+    try {
+        $st = akh_db()->query(
+            "SELECT * FROM whatsapp_tasks
+             WHERE assigned_editor IS NULL
+               AND TRIM(task_code) <> ''
+               AND LOWER(TRIM(status)) IN ('new', '')
+             ORDER BY id ASC"
+        );
+        if ($st === false) {
+            return 0;
+        }
+        $synced = 0;
+        while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (akh_wa_sync_to_studio($row) === null) {
+                ++$synced;
+            }
+        }
+
+        return $synced;
+    } catch (Throwable $e) {
+        error_log('akh_wa_sync_whatsapp_pool_to_studio_board: ' . $e->getMessage());
+
+        return 0;
+    }
 }
 
 /** @return array<string, mixed> */

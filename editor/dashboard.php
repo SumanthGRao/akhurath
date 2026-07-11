@@ -210,6 +210,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+require_once AKH_ROOT . '/includes/meeting-requests.php';
+require_once AKH_ROOT . '/includes/whatsapp-tasks.php';
+akh_wa_sync_whatsapp_pool_to_studio_board();
 $all = akh_tasks_all_sorted();
 $newTasks = array_values(array_filter($all, static function (array $t): bool {
     return akh_task_editor_pool_eligible($t);

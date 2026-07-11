@@ -216,6 +216,9 @@
     var ackEd = row.ack_editor ? ' data-ack-editor="1"' : '';
     var dot = row.notify ? '<span class="edesk-list__dot" aria-hidden="true"></span>' : '';
     var newPill = row.unseen_new ? '<span class="ticket__pill ticket__pill--new">New</span>' : '';
+    var waPill = row.from_whatsapp && row.section === 'pool'
+      ? '<span class="edesk-list__pill edesk-list__pill--wa">WhatsApp</span>'
+      : '';
     var statusBadge =
       row.section === 'mine'
         ? '<span class="task-badge task-badge--' + esc(row.status_slug) + '">' + esc(row.status_label) + '</span>'
@@ -255,6 +258,7 @@
       '</span></span>' +
       '<span class="edesk-list__meta">' +
       newPill +
+      waPill +
       statusBadge +
       soon +
       msg +

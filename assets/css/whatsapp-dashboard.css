@@ -11,8 +11,9 @@
   --wa-accent-soft: rgba(212, 168, 83, 0.15);
   --wa-radius: 12px;
   --wa-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
-  --wa-font: "Source Sans 3", system-ui, sans-serif;
-  --wa-serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --wa-font: var(--font-body, "Inter", system-ui, sans-serif);
+  --wa-serif: var(--font-display, "Plus Jakarta Sans", system-ui, sans-serif);
+  --wa-mono: var(--font-mono, "Sometype Mono", ui-monospace, monospace);
   --wa-status-new: #6b9bd1;
   --wa-status-assigned: #a78bfa;
   --wa-status-editing: #f59e0b;

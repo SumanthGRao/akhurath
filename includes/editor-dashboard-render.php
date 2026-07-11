@@ -36,6 +36,8 @@ function akh_editor_task_view_model(
     $notify = ($t['editor_feedback_notify'] ?? false) === true || $taskAlert !== null;
     $unseenNew = $section === 'pool' && $tid !== '' && !in_array($tid, $seenNew, true);
     $hasReminder = isset($editorReminderCodes[$tidNorm]);
+    $fromWhatsapp = (string) ($t['edit_type'] ?? '') === 'studio_admin'
+        || strtolower(trim((string) ($t['client_username'] ?? ''))) === 'whatsapp';
     $classes = ['edesk-list__item', 'ticket--st-' . $stSlug];
     if ($notify) {
         $classes[] = 'edesk-list__item--notify';
@@ -60,6 +62,7 @@ function akh_editor_task_view_model(
         'notify' => $notify,
         'unseen_new' => $unseenNew,
         'has_reminder' => $hasReminder,
+        'from_whatsapp' => $fromWhatsapp,
         'list_classes' => implode(' ', $classes),
         'style_attr' => akh_task_ticket_style_attr($t),
         'ack_new' => $unseenNew,
@@ -106,6 +109,9 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
       <span class="edesk-list__meta">
         <?php if ($vm['unseen_new']): ?>
           <span class="ticket__pill ticket__pill--new">New</span>
+        <?php endif; ?>
+        <?php if (!empty($vm['from_whatsapp']) && $section === 'pool'): ?>
+          <span class="edesk-list__pill edesk-list__pill--wa">WhatsApp</span>
         <?php endif; ?>
         <?php if ($section === 'mine'): ?>
           <span class="task-badge task-badge--<?php echo h($stSlug); ?>"><?php echo h(akh_task_status_label($st)); ?></span>

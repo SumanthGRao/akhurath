@@ -20,6 +20,9 @@ function akh_editor_desk_board_context(string $editorUsername): array
 {
     require_once __DIR__ . '/dashboard-alerts.php';
     require_once __DIR__ . '/meeting-requests.php';
+    require_once __DIR__ . '/whatsapp-tasks.php';
+
+    akh_wa_sync_whatsapp_pool_to_studio_board();
 
     $editorUsername = strtolower(trim($editorUsername));
     $all = akh_tasks_all_sorted();
@@ -127,6 +130,8 @@ function akh_editor_desk_list_row_json(array $vm): array
         'ack_new' => (bool) $vm['ack_new'],
         'ack_editor' => (bool) $vm['ack_editor'],
         'msg_count' => count(akh_task_conversation_list($t)),
+        'from_whatsapp' => (string) ($t['edit_type'] ?? '') === 'studio_admin'
+            || strtolower(trim((string) ($t['client_username'] ?? ''))) === 'whatsapp',
     ];
 }
 

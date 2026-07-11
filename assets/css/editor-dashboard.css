@@ -31,6 +31,9 @@
   --edesk-line: rgba(28, 32, 40, 0.1);
   --edesk-muted: rgba(28, 32, 40, 0.58);
   --edesk-accent: #3d5f8c;
+  font-family: var(--font-body, "Inter", system-ui, sans-serif);
+  font-size: 0.95rem;
+  line-height: 1.55;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -69,9 +72,9 @@
 
 .edesk-topbar__title {
   margin: 0;
-  font-family: var(--serif);
+  font-family: var(--font-display, "Plus Jakarta Sans", system-ui, sans-serif);
   font-size: 1.15rem;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.15;
 }
 
@@ -101,7 +104,7 @@
   border-radius: 999px;
   background: transparent;
   color: var(--edesk-muted);
-  font: inherit;
+  font-family: var(--font-body, "Inter", system-ui, sans-serif);
   font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
@@ -333,9 +336,9 @@
 }
 
 .edesk-list__id {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono, "Sometype Mono", ui-monospace, monospace);
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: 500;
   color: var(--edesk-accent);
   padding-top: 0.1rem;
 }
@@ -478,8 +481,9 @@
 
 .edesk-panel__title {
   margin: 0 0 0.45rem;
-  font-family: var(--serif);
+  font-family: var(--font-display, "Plus Jakarta Sans", system-ui, sans-serif);
   font-size: clamp(1.2rem, 2vw, 1.55rem);
+  font-weight: 700;
   line-height: 1.2;
 }
 
@@ -548,18 +552,37 @@
 
 .edesk-card__title {
   margin: 0 0 0.55rem;
+  font-family: var(--font-display, "Plus Jakarta Sans", system-ui, sans-serif);
   font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--edesk-muted);
 }
 
 .edesk-prose {
+  font-family: var(--font-body, "Inter", system-ui, sans-serif);
   font-size: 0.92rem;
+  font-weight: 400;
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.page-editor-desk .btn {
+  font-family: var(--font-body, "Inter", system-ui, sans-serif);
+  font-weight: 600;
+}
+
+.edesk-list__pill--wa {
+  background: rgba(37, 150, 190, 0.12);
+  color: #1a6f8f;
+  padding: 0.08rem 0.38rem;
+  border-radius: 999px;
+  font-family: var(--font-mono, "Sometype Mono", ui-monospace, monospace);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 .edesk-link-row {
@@ -853,9 +876,9 @@
   border: 1px solid var(--edesk-line);
   border-radius: 8px;
   background: #fff;
-  font: inherit;
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-family: var(--font-mono, "Sometype Mono", ui-monospace, monospace);
+  font-size: 0.68rem;
+  font-weight: 500;
   color: var(--edesk-muted);
   cursor: pointer;
   text-align: center;
