@@ -434,9 +434,12 @@ require_once AKH_ROOT . '/includes/header.php';
             <input type="search" class="edesk-search" id="edesk-search" placeholder="Search tasks…" aria-label="Search tasks" />
           </div>
           <div class="edesk-filters" role="group" aria-label="Filter tasks">
-            <button type="button" class="edesk-filter edesk-filter--active" data-filter="all">All</button>
-            <button type="button" class="edesk-filter" data-filter="unread">Unread</button>
-            <button type="button" class="edesk-filter" data-filter="meeting">Meetings</button>
+            <label class="edesk-status-filter-wrap">
+              <span class="edesk-status-filter__label">Status</span>
+              <select class="edesk-status-filter" id="edesk-status-filter" aria-label="Filter by status">
+                <option value="all">All</option>
+              </select>
+            </label>
           </div>
           <p class="edesk-sidebar__hint" id="edesk-sidebar-hint">Select a task to view brief, updates, and messages.</p>
           <div class="edesk-list-wrap">

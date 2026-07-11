@@ -827,32 +827,47 @@
 /* Filters */
 .edesk-filters {
   display: flex;
-  gap: 0.3rem;
+  gap: 0.45rem;
   padding: 0.35rem 0.65rem 0.15rem;
-  flex-wrap: wrap;
+  align-items: center;
 }
 
-.edesk-filter {
-  padding: 0.28rem 0.6rem;
+.edesk-status-filter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.edesk-status-filter__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--edesk-muted);
+  white-space: nowrap;
+}
+
+.edesk-status-filter {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
   border: 1px solid var(--edesk-line);
-  border-radius: 999px;
+  border-radius: 8px;
   background: #fff;
   font: inherit;
-  font-size: 0.76rem;
-  font-weight: 600;
-  color: var(--edesk-muted);
-  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--edesk-text, #1a1a1a);
 }
 
-.edesk-filter:hover {
-  border-color: rgba(61, 95, 140, 0.3);
-  color: var(--ink);
+.edesk-status-filter:focus {
+  outline: 2px solid rgba(61, 95, 140, 0.35);
+  outline-offset: 1px;
 }
 
-.edesk-filter--active {
-  background: rgba(61, 95, 140, 0.12);
-  border-color: rgba(61, 95, 140, 0.28);
-  color: var(--edesk-accent);
+.edesk-list__empty--filter {
+  font-style: italic;
 }
 
 .edesk-list__when {

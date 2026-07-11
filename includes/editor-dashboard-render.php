@@ -141,6 +141,16 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
     $listAt = $section === 'pool'
         ? (string) (($t['created_at'] ?? '') !== '' ? $t['created_at'] : ($t['updated_at'] ?? ''))
         : (string) (($t['updated_at'] ?? '') !== '' ? $t['updated_at'] : ($t['created_at'] ?? ''));
+    $typeLabel = (string) ($vm['type_label'] ?? '');
+    $client = (string) ($t['client_username'] ?? '');
+    $statusLabel = akh_task_status_label($st);
+    $searchBlob = strtolower(implode(' ', array_filter([
+        $tid,
+        $headline,
+        $typeLabel,
+        $client,
+        $statusLabel,
+    ], static fn (string $p): bool => trim($p) !== '')));
     ?>
     <button
       type="button"
@@ -149,6 +159,9 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
       id="ticket-<?php echo h($tid); ?>"
       data-task-id="<?php echo h($tid); ?>"
       data-section="<?php echo h($section); ?>"
+      data-status="<?php echo h($stSlug); ?>"
+      data-whatsapp="<?php echo !empty($vm['from_whatsapp']) ? '1' : '0'; ?>"
+      data-search="<?php echo h($searchBlob); ?>"
       data-updated-at="<?php echo h((string) ($t['updated_at'] ?? '')); ?>"
       data-list-at="<?php echo h($listAt); ?>"
       <?php if ($vm['ack_new']): ?>data-ack-new="1"<?php endif; ?>

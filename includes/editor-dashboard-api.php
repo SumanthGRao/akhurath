@@ -133,6 +133,13 @@ function akh_editor_desk_list_row_json(array $vm): array
         'type_label' => (string) ($vm['type_label'] ?? ''),
         'show_type' => (bool) ($vm['show_type'] ?? false),
         'list_unread' => (bool) ($vm['list_unread'] ?? false),
+        'search' => strtolower(implode(' ', array_filter([
+            (string) $vm['tid'],
+            (string) $vm['headline'],
+            (string) ($vm['type_label'] ?? ''),
+            (string) ($t['client_username'] ?? ''),
+            akh_task_status_label((string) $vm['status']),
+        ], static fn (string $p): bool => trim($p) !== ''))),
         'client' => (string) ($t['client_username'] ?? ''),
         'status' => (string) $vm['status'],
         'status_label' => akh_task_status_label((string) $vm['status']),

@@ -12,8 +12,25 @@
   var rowCache = {};
   var activeTaskId = '';
   var activeSection = 'mine';
-  var activeFilter = 'all';
+  var activeStatusFilter = 'all';
   var searchQuery = '';
+
+  var POOL_STATUS_OPTS = [
+    { value: 'all', label: 'All pool tasks' },
+    { value: 'new', label: 'New' },
+    { value: 'whatsapp', label: 'WhatsApp' },
+  ];
+
+  var MINE_STATUS_OPTS = [
+    { value: 'all', label: 'All statuses' },
+    { value: 'assigned', label: 'Assigned' },
+    { value: 'in_progress', label: 'In progress' },
+    { value: 'review', label: 'Internal review' },
+    { value: 'preview_sent', label: 'Preview sent' },
+    { value: 'delivered', label: 'Delivered' },
+    { value: 'reverted', label: 'Returned for revision' },
+    { value: 'closed', label: 'Closed' },
+  ];
 
   function qs(sel, ctx) {
     return (ctx || document).querySelector(sel);
@@ -234,6 +251,30 @@
   var panelsHost = qs('#edesk-detail-scroll', root);
   var emptyEl = qs('#edesk-empty', root);
   var searchInput = qs('#edesk-search', root);
+  var statusFilter = qs('#edesk-status-filter', root);
+
+  function normalizeSearch(s) {
+    return String(s || '').toLowerCase().trim();
+  }
+
+  function syncStatusFilterOptions(section) {
+    if (!statusFilter) return;
+    var opts = section === 'pool' ? POOL_STATUS_OPTS : MINE_STATUS_OPTS;
+    var current = activeStatusFilter;
+    var valid = opts.some(function (o) {
+      return o.value === current;
+    });
+    statusFilter.innerHTML = opts
+      .map(function (o) {
+        return '<option value="' + esc(o.value) + '">' + esc(o.label) + '</option>';
+      })
+      .join('');
+    if (!valid) {
+      current = 'all';
+      activeStatusFilter = 'all';
+    }
+    statusFilter.value = current;
+  }
 
   function isMobile() {
     return window.matchMedia('(max-width: 820px)').matches;
@@ -245,43 +286,20 @@
 
   function showList(section) {
     activeSection = section;
-    if (activeFilter === 'all') {
-      qsa('.edesk-tab', root).forEach(function (tab) {
-        var on = tab.getAttribute('data-section') === section;
-        tab.setAttribute('aria-selected', on ? 'true' : 'false');
-      });
-      Object.keys(lists).forEach(function (key) {
-        if (lists[key]) lists[key].hidden = key !== section;
-      });
-    }
+    qsa('.edesk-tab', root).forEach(function (tab) {
+      var on = tab.getAttribute('data-section') === section;
+      tab.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    Object.keys(lists).forEach(function (key) {
+      if (lists[key]) lists[key].hidden = key !== section;
+    });
+    syncStatusFilterOptions(section);
     var hint = qs('#edesk-sidebar-hint', root);
     if (hint) {
-      if (activeFilter === 'unread') {
-        hint.textContent = 'Showing unread tasks from pool and My tasks.';
-      } else if (activeFilter === 'meeting') {
-        hint.textContent = 'Showing meeting-related tasks from pool and My tasks.';
-      } else {
-        hint.textContent =
-          section === 'pool'
-            ? 'New jobs appear here in real time — claim to move to My tasks.'
-            : 'Live updates for messages, feedback, and status changes.';
-      }
-    }
-    applyListFilters();
-  }
-
-  function setFilterMode(filter) {
-    activeFilter = filter || 'all';
-    qsa('.edesk-filter', root).forEach(function (b) {
-      b.classList.toggle('edesk-filter--active', b.getAttribute('data-filter') === activeFilter);
-    });
-    if (activeFilter === 'unread' || activeFilter === 'meeting') {
-      Object.keys(lists).forEach(function (key) {
-        if (lists[key]) lists[key].hidden = false;
-      });
-    } else {
-      showList(activeSection);
-      return;
+      hint.textContent =
+        section === 'pool'
+          ? 'New jobs appear here in real time — claim to move to My tasks.'
+          : 'Live updates for messages, feedback, and status changes.';
     }
     applyListFilters();
   }
@@ -301,6 +319,11 @@
       ? '<span class="edesk-list__type">' + esc(row.type_label) + '</span>'
       : '';
     var displayName = row.title || row.type_label || '—';
+    var searchBlob =
+      row.search ||
+      normalizeSearch(
+        [row.id, row.title, row.type_label, row.client, row.status_label].join(' ')
+      );
     var newPill = row.unseen_new ? '<span class="ticket__pill ticket__pill--new">New</span>' : '';
     var waPill = row.from_whatsapp && row.section === 'pool'
       ? '<span class="edesk-list__pill edesk-list__pill--wa">WhatsApp</span>'
@@ -329,6 +352,12 @@
       esc(row.updated_at) +
       '" data-list-at="' +
       esc(listAt) +
+      '" data-status="' +
+      esc(row.status_slug) +
+      '" data-whatsapp="' +
+      (row.from_whatsapp ? '1' : '0') +
+      '" data-search="' +
+      esc(searchBlob) +
       '" data-notify="' +
       (row.notify ? '1' : '0') +
       '" data-meeting="' +
@@ -393,32 +422,58 @@
   }
 
   function applyListFilters() {
-    var q = searchQuery.toLowerCase();
-    var crossList = activeFilter === 'unread' || activeFilter === 'meeting';
-    qsa('.edesk-list__item', root).forEach(function (item) {
-      var list = item.closest('.edesk-list');
-      var inSection = crossList ? !!list : list && !list.hidden;
-      if (!inSection) return;
-      var text = (item.textContent || '').toLowerCase();
-      var matchSearch = q === '' || text.indexOf(q) !== -1;
-      var matchFilter = true;
-      if (activeFilter === 'unread') {
-        matchFilter = item.getAttribute('data-unread') === '1';
-      } else if (activeFilter === 'meeting') {
-        matchFilter =
-          item.getAttribute('data-meeting') === '1' || item.getAttribute('data-ack-meeting') === '1';
-      }
-      item.hidden = !(matchSearch && matchFilter);
-    });
-    if (crossList) {
-      ['pool', 'mine'].forEach(function (section) {
-        var listEl = lists[section];
-        if (!listEl) return;
-        var hasVisible = !!listEl.querySelector('.edesk-list__item:not([hidden])');
-        var empty = listEl.querySelector('.edesk-list__empty');
-        if (empty) empty.hidden = hasVisible;
+    var q = normalizeSearch(searchQuery);
+    ['pool', 'mine'].forEach(function (section) {
+      var listEl = lists[section];
+      if (!listEl) return;
+      var isActiveList = section === activeSection;
+      var items = qsa('.edesk-list__item', listEl);
+      var visibleCount = 0;
+      items.forEach(function (item) {
+        if (!isActiveList) {
+          item.hidden = true;
+          return;
+        }
+        var haystack = normalizeSearch(item.getAttribute('data-search') || item.textContent || '');
+        var matchSearch = q === '' || haystack.indexOf(q) !== -1;
+        var matchStatus = true;
+        if (activeStatusFilter !== 'all') {
+          if (activeStatusFilter === 'whatsapp') {
+            matchStatus = item.getAttribute('data-whatsapp') === '1';
+          } else {
+            matchStatus = item.getAttribute('data-status') === activeStatusFilter;
+          }
+        }
+        var show = matchSearch && matchStatus;
+        item.hidden = !show;
+        if (show) visibleCount += 1;
       });
-    }
+
+      var staticEmpty = listEl.querySelector('.edesk-list__empty:not(.edesk-list__empty--filter)');
+      var filterEmpty = listEl.querySelector('.edesk-list__empty--filter');
+      if (items.length === 0) {
+        if (staticEmpty) staticEmpty.hidden = false;
+        if (filterEmpty) filterEmpty.hidden = true;
+        return;
+      }
+      if (staticEmpty) staticEmpty.hidden = true;
+      if (visibleCount === 0) {
+        if (!filterEmpty) {
+          filterEmpty = document.createElement('p');
+          filterEmpty.className = 'edesk-list__empty edesk-list__empty--filter';
+          listEl.appendChild(filterEmpty);
+        }
+        filterEmpty.textContent =
+          q !== '' && activeStatusFilter !== 'all'
+            ? 'No tasks match your search and status filter.'
+            : q !== ''
+              ? 'No tasks match your search.'
+              : 'No tasks match this status filter.';
+        filterEmpty.hidden = false;
+      } else if (filterEmpty) {
+        filterEmpty.hidden = true;
+      }
+    });
   }
 
   function findListItem(taskId, preferSection) {
@@ -804,12 +859,8 @@
   qsa('.edesk-tab', root).forEach(function (tab) {
     tab.addEventListener('click', function () {
       var section = tab.getAttribute('data-section') || 'mine';
-      if (activeFilter !== 'all') {
-        activeFilter = 'all';
-        qsa('.edesk-filter', root).forEach(function (b) {
-          b.classList.toggle('edesk-filter--active', b.getAttribute('data-filter') === 'all');
-        });
-      }
+      activeStatusFilter = 'all';
+      if (statusFilter) statusFilter.value = 'all';
       showList(section);
       if (isMobile()) {
         selectTask('');
@@ -820,11 +871,12 @@
     });
   });
 
-  qsa('.edesk-filter', root).forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      setFilterMode(btn.getAttribute('data-filter') || 'all');
+  if (statusFilter) {
+    statusFilter.addEventListener('change', function () {
+      activeStatusFilter = statusFilter.value || 'all';
+      applyListFilters();
     });
-  });
+  }
 
   var backBtn = qs('.edesk-detail__back', root);
   if (backBtn) {
@@ -836,6 +888,10 @@
 
   if (searchInput) {
     searchInput.addEventListener('input', function () {
+      searchQuery = searchInput.value;
+      applyListFilters();
+    });
+    searchInput.addEventListener('search', function () {
       searchQuery = searchInput.value;
       applyListFilters();
     });
