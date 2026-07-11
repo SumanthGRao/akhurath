@@ -89,6 +89,7 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
       id="ticket-<?php echo h($tid); ?>"
       data-task-id="<?php echo h($tid); ?>"
       data-section="<?php echo h($section); ?>"
+      data-updated-at="<?php echo h((string) ($t['updated_at'] ?? '')); ?>"
       <?php if ($vm['ack_new']): ?>data-ack-new="1"<?php endif; ?>
       <?php if ($vm['ack_editor']): ?>data-ack-editor="1"<?php endif; ?>
       aria-current="<?php echo $selected ? 'true' : 'false'; ?>"
@@ -112,6 +113,7 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
         <?php if ($vm['has_reminder']): ?>
           <span class="edesk-list__pill edesk-list__pill--soon">Soon</span>
         <?php endif; ?>
+        <span class="edesk-list__when" data-ts="<?php echo h((string) ($t['updated_at'] ?? '')); ?>"><?php echo h((string) ($t['updated_at'] ?? '')); ?></span>
         <span class="edesk-list__client"><?php echo h((string) ($t['client_username'] ?? '')); ?></span>
       </span>
     </button>
@@ -135,6 +137,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
     $headline = (string) $vm['headline'];
     $taskAlert = $vm['task_alert'];
     $opts = ['assigned', 'in_progress', 'review', 'preview_sent', 'delivered', 'reverted', 'closed'];
+    $pipelineOpts = $section === 'pool' ? ['new', 'assigned'] : $opts;
     ?>
     <article
       class="edesk-panel ticket ticket--st-<?php echo h($stSlug); ?>"
@@ -166,6 +169,20 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
         </dl>
       </header>
 
+      <?php if ($section === 'mine'): ?>
+        <nav class="edesk-pipeline" aria-label="Workflow progress">
+          <?php foreach ($pipelineOpts as $o): ?>
+            <?php if ($o === 'new') { continue; } ?>
+            <button
+              type="button"
+              class="edesk-pipeline__step<?php echo $o === $st ? ' edesk-pipeline__step--current' : ''; ?><?php echo array_search($o, $pipelineOpts, true) !== false && array_search($st, $pipelineOpts, true) !== false && array_search($o, $pipelineOpts, true) < array_search($st, $pipelineOpts, true) ? ' edesk-pipeline__step--done' : ''; ?>"
+              data-status="<?php echo h($o); ?>"
+              data-task-id="<?php echo h($tid); ?>"
+            ><?php echo h(akh_task_status_label($o)); ?></button>
+          <?php endforeach; ?>
+        </nav>
+      <?php endif; ?>
+
       <div class="edesk-panel__grid">
         <div class="edesk-panel__work">
           <?php if (trim((string) ($t['description'] ?? '')) !== ''): ?>
@@ -191,7 +208,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
 
           <?php if ($section === 'pool'): ?>
             <section class="edesk-card edesk-card--action">
-              <form class="edesk-inline-form" method="post" action="">
+              <form class="edesk-inline-form edesk-ajax-claim" method="post" action="" data-edesk-ajax="claim">
                 <input type="hidden" name="csrf_token" value="<?php echo h($pageCsrf); ?>" />
                 <input type="hidden" name="action" value="claim" />
                 <input type="hidden" name="task_id" value="<?php echo h($tid); ?>" />
@@ -202,7 +219,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
           <?php else: ?>
             <section class="edesk-card edesk-card--status">
               <h3 class="edesk-card__title">Workflow &amp; deliverable</h3>
-              <form class="portal-form portal-form--compact edesk-status-form" method="post" action="" data-current-status="<?php echo h($st); ?>">
+              <form class="portal-form portal-form--compact edesk-status-form edesk-ajax-status" method="post" action="" data-current-status="<?php echo h($st); ?>" data-edesk-ajax="status">
                 <input type="hidden" name="csrf_token" value="<?php echo h($pageCsrf); ?>" />
                 <input type="hidden" name="action" value="status" />
                 <input type="hidden" name="task_id" value="<?php echo h($tid); ?>" />

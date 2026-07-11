@@ -1,5 +1,5 @@
 /**
- * Editor dashboard: tabs, master/detail selection, acks, status form.
+ * Editor desk — live sync (ClickUp / ServiceNow style), AJAX actions, filters.
  */
 (function () {
   'use strict';
@@ -9,6 +9,11 @@
 
   var csrf = root.getAttribute('data-csrf') || '';
   var BellKey = 'akh_editor_bell_last';
+  var rowCache = {};
+  var activeTaskId = '';
+  var activeSection = 'mine';
+  var activeFilter = 'all';
+  var searchQuery = '';
 
   function qs(sel, ctx) {
     return (ctx || document).querySelector(sel);
@@ -18,8 +23,33 @@
     return Array.prototype.slice.call((ctx || document).querySelectorAll(sel));
   }
 
+  function esc(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   function normId(id) {
     return String(id || '').trim();
+  }
+
+  function postAjax(action, fields) {
+    var fd = new URLSearchParams();
+    fd.set('ajax_action', action);
+    fd.set('csrf_token', csrf);
+    Object.keys(fields || {}).forEach(function (k) {
+      fd.set(k, fields[k]);
+    });
+    return fetch(window.location.pathname, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd,
+      credentials: 'same-origin',
+    }).then(function (r) {
+      return r.json();
+    });
   }
 
   function playNotifyPing() {
@@ -51,24 +81,74 @@
       sessionStorage.setItem(BellKey, String(n));
     }
     b.classList.toggle('desk-bell--zero', typeof n === 'number' && n < 1);
-    if (typeof n === 'number' && n > 0) {
-      b.classList.add('desk-bell--wiggle', 'desk-bell--pop');
-    } else {
-      b.classList.remove('desk-bell--wiggle', 'desk-bell--pop');
-    }
+    b.classList.toggle('desk-bell--wiggle', typeof n === 'number' && n > 0);
+    b.classList.toggle('desk-bell--pop', typeof n === 'number' && n > 0);
+  }
+
+  function updateTabBadges(poolCount, mineCount) {
+    qsa('.edesk-tab', root).forEach(function (tab) {
+      var section = tab.getAttribute('data-section');
+      var n = section === 'pool' ? poolCount : mineCount;
+      var badge = tab.querySelector('.edesk-tab__badge');
+      if (n > 0) {
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'edesk-tab__badge';
+          tab.appendChild(badge);
+        }
+        badge.textContent = String(n);
+      } else if (badge) {
+        badge.remove();
+      }
+    });
+  }
+
+  function showToast(message, kind) {
+    var host = qs('#edesk-toasts', root);
+    if (!host || !message) return;
+    var el = document.createElement('div');
+    el.className = 'edesk-toast' + (kind ? ' edesk-toast--' + kind : '');
+    el.textContent = message;
+    host.appendChild(el);
+    requestAnimationFrame(function () {
+      el.classList.add('edesk-toast--in');
+    });
+    setTimeout(function () {
+      el.classList.remove('edesk-toast--in');
+      setTimeout(function () { el.remove(); }, 280);
+    }, 4200);
+  }
+
+  function setLiveStatus(text, syncing) {
+    var live = qs('#edesk-live', root);
+    var timeEl = qs('#edesk-live-time', root);
+    if (timeEl) timeEl.textContent = text;
+    if (live) live.classList.toggle('edesk-live--sync', !!syncing);
+  }
+
+  function relativeTime(iso) {
+    if (!iso) return '';
+    var t = Date.parse(iso);
+    if (isNaN(t)) return iso;
+    var sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+    if (sec < 60) return sec + 's ago';
+    if (sec < 3600) return Math.floor(sec / 60) + 'm ago';
+    if (sec < 86400) return Math.floor(sec / 3600) + 'h ago';
+    return Math.floor(sec / 86400) + 'd ago';
+  }
+
+  function refreshRelativeTimes() {
+    qsa('.edesk-list__when', root).forEach(function (el) {
+      var ts = el.getAttribute('data-ts') || '';
+      if (ts) el.textContent = relativeTime(ts);
+    });
   }
 
   function postAck(kind, taskId) {
-    var fd = new URLSearchParams();
-    fd.set('ajax_action', 'view_ack');
-    fd.set('ack_kind', kind);
-    fd.set('task_id', taskId);
-    fd.set('csrf_token', csrf);
-    return fetch(window.location.pathname, {
-      method: 'POST',
-      headers: { 'X-Requested-With': 'XMLHttpRequest' },
-      body: fd,
-    }).then(function (r) { return r.json(); });
+    return postAjax('view_ack', { ack_kind: kind, task_id: taskId }).then(function (j) {
+      if (j && j.ok && typeof j.bell === 'number') setDeskBell(j.bell);
+      return j;
+    });
   }
 
   function ackOpenedItem(btn) {
@@ -80,32 +160,24 @@
       btn.classList.remove('edesk-list__item--new');
       var pill = btn.querySelector('.ticket__pill--new');
       if (pill) pill.remove();
-      postAck('new', tid).then(function (j) {
-        if (j && j.ok && typeof j.bell === 'number') setDeskBell(j.bell);
-      }).catch(function () {});
+      postAck('new', tid);
     }
     if (btn.getAttribute('data-ack-editor') === '1') {
       btn.removeAttribute('data-ack-editor');
       btn.classList.remove('edesk-list__item--notify');
       var dot = btn.querySelector('.edesk-list__dot');
       if (dot) dot.remove();
-      postAck('editor_task', tid).then(function (j) {
-        if (j && j.ok && typeof j.bell === 'number') setDeskBell(j.bell);
-      }).catch(function () {});
+      postAck('editor_task', tid);
     }
   }
 
-  var tabs = qsa('.edesk-tab', root);
   var lists = {
     pool: qs('#edesk-list-pool', root),
     mine: qs('#edesk-list-mine', root),
   };
-  var panels = qsa('.edesk-panel', root);
+  var panelsHost = qs('#edesk-detail-scroll', root);
   var emptyEl = qs('#edesk-empty', root);
-  var detailScroll = qs('.edesk-detail__scroll', root);
   var searchInput = qs('#edesk-search', root);
-  var activeSection = 'mine';
-  var activeTaskId = '';
 
   function isMobile() {
     return window.matchMedia('(max-width: 820px)').matches;
@@ -117,21 +189,126 @@
 
   function showList(section) {
     activeSection = section;
-    tabs.forEach(function (tab) {
+    qsa('.edesk-tab', root).forEach(function (tab) {
       var on = tab.getAttribute('data-section') === section;
       tab.setAttribute('aria-selected', on ? 'true' : 'false');
     });
     Object.keys(lists).forEach(function (key) {
-      if (!lists[key]) return;
-      lists[key].hidden = key !== section;
+      if (lists[key]) lists[key].hidden = key !== section;
     });
     var hint = qs('#edesk-sidebar-hint', root);
     if (hint) {
       hint.textContent =
         section === 'pool'
-          ? 'Open a row once to clear it from your new-task bell count.'
-          : 'Select a task — updates and messages appear on the right.';
+          ? 'New jobs appear here in real time — claim to move to My tasks.'
+          : 'Live updates for messages, feedback, and status changes.';
     }
+    applyListFilters();
+  }
+
+  function listItemHtml(row, selected) {
+    var classes = ['edesk-list__item', 'ticket--st-' + row.status_slug];
+    if (row.notify) classes.push('edesk-list__item--notify');
+    if (row.unseen_new) classes.push('edesk-list__item--new');
+    if (row.has_reminder) classes.push('edesk-list__item--meeting');
+    if (selected) classes.push('edesk-list__item--active');
+    var ackNew = row.ack_new ? ' data-ack-new="1"' : '';
+    var ackEd = row.ack_editor ? ' data-ack-editor="1"' : '';
+    var dot = row.notify ? '<span class="edesk-list__dot" aria-hidden="true"></span>' : '';
+    var newPill = row.unseen_new ? '<span class="ticket__pill ticket__pill--new">New</span>' : '';
+    var statusBadge =
+      row.section === 'mine'
+        ? '<span class="task-badge task-badge--' + esc(row.status_slug) + '">' + esc(row.status_label) + '</span>'
+        : '';
+    var soon = row.has_reminder ? '<span class="edesk-list__pill edesk-list__pill--soon">Soon</span>' : '';
+    var when = row.updated_at
+      ? '<span class="edesk-list__when" data-ts="' + esc(row.updated_at) + '">' + esc(relativeTime(row.updated_at)) + '</span>'
+      : '';
+  var msg = row.msg_count > 0 ? '<span class="edesk-list__msgs">' + row.msg_count + ' msg</span>' : '';
+
+    return (
+      '<button type="button" class="' +
+      classes.join(' ') +
+      '" id="ticket-' +
+      esc(row.id) +
+      '" data-task-id="' +
+      esc(row.id) +
+      '" data-section="' +
+      esc(row.section) +
+      '" data-updated-at="' +
+      esc(row.updated_at) +
+      '" data-notify="' +
+      (row.notify ? '1' : '0') +
+      '" data-meeting="' +
+      (row.has_reminder ? '1' : '0') +
+      '"' +
+      ackNew +
+      ackEd +
+      ' aria-current="' +
+      (selected ? 'true' : 'false') +
+      '">' +
+      '<span class="edesk-list__row"><span class="edesk-list__id">' +
+      esc(row.id) +
+      '</span><span class="edesk-list__title">' +
+      dot +
+      esc(row.title || '—') +
+      '</span></span>' +
+      '<span class="edesk-list__meta">' +
+      newPill +
+      statusBadge +
+      soon +
+      msg +
+      when +
+      '<span class="edesk-list__client">' +
+      esc(row.client) +
+      '</span></span></button>'
+    );
+  }
+
+  function renderList(section, rows, preserveSelection) {
+    var listEl = lists[section];
+    if (!listEl) return;
+    if (!rows || rows.length === 0) {
+      listEl.innerHTML =
+        '<p class="edesk-list__empty">' +
+        (section === 'pool' ? 'No unassigned tasks in the pool.' : 'No assigned tasks yet — claim one from the pool.') +
+        '</p>';
+      return;
+    }
+    var html = '';
+    rows.forEach(function (row) {
+      rowCache[row.id] = row;
+      var sel = preserveSelection && normId(row.id) === normId(activeTaskId);
+      html += listItemHtml(row, sel);
+    });
+    listEl.innerHTML = html;
+    bindListClicks(listEl);
+    applyListFilters();
+  }
+
+  function bindListClicks(container) {
+    qsa('.edesk-list__item', container).forEach(function (item) {
+      item.addEventListener('click', function () {
+        selectTask(item.getAttribute('data-task-id') || '');
+      });
+    });
+  }
+
+  function applyListFilters() {
+    var q = searchQuery.toLowerCase();
+    qsa('.edesk-list__item', root).forEach(function (item) {
+      var inSection = item.closest('.edesk-list') && !item.closest('.edesk-list').hidden;
+      if (!inSection) return;
+      var text = (item.textContent || '').toLowerCase();
+      var matchSearch = q === '' || text.indexOf(q) !== -1;
+      var matchFilter = true;
+      if (activeFilter === 'unread') {
+        matchFilter = item.getAttribute('data-notify') === '1' || item.getAttribute('data-ack-new') === '1';
+      } else if (activeFilter === 'meeting') {
+        matchFilter = item.getAttribute('data-meeting') === '1';
+      }
+      item.hidden = !(matchSearch && matchFilter);
+    });
   }
 
   function findListItem(taskId) {
@@ -154,6 +331,35 @@
     window.history.replaceState({}, '', url.pathname + url.search + url.hash);
   }
 
+  function mountPanelHtml(taskId, html) {
+    if (!panelsHost || !html) return;
+    var existing = findPanel(taskId);
+    if (existing) existing.remove();
+    var wrap = document.createElement('div');
+    wrap.innerHTML = html.trim();
+    var panel = wrap.firstElementChild;
+    if (!panel) return;
+    if (normId(taskId) !== normId(activeTaskId)) {
+      panel.hidden = true;
+    } else {
+      panel.hidden = false;
+      if (emptyEl) emptyEl.hidden = true;
+    }
+    panelsHost.appendChild(panel);
+    bindPanelInteractions(panel);
+  }
+
+  function fetchPanel(taskId, opts) {
+    opts = opts || {};
+    return postAjax('desk_panel', { task_id: taskId }).then(function (data) {
+      if (data && data.ok && data.html) {
+        mountPanelHtml(taskId, data.html);
+        if (opts.show) selectTask(taskId, { skipFetch: true, noScroll: opts.noScroll });
+      }
+      return data;
+    });
+  }
+
   function selectTask(taskId, opts) {
     opts = opts || {};
     taskId = normId(taskId);
@@ -163,7 +369,9 @@
         el.classList.remove('edesk-list__item--active');
         el.setAttribute('aria-current', 'false');
       });
-      panels.forEach(function (p) { p.hidden = true; });
+      qsa('.edesk-panel', root).forEach(function (p) {
+        p.hidden = true;
+      });
       if (emptyEl) emptyEl.hidden = false;
       setMobileDetail(false);
       if (!opts.skipUrl) updateUrl('');
@@ -172,14 +380,20 @@
 
     var item = findListItem(taskId);
     var panel = findPanel(taskId);
-    if (!item || !panel) {
+    if (!item && rowCache[taskId]) {
+      var section = rowCache[taskId].section;
+      showList(section);
+      item = findListItem(taskId);
+    }
+    if (!item) {
+      if (!opts.skipFetch) {
+        fetchPanel(taskId, { show: true, noScroll: opts.noScroll });
+      }
       return;
     }
 
     var section = item.getAttribute('data-section') || 'mine';
-    if (section !== activeSection) {
-      showList(section);
-    }
+    if (section !== activeSection) showList(section);
 
     activeTaskId = taskId;
     qsa('.edesk-list__item--active', root).forEach(function (el) {
@@ -189,50 +403,32 @@
     item.classList.add('edesk-list__item--active');
     item.setAttribute('aria-current', 'true');
 
-    panels.forEach(function (p) { p.hidden = true; });
-    panel.hidden = false;
-    if (emptyEl) emptyEl.hidden = true;
+    if (!panel && !opts.skipFetch) {
+      fetchPanel(taskId, { show: true, noScroll: opts.noScroll });
+      ackOpenedItem(item);
+      setMobileDetail(true);
+      if (!opts.skipUrl) updateUrl(taskId);
+      return;
+    }
+
+    qsa('.edesk-panel', root).forEach(function (p) {
+      p.hidden = true;
+    });
+    if (panel) {
+      panel.hidden = false;
+      if (emptyEl) emptyEl.hidden = true;
+    }
 
     ackOpenedItem(item);
     setMobileDetail(true);
     if (!opts.skipUrl) updateUrl(taskId);
-
-    if (detailScroll && !opts.noScroll) {
-      detailScroll.scrollTop = 0;
-    }
+    if (panelsHost && !opts.noScroll) panelsHost.scrollTop = 0;
   }
 
-  function initialTaskId() {
-    var params = new URLSearchParams(window.location.search);
-    var fromQuery = normId(params.get('ticket'));
-    if (fromQuery && (findListItem(fromQuery) || findPanel(fromQuery))) {
-      return fromQuery;
-    }
-    var hash = window.location.hash.replace(/^#ticket-/, '');
-    if (hash && (findListItem(hash) || findPanel(hash))) {
-      return normId(hash);
-    }
-    var prefer = qs('.edesk-list__item--notify[data-section="mine"]', root)
-      || qs('.edesk-list__item--new[data-section="pool"]', root)
-      || qs('.edesk-list__item[data-section="mine"]', root)
-      || qs('.edesk-list__item[data-section="pool"]', root);
-    return prefer ? normId(prefer.getAttribute('data-task-id')) : '';
-  }
-
-  function filterLists(query) {
-    query = String(query || '').trim().toLowerCase();
-    qsa('.edesk-list__item', root).forEach(function (item) {
-      if (query === '') {
-        item.hidden = false;
-        return;
-      }
-      var text = (item.textContent || '').toLowerCase();
-      item.hidden = text.indexOf(query) === -1;
-    });
-  }
-
-  function bindStatusForms() {
-    qsa('.edesk-status-form', root).forEach(function (form) {
+  function bindStatusForms(scope) {
+    qsa('.edesk-status-form', scope || root).forEach(function (form) {
+      if (form.getAttribute('data-bound') === '1') return;
+      form.setAttribute('data-bound', '1');
       var select = form.querySelector('.js-task-status-select');
       var commentField = form.querySelector('.field--status-comment');
       var commentInput = commentField ? commentField.querySelector('textarea[name="status_comment"]') : null;
@@ -251,27 +447,171 @@
     });
   }
 
-  tabs.forEach(function (tab) {
+  function bindPanelInteractions(panel) {
+    bindStatusForms(panel);
+    qsa('.edesk-pipeline__step', panel).forEach(function (step) {
+      step.addEventListener('click', function () {
+        var form = panel.querySelector('.edesk-status-form');
+        var select = form ? form.querySelector('.js-task-status-select') : null;
+        if (!select) return;
+        select.value = step.getAttribute('data-status') || select.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        qsa('.edesk-pipeline__step', panel).forEach(function (s) {
+          s.classList.toggle('edesk-pipeline__step--current', s === step);
+        });
+      });
+    });
+  }
+
+  function bindAjaxForms() {
+    root.addEventListener('submit', function (e) {
+      var form = e.target;
+      if (!form || !form.getAttribute) return;
+
+      if (form.classList.contains('edesk-ajax-claim')) {
+        e.preventDefault();
+        var claimId = (form.querySelector('[name="task_id"]') || {}).value || '';
+        var btn = form.querySelector('button[type="submit"]');
+        if (btn) btn.disabled = true;
+        postAjax('claim_task', { task_id: claimId })
+          .then(function (data) {
+            if (!data || !data.ok) {
+              showToast((data && data.error) || 'Could not claim task.', 'err');
+              return;
+            }
+            showToast('Task assigned to you.', 'ok');
+            if (data.desk) applyDeskLists(data.desk, true);
+            if (typeof data.bell === 'number') setDeskBell(data.bell);
+            if (data.html) mountPanelHtml(data.task_id, data.html);
+            showList('mine');
+            selectTask(data.task_id, { skipFetch: true });
+          })
+          .finally(function () {
+            if (btn) btn.disabled = false;
+          });
+        return;
+      }
+
+      if (form.classList.contains('edesk-ajax-status')) {
+        e.preventDefault();
+        var taskId = (form.querySelector('[name="task_id"]') || {}).value || '';
+        var btn = form.querySelector('button[type="submit"]');
+        if (btn) btn.disabled = true;
+        postAjax('status_save', {
+          task_id: taskId,
+          status: (form.querySelector('[name="status"]') || {}).value || '',
+          deliverable_output: (form.querySelector('[name="deliverable_output"]') || {}).value || '',
+          status_comment: (form.querySelector('[name="status_comment"]') || {}).value || '',
+        })
+          .then(function (data) {
+            if (!data || !data.ok) {
+              showToast((data && data.error) || 'Could not save status.', 'err');
+              return;
+            }
+            showToast('Status saved.', 'ok');
+            if (data.desk) applyDeskLists(data.desk, true);
+            if (typeof data.bell === 'number') setDeskBell(data.bell);
+            if (data.html) mountPanelHtml(taskId, data.html);
+            selectTask(taskId, { skipFetch: true, noScroll: true });
+          })
+          .finally(function () {
+            if (btn) btn.disabled = false;
+          });
+        return;
+      }
+
+      if (form.classList.contains('ticket__thread-form')) {
+        e.preventDefault();
+        var tid = (form.querySelector('[name="task_id"]') || {}).value || '';
+        var body = (form.querySelector('[name="thread_body"]') || {}).value || '';
+        var tbtn = form.querySelector('button[type="submit"]');
+        if (tbtn) tbtn.disabled = true;
+        postAjax('thread_send', { task_id: tid, thread_body: body })
+          .then(function (data) {
+            if (!data || !data.ok) {
+              showToast((data && data.error) || 'Could not send message.', 'err');
+              return;
+            }
+            form.querySelector('[name="thread_body"]').value = '';
+            showToast('Message sent.', 'ok');
+            if (data.html) mountPanelHtml(tid, data.html);
+            selectTask(tid, { skipFetch: true, noScroll: true });
+            if (typeof data.bell === 'number') setDeskBell(data.bell);
+          })
+          .finally(function () {
+            if (tbtn) tbtn.disabled = false;
+          });
+      }
+    });
+  }
+
+  function applyDeskLists(desk, preserveSelection) {
+    if (!desk) return;
+    renderList('pool', desk.pool || [], preserveSelection);
+    renderList('mine', desk.mine || [], preserveSelection);
+    updateTabBadges(desk.pool_count || (desk.pool || []).length, desk.mine_count || (desk.mine || []).length);
+    refreshRelativeTimes();
+    if (preserveSelection && activeTaskId) {
+      var row = rowCache[activeTaskId];
+      var cached = findListItem(activeTaskId);
+      var prev = cached ? cached.getAttribute('data-updated-at') : '';
+      if (row && row.updated_at && row.updated_at !== prev) {
+        fetchPanel(activeTaskId, { noScroll: true });
+      }
+    }
+  }
+
+  function handlePoll(data) {
+    if (!data || !data.ok) return false;
+
+    if (data.desk) {
+      applyDeskLists(data.desk, true);
+    }
+    if (typeof data.bell === 'number') setDeskBell(data.bell);
+
+    setLiveStatus('Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), false);
+
+    if (activeTaskId) {
+      var row = rowCache[activeTaskId];
+      var cached = findListItem(activeTaskId);
+      var prev = cached ? cached.getAttribute('data-updated-at') : '';
+      if (row && row.updated_at && row.updated_at !== prev) {
+        fetchPanel(activeTaskId, { noScroll: true });
+      }
+    }
+
+    return true;
+  }
+
+  function initialTaskId() {
+    var params = new URLSearchParams(window.location.search);
+    var fromQuery = normId(params.get('ticket'));
+    if (fromQuery) return fromQuery;
+    var hash = window.location.hash.replace(/^#ticket-/, '');
+    if (hash) return normId(hash);
+    return '';
+  }
+
+  qsa('.edesk-tab', root).forEach(function (tab) {
     tab.addEventListener('click', function () {
       var section = tab.getAttribute('data-section') || 'mine';
       showList(section);
       if (isMobile()) {
-        selectTask('', { skipUrl: true });
-        setMobileDetail(false);
+        selectTask('');
       } else {
         var first = qs('.edesk-list__item[data-section="' + section + '"]:not([hidden])', root);
-        if (first) {
-          selectTask(first.getAttribute('data-task-id') || '');
-        } else {
-          selectTask('');
-        }
+        selectTask(first ? first.getAttribute('data-task-id') || '' : '');
       }
     });
   });
 
-  qsa('.edesk-list__item', root).forEach(function (item) {
-    item.addEventListener('click', function () {
-      selectTask(item.getAttribute('data-task-id') || '');
+  qsa('.edesk-filter', root).forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      activeFilter = btn.getAttribute('data-filter') || 'all';
+      qsa('.edesk-filter', root).forEach(function (b) {
+        b.classList.toggle('edesk-filter--active', b === btn);
+      });
+      applyListFilters();
     });
   });
 
@@ -285,7 +625,8 @@
 
   if (searchInput) {
     searchInput.addEventListener('input', function () {
-      filterLists(searchInput.value);
+      searchQuery = searchInput.value;
+      applyListFilters();
     });
   }
 
@@ -295,20 +636,75 @@
     });
   });
 
+  document.addEventListener('keydown', function (e) {
+    if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
+    var items = qsa('.edesk-list:not([hidden]) .edesk-list__item:not([hidden])', root);
+    if (items.length === 0) return;
+    var idx = items.findIndex(function (el) {
+      return el.classList.contains('edesk-list__item--active');
+    });
+    if (e.key === '/' && searchInput) {
+      e.preventDefault();
+      searchInput.focus();
+    } else if (e.key === 'j' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      var next = items[Math.min(idx + 1, items.length - 1)];
+      if (next) selectTask(next.getAttribute('data-task-id') || '');
+    } else if (e.key === 'k' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      var prev = items[Math.max(idx <= 0 ? 0 : idx - 1, 0)];
+      if (prev) selectTask(prev.getAttribute('data-task-id') || '');
+    }
+  });
+
+  document.addEventListener('click', function (e) {
+    var link = e.target && e.target.closest ? e.target.closest('.desk-bell-dropdown__item') : null;
+    if (!link || !link.closest('.desk-bell-wrap')) return;
+    var idEl = link.querySelector('.desk-bell-dropdown__id');
+    var tid = idEl ? normId(idEl.textContent) : '';
+    if (tid) {
+      e.preventDefault();
+      selectTask(tid);
+      var drop = qs('.desk-bell-dropdown');
+      var btn = qs('.desk-bell-wrap .desk-bell');
+      if (drop) drop.hidden = true;
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  bindListClicks(root);
+  bindStatusForms(root);
+  qsa('.edesk-panel', root).forEach(bindPanelInteractions);
+  bindAjaxForms();
+
   var defaultTab = root.getAttribute('data-default-tab') || 'mine';
   showList(defaultTab);
-  bindStatusForms();
-  selectTask(initialTaskId(), { noScroll: true });
+
+  var initId = initialTaskId();
+  if (initId) {
+    selectTask(initId, { noScroll: true });
+  } else if (!isMobile()) {
+    var first = qs('.edesk-list__item--notify[data-section="mine"]', root)
+      || qs('.edesk-list__item[data-section="' + defaultTab + '"]', root);
+    if (first) selectTask(first.getAttribute('data-task-id') || '', { noScroll: true });
+  }
+
+  refreshRelativeTimes();
+  setInterval(refreshRelativeTimes, 45000);
+  setLiveStatus('Connected', false);
 
   var startBell = parseInt(root.getAttribute('data-bell') || '0', 10);
   var lastBell = parseInt(sessionStorage.getItem(BellKey) || '-1', 10);
-  if (lastBell >= 0 && startBell > lastBell) {
-    playNotifyPing();
-  }
+  if (lastBell >= 0 && startBell > lastBell) playNotifyPing();
   sessionStorage.setItem(BellKey, String(startBell));
 
   window.AkhEditorDesk = {
     selectTask: selectTask,
     setDeskBell: setDeskBell,
+    handlePoll: handlePoll,
+    showToast: showToast,
+    setLiveSyncing: function (on) {
+      setLiveStatus(on ? 'Syncing…' : 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), on);
+    },
   };
 })();

@@ -263,13 +263,25 @@
     lastBell = b;
     lastPool = p;
 
-    if (sigChanged) {
+    if (cfg.mode === 'editor' && window.AkhEditorDesk && typeof window.AkhEditorDesk.handlePoll === 'function') {
+      window.AkhEditorDesk.handlePoll(data);
+    } else if (sigChanged) {
       window.location.reload();
     }
   }
 
   function pollTick() {
-    postPoll().then(onPollData).catch(function () {});
+    if (window.AkhEditorDesk && typeof window.AkhEditorDesk.setLiveSyncing === 'function') {
+      window.AkhEditorDesk.setLiveSyncing(true);
+    }
+    postPoll()
+      .then(onPollData)
+      .catch(function () {})
+      .finally(function () {
+        if (window.AkhEditorDesk && typeof window.AkhEditorDesk.setLiveSyncing === 'function') {
+          window.AkhEditorDesk.setLiveSyncing(false);
+        }
+      });
   }
 
   function boot() {

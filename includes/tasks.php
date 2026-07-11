@@ -583,6 +583,7 @@ function akh_task_ajax_poll_editor(string $editorUsername): array
 {
     $editorUsername = strtolower(trim($editorUsername));
     require_once __DIR__ . '/meeting-requests.php';
+    require_once __DIR__ . '/editor-dashboard-api.php';
 
     return [
         'ok' => true,
@@ -591,6 +592,7 @@ function akh_task_ajax_poll_editor(string $editorUsername): array
         'sig' => akh_task_poll_signature_all(),
         'notices' => akh_task_editor_notice_rows($editorUsername),
         'reminders' => akh_meeting_request_upcoming_reminders(),
+        'desk' => akh_editor_desk_poll_bundle($editorUsername),
     ];
 }
 

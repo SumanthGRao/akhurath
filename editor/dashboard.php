@@ -43,6 +43,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim((string) ($_POST['ajax_action'
         }
         exit;
     }
+    if ($ajax === 'desk_panel') {
+        $taskId = trim((string) ($_POST['task_id'] ?? ''));
+        try {
+            echo json_encode([
+                'ok' => true,
+                'task_id' => $taskId,
+                'html' => akh_editor_desk_panel_html($editor, $taskId, akh_csrf_token()),
+            ], JSON_THROW_ON_ERROR);
+        } catch (\Throwable) {
+            echo json_encode(['ok' => false]);
+        }
+        exit;
+    }
+    if ($ajax === 'thread_send') {
+        $taskId = trim((string) ($_POST['task_id'] ?? ''));
+        $body = trim((string) ($_POST['thread_body'] ?? ''));
+        $err = akh_task_editor_append_thread($taskId, $editor, $body);
+        if ($err !== null) {
+            echo json_encode(['ok' => false, 'error' => $err]);
+            exit;
+        }
+        try {
+            echo json_encode([
+                'ok' => true,
+                'task_id' => $taskId,
+                'html' => akh_editor_desk_panel_html($editor, $taskId, akh_csrf_token()),
+                'bell' => akh_task_editor_board_bell_count($editor),
+            ], JSON_THROW_ON_ERROR);
+        } catch (\Throwable) {
+            echo json_encode(['ok' => true, 'task_id' => $taskId]);
+        }
+        exit;
+    }
+    if ($ajax === 'claim_task') {
+        $taskId = trim((string) ($_POST['task_id'] ?? ''));
+        $t = akh_task_claim($taskId, $editor);
+        if ($t === null) {
+            echo json_encode(['ok' => false, 'error' => 'That task is no longer available to claim.']);
+            exit;
+        }
+        $taskId = (string) ($t['id'] ?? $taskId);
+        try {
+            echo json_encode([
+                'ok' => true,
+                'task_id' => $taskId,
+                'html' => akh_editor_desk_panel_html($editor, $taskId, akh_csrf_token()),
+                'desk' => akh_editor_desk_poll_bundle($editor),
+                'bell' => akh_task_editor_board_bell_count($editor),
+            ], JSON_THROW_ON_ERROR);
+        } catch (\Throwable) {
+            echo json_encode(['ok' => true, 'task_id' => $taskId]);
+        }
+        exit;
+    }
+    if ($ajax === 'status_save') {
+        $taskId = trim((string) ($_POST['task_id'] ?? ''));
+        $status = (string) ($_POST['status'] ?? '');
+        $deliverable = trim((string) ($_POST['deliverable_output'] ?? ''));
+        $statusComment = trim((string) ($_POST['status_comment'] ?? ''));
+        $existing = akh_task_by_id($taskId);
+        $t = akh_task_set_status($taskId, $editor, $status, $deliverable, $statusComment);
+        if ($t === null) {
+            $waErr = akh_whatsapp_task_sync_last_error();
+            if ($waErr !== '') {
+                $msg = $waErr;
+            } elseif (
+                is_array($existing)
+                && (string) ($existing['status'] ?? '') !== $status
+                && $statusComment === ''
+            ) {
+                $msg = 'A status note is required when changing workflow status.';
+            } else {
+                $msg = 'Could not update status.';
+            }
+            echo json_encode(['ok' => false, 'error' => $msg]);
+            exit;
+        }
+        $taskId = (string) ($t['id'] ?? $taskId);
+        try {
+            echo json_encode([
+                'ok' => true,
+                'task_id' => $taskId,
+                'html' => akh_editor_desk_panel_html($editor, $taskId, akh_csrf_token()),
+                'desk' => akh_editor_desk_poll_bundle($editor),
+                'bell' => akh_task_editor_board_bell_count($editor),
+            ], JSON_THROW_ON_ERROR);
+        } catch (\Throwable) {
+            echo json_encode(['ok' => true, 'task_id' => $taskId]);
+        }
+        exit;
+    }
     if ($ajax === 'poll') {
         try {
             echo json_encode(akh_task_ajax_poll_editor($editor), JSON_THROW_ON_ERROR);
@@ -202,6 +293,7 @@ $attendanceSinceLabel = $attendanceSinceTs !== null ? date('M j, g:i A', $attend
 $leavePendingCount = AKH_EDITOR_ATTENDANCE_ENABLED ? akh_editor_leave_pending_for_editor($editor) : 0;
 
 require_once AKH_ROOT . '/includes/editor-dashboard-render.php';
+require_once AKH_ROOT . '/includes/editor-dashboard-api.php';
 $edeskCssVer = is_file(AKH_ROOT . '/assets/css/editor-dashboard.css') ? (string) filemtime(AKH_ROOT . '/assets/css/editor-dashboard.css') : '1';
 $edeskJsVer = is_file(AKH_ROOT . '/assets/js/editor-dashboard.js') ? (string) filemtime(AKH_ROOT . '/assets/js/editor-dashboard.js') : '1';
 $defaultDeskTab = $mine !== [] ? 'mine' : 'pool';
@@ -247,6 +339,11 @@ require_once AKH_ROOT . '/includes/header.php';
           </button>
         </nav>
         <div class="edesk-topbar__actions">
+          <span class="edesk-live" id="edesk-live" title="Board refreshes automatically">
+            <span class="edesk-live__dot" aria-hidden="true"></span>
+            <span class="edesk-live__label">Live</span>
+            <span class="edesk-live__time" id="edesk-live-time">syncing…</span>
+          </span>
           <?php if (AKH_EDITOR_ATTENDANCE_ENABLED): ?>
             <span class="edesk-att" title="Attendance">
               <span class="edesk-att__dot<?php echo $attendanceOn ? ' edesk-att__dot--on' : ''; ?>" aria-hidden="true"></span>
@@ -324,6 +421,11 @@ require_once AKH_ROOT . '/includes/header.php';
           <div class="edesk-sidebar__tools">
             <input type="search" class="edesk-search" id="edesk-search" placeholder="Search tasks…" aria-label="Search tasks" />
           </div>
+          <div class="edesk-filters" role="group" aria-label="Filter tasks">
+            <button type="button" class="edesk-filter edesk-filter--active" data-filter="all">All</button>
+            <button type="button" class="edesk-filter" data-filter="unread">Unread</button>
+            <button type="button" class="edesk-filter" data-filter="meeting">Meetings</button>
+          </div>
           <p class="edesk-sidebar__hint" id="edesk-sidebar-hint">Select a task to view brief, updates, and messages.</p>
           <div class="edesk-list-wrap">
             <div class="edesk-list" id="edesk-list-pool" role="list"<?php echo $defaultDeskTab === 'pool' ? '' : ' hidden'; ?>>
@@ -359,7 +461,7 @@ require_once AKH_ROOT . '/includes/header.php';
           <div class="edesk-detail__toolbar">
             <button type="button" class="edesk-detail__back">← All tasks</button>
           </div>
-          <div class="edesk-detail__scroll">
+          <div class="edesk-detail__scroll" id="edesk-detail-scroll">
             <div class="edesk-empty" id="edesk-empty"<?php echo $openTicketId !== '' ? ' hidden' : ''; ?>>
               <h2 class="edesk-empty__title">Select a task</h2>
               <p>Pick a job from the list to read the brief, client updates, and messages — everything stays on one screen.</p>
@@ -379,6 +481,7 @@ require_once AKH_ROOT . '/includes/header.php';
           </div>
         </section>
       </div>
+      <div class="edesk-toasts" id="edesk-toasts" aria-live="polite" aria-atomic="true"></div>
     </div>
   </main>
   <?php require_once AKH_ROOT . '/includes/meeting-join-modal.php'; ?>
