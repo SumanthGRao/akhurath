@@ -126,9 +126,11 @@ function akh_editor_desk_list_row_json(array $vm): array
         'notify' => (bool) $vm['notify'],
         'unseen_new' => (bool) $vm['unseen_new'],
         'has_reminder' => (bool) $vm['has_reminder'],
+        'meeting_unread' => (bool) ($vm['meeting_unread'] ?? false),
         'priority' => $priority,
         'ack_new' => (bool) $vm['ack_new'],
         'ack_editor' => (bool) $vm['ack_editor'],
+        'ack_meeting' => (bool) ($vm['ack_meeting'] ?? false),
         'msg_count' => count(akh_task_conversation_list($t)),
         'from_whatsapp' => (string) ($t['edit_type'] ?? '') === 'studio_admin'
             || strtolower(trim((string) ($t['client_username'] ?? ''))) === 'whatsapp',

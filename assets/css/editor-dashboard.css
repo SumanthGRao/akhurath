@@ -861,46 +861,81 @@
 /* Workflow pipeline (ServiceNow / ClickUp style) */
 .edesk-pipeline {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  padding: 0.55rem 0.85rem;
-  border-bottom: 1px solid var(--edesk-line);
-  background: rgba(0, 0, 0, 0.02);
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  margin: 0 0.85rem 0.75rem;
+  padding: 0.35rem;
+  border: 1px solid var(--edesk-line);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 246, 249, 0.95));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
   overflow-x: auto;
 }
 
 .edesk-pipeline__step {
   flex: 1 1 auto;
-  min-width: 4.5rem;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid var(--edesk-line);
-  border-radius: 8px;
-  background: #fff;
-  font-family: var(--font-mono, "Sometype Mono", ui-monospace, monospace);
-  font-size: 0.68rem;
-  font-weight: 500;
+  min-width: 5.5rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--font-display, "Plus Jakarta Sans", var(--font-body, Inter), system-ui, sans-serif);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   color: var(--edesk-muted);
   cursor: pointer;
   text-align: center;
   white-space: nowrap;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease, transform 0.12s ease;
 }
 
 .edesk-pipeline__step:hover {
-  border-color: rgba(61, 95, 140, 0.35);
+  background: rgba(61, 95, 140, 0.08);
+  border-color: rgba(61, 95, 140, 0.18);
   color: var(--edesk-accent);
+  transform: translateY(-1px);
+}
+
+.edesk-pipeline__step:active {
+  transform: translateY(0);
 }
 
 .edesk-pipeline__step--done {
-  background: rgba(47, 143, 91, 0.08);
-  border-color: rgba(47, 143, 91, 0.22);
-  color: #2a7a4e;
+  background: rgba(47, 143, 91, 0.12);
+  border-color: rgba(47, 143, 91, 0.2);
+  color: #236b42;
 }
 
 .edesk-pipeline__step--current {
-  background: rgba(61, 95, 140, 0.14);
-  border-color: rgba(61, 95, 140, 0.4);
-  color: var(--edesk-accent);
-  box-shadow: 0 0 0 1px rgba(61, 95, 140, 0.12);
+  background: linear-gradient(180deg, rgba(61, 95, 140, 0.2), rgba(61, 95, 140, 0.12));
+  border-color: rgba(61, 95, 140, 0.35);
+  color: #2f4f7a;
+  box-shadow: 0 1px 2px rgba(61, 95, 140, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.edesk-claim-btn {
+  font-family: var(--font-display, "Plus Jakarta Sans", var(--font-body, Inter), system-ui, sans-serif);
+  font-weight: 600;
+  border-radius: 999px;
+  padding-inline: 1.25rem;
+}
+
+.edesk-update__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin-bottom: 0.35rem;
+}
+
+.edesk-update--meeting {
+  border-color: rgba(196, 120, 34, 0.28);
+  background: rgba(196, 120, 34, 0.06);
+}
+
+.edesk-list__item--meeting-unread {
+  box-shadow: inset 3px 0 0 rgba(196, 120, 34, 0.75);
 }
 
 /* Toasts */

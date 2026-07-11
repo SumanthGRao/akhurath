@@ -36,6 +36,9 @@ function akh_editor_task_view_model(
     $notify = ($t['editor_feedback_notify'] ?? false) === true || $taskAlert !== null;
     $unseenNew = $section === 'pool' && $tid !== '' && !in_array($tid, $seenNew, true);
     $hasReminder = isset($editorReminderCodes[$tidNorm]);
+    $meetingAlertUnread = is_array($taskAlert)
+        && str_starts_with((string) ($taskAlert['kind'] ?? ''), 'meeting_');
+    $meetingUnread = $hasReminder || $meetingAlertUnread;
     $fromWhatsapp = (string) ($t['edit_type'] ?? '') === 'studio_admin'
         || strtolower(trim((string) ($t['client_username'] ?? ''))) === 'whatsapp';
     $classes = ['edesk-list__item', 'ticket--st-' . $stSlug];
@@ -47,6 +50,9 @@ function akh_editor_task_view_model(
     }
     if ($hasReminder) {
         $classes[] = 'edesk-list__item--meeting';
+    }
+    if ($meetingUnread) {
+        $classes[] = 'edesk-list__item--meeting-unread';
     }
 
     return [
@@ -62,11 +68,13 @@ function akh_editor_task_view_model(
         'notify' => $notify,
         'unseen_new' => $unseenNew,
         'has_reminder' => $hasReminder,
+        'meeting_unread' => $meetingUnread,
         'from_whatsapp' => $fromWhatsapp,
         'list_classes' => implode(' ', $classes),
         'style_attr' => akh_task_ticket_style_attr($t),
         'ack_new' => $unseenNew,
         'ack_editor' => $notify && $section === 'mine',
+        'ack_meeting' => $meetingUnread,
     ];
 }
 
@@ -95,6 +103,9 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
       data-updated-at="<?php echo h((string) ($t['updated_at'] ?? '')); ?>"
       <?php if ($vm['ack_new']): ?>data-ack-new="1"<?php endif; ?>
       <?php if ($vm['ack_editor']): ?>data-ack-editor="1"<?php endif; ?>
+      <?php if ($vm['ack_meeting']): ?>data-ack-meeting="1"<?php endif; ?>
+      data-meeting="<?php echo !empty($vm['meeting_unread']) ? '1' : '0'; ?>"
+      data-notify="<?php echo $vm['notify'] ? '1' : '0'; ?>"
       aria-current="<?php echo $selected ? 'true' : 'false'; ?>"
     >
       <span class="edesk-list__row">
@@ -219,7 +230,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
                 <input type="hidden" name="action" value="claim" />
                 <input type="hidden" name="task_id" value="<?php echo h($tid); ?>" />
                 <p class="edesk-muted">Claim this job to start editing and message the client.</p>
-                <button type="submit" class="btn btn--primary">Assign to me</button>
+                <button type="submit" class="btn btn--primary edesk-claim-btn">Assign to me</button>
               </form>
             </section>
           <?php else: ?>
@@ -258,8 +269,13 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
           <section class="edesk-card edesk-card--updates" aria-label="Client updates">
             <h3 class="edesk-card__title">Updates</h3>
             <?php if ($taskAlert !== null): ?>
-              <article class="edesk-update edesk-update--alert">
-                <p class="edesk-update__label"><?php echo h(akh_dashboard_alert_kind_label($taskAlert)); ?></p>
+              <article class="edesk-update edesk-update--alert<?php echo !empty($vm['meeting_unread']) ? ' edesk-update--meeting' : ''; ?>">
+                <div class="edesk-update__head">
+                  <p class="edesk-update__label"><?php echo h(akh_dashboard_alert_kind_label($taskAlert)); ?></p>
+                  <?php if (!empty($vm['meeting_unread'])): ?>
+                    <button type="button" class="btn btn--ghost btn--sm edesk-meeting-read" data-task-id="<?php echo h($tid); ?>">Mark read</button>
+                  <?php endif; ?>
+                </div>
                 <div class="edesk-prose"><?php echo nl2br(h((string) ($taskAlert['preview'] ?? ''))); ?></div>
                 <?php if (trim((string) ($taskAlert['meet_link'] ?? '')) !== ''): ?>
                   <a class="edesk-link" href="<?php echo h((string) $taskAlert['meet_link']); ?>" target="_blank" rel="noopener noreferrer">Join Google Meet</a>

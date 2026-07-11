@@ -878,15 +878,23 @@ function akh_task_ajax_editor_view_ack(string $editorUsername, string $taskId, s
     }
     $t = akh_task_by_id($taskId);
     if ($t === null) {
-        return ['ok' => false, 'error' => 'not_found'];
+        foreach (akh_tasks_load() as $row) {
+            if (akh_task_ids_match((string) ($row['id'] ?? ''), $taskId)) {
+                $t = $row;
+                break;
+            }
+        }
     }
     if ($ackKind === 'new') {
-        if (($t['status'] ?? '') !== 'new' || ($t['assigned_editor'] ?? null) !== null) {
+        if ($t === null || ($t['status'] ?? '') !== 'new' || ($t['assigned_editor'] ?? null) !== null) {
             return ['ok' => false, 'error' => 'not_new'];
         }
         akh_task_editor_mark_new_seen($editorUsername, $taskId);
+    } elseif ($ackKind === 'meeting') {
+        require_once __DIR__ . '/dashboard-alerts.php';
+        akh_dashboard_mark_task_read($taskId);
     } elseif ($ackKind === 'editor_task') {
-        if (strtolower((string) ($t['assigned_editor'] ?? '')) !== $editorUsername) {
+        if ($t === null || strtolower((string) ($t['assigned_editor'] ?? '')) !== $editorUsername) {
             return ['ok' => false, 'error' => 'not_yours'];
         }
         akh_task_editor_clear_feedback_notify($taskId, $editorUsername);
@@ -896,7 +904,13 @@ function akh_task_ajax_editor_view_ack(string $editorUsername, string $taskId, s
         return ['ok' => false, 'error' => 'bad_kind'];
     }
 
-    return ['ok' => true, 'bell' => akh_task_editor_board_bell_count($editorUsername)];
+    $out = ['ok' => true, 'bell' => akh_task_editor_board_bell_count($editorUsername)];
+    if ($ackKind === 'meeting' || $ackKind === 'editor_task') {
+        require_once __DIR__ . '/editor-dashboard-api.php';
+        $out['desk'] = akh_editor_desk_poll_bundle($editorUsername);
+    }
+
+    return $out;
 }
 
 /**
@@ -2175,6 +2189,11 @@ function akh_task_claim(string $taskId, string $editorUsername): ?array
     if ($parentId !== '') {
         akh_task_bundle_sync_parent($parentId);
         akh_task_bundle_flag_parent_client_notify($parentId, (string) ($out['client_notify_detail'] ?? ''));
+    }
+
+    if (function_exists('akh_wa_push_studio_assignment_to_whatsapp')) {
+        require_once __DIR__ . '/whatsapp-tasks.php';
+        akh_wa_push_studio_assignment_to_whatsapp((string) ($out['id'] ?? $taskId), $editorUsername);
     }
 
     $cu = strtolower(trim((string) ($out['client_username'] ?? '')));

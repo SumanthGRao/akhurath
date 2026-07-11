@@ -400,7 +400,7 @@ require_once AKH_ROOT . '/includes/header.php';
       <?php endif; ?>
 
       <?php if ($editorMeetingRows !== []): ?>
-        <div class="edesk-meetings" aria-label="Meeting requests">
+        <div class="edesk-meetings" id="edesk-meetings" aria-label="Meeting requests">
           <span class="edesk-meetings__label">Meetings</span>
           <?php foreach ($editorMeetingRows as $mr): ?>
             <?php
@@ -414,6 +414,7 @@ require_once AKH_ROOT . '/includes/header.php';
               <?php if ($mLink !== ''): ?>
                 <a class="text-link" href="<?php echo h($mLink); ?>" target="_blank" rel="noopener noreferrer">Join</a>
               <?php endif; ?>
+              <button type="button" class="btn btn--ghost btn--sm edesk-meeting-read" data-task-id="<?php echo h($mCode); ?>">Mark read</button>
             </span>
           <?php endforeach; ?>
         </div>

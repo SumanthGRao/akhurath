@@ -643,6 +643,74 @@ function akh_wa_editor_username_by_id(int $editorId): ?string
     return $u !== '' ? $u : null;
 }
 
+/**
+ * Mirror studio-board assignment onto whatsapp_tasks without re-running full board sync.
+ */
+function akh_wa_push_studio_assignment_to_whatsapp(string $taskCode, ?string $editorUsername = null): void
+{
+    if (!akh_wa_tasks_table_exists()) {
+        return;
+    }
+
+    require_once __DIR__ . '/tasks.php';
+
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    if ($taskCode === '') {
+        return;
+    }
+
+    if ($editorUsername === null) {
+        $studio = akh_task_by_id($taskCode);
+        if ($studio === null) {
+            foreach (akh_tasks_load() as $t) {
+                if (akh_task_ids_match((string) ($t['id'] ?? ''), $taskCode)) {
+                    $studio = $t;
+                    break;
+                }
+            }
+        }
+        $editorUsername = is_array($studio)
+            ? strtolower(trim((string) ($studio['assigned_editor'] ?? '')))
+            : '';
+    } else {
+        $editorUsername = strtolower(trim($editorUsername));
+    }
+
+    $waRow = akh_wa_task_by_code($taskCode);
+    if ($waRow === null) {
+        return;
+    }
+
+    $waId = (int) ($waRow['id'] ?? 0);
+    if ($waId <= 0) {
+        return;
+    }
+
+    $editorId = null;
+    if ($editorUsername !== '') {
+        $st = akh_db()->prepare('SELECT id FROM users WHERE role = ? AND LOWER(TRIM(username)) = ? LIMIT 1');
+        $st->execute(['editor', $editorUsername]);
+        $id = (int) $st->fetchColumn();
+        if ($id > 0) {
+            $editorId = $id;
+        }
+    }
+
+    try {
+        if ($editorId === null) {
+            akh_db()->prepare(
+                'UPDATE whatsapp_tasks SET assigned_editor = NULL, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+            )->execute(['new', $waId]);
+        } else {
+            akh_db()->prepare(
+                'UPDATE whatsapp_tasks SET assigned_editor = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+            )->execute([$editorId, 'assigned', $waId]);
+        }
+    } catch (Throwable $e) {
+        error_log('akh_wa_push_studio_assignment_to_whatsapp: ' . $e->getMessage());
+    }
+}
+
 function akh_wa_find_studio_task_id(int $waId, string $taskCode): string
 {
     require_once __DIR__ . '/tasks.php';
@@ -760,6 +828,24 @@ function akh_wa_sync_to_studio(array $waRow): ?string
             }
         }
     } else {
+        $studio = akh_task_by_id($studioId);
+        if ($studio === null) {
+            foreach (akh_tasks_load() as $t) {
+                if (akh_task_ids_match((string) ($t['id'] ?? ''), $studioId)) {
+                    $studio = $t;
+                    break;
+                }
+            }
+        }
+        $studioEditor = is_array($studio)
+            ? strtolower(trim((string) ($studio['assigned_editor'] ?? '')))
+            : '';
+        if ($studioEditor !== '') {
+            akh_wa_push_studio_assignment_to_whatsapp($taskCode, $studioEditor);
+
+            return null;
+        }
+
         $assignErr = akh_task_admin_assign($studioId, null);
         if ($assignErr !== null) {
             return $assignErr;
@@ -802,6 +888,18 @@ function akh_wa_sync_whatsapp_pool_to_studio_board(): int
         while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
             if (!is_array($row)) {
                 continue;
+            }
+            $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+            if ($code !== '') {
+                $studio = akh_task_by_id($code);
+                if (
+                    is_array($studio)
+                    && ($studio['assigned_editor'] ?? null) !== null
+                    && trim((string) $studio['assigned_editor']) !== ''
+                ) {
+                    akh_wa_push_studio_assignment_to_whatsapp($code);
+                    continue;
+                }
             }
             if (akh_wa_sync_to_studio($row) === null) {
                 ++$synced;
