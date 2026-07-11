@@ -802,11 +802,22 @@ function akh_wa_sync_to_studio(array $waRow): ?string
             if (!akh_task_ids_match((string) ($t['id'] ?? ''), $studioId)) {
                 continue;
             }
-            $list[$i]['title'] = mb_strlen($title) > 200 ? mb_substr($title, 0, 197) . '…' : $title;
-            $list[$i]['description'] = mb_strlen($description) > 8000 ? mb_substr($description, 0, 7997) . '…' : $description;
+            $newTitle = mb_strlen($title) > 200 ? mb_substr($title, 0, 197) . '…' : $title;
+            $newDescription = mb_strlen($description) > 8000 ? mb_substr($description, 0, 7997) . '…' : $description;
+            $newDrive = $deliveryMode === 'google_drive' ? $driveLink : '';
+            $changed = (string) ($list[$i]['title'] ?? '') !== $newTitle
+                || (string) ($list[$i]['description'] ?? '') !== $newDescription
+                || (string) ($list[$i]['reference_link'] ?? '') !== $referenceLink
+                || (string) ($list[$i]['delivery_mode'] ?? '') !== $deliveryMode
+                || (string) ($list[$i]['drive_link'] ?? '') !== $newDrive;
+            if (!$changed) {
+                break;
+            }
+            $list[$i]['title'] = $newTitle;
+            $list[$i]['description'] = $newDescription;
             $list[$i]['reference_link'] = $referenceLink;
             $list[$i]['delivery_mode'] = $deliveryMode;
-            $list[$i]['drive_link'] = $deliveryMode === 'google_drive' ? $driveLink : '';
+            $list[$i]['drive_link'] = $newDrive;
             $list[$i]['updated_at'] = gmdate('c');
             $updated = true;
             break;

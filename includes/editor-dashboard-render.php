@@ -92,6 +92,9 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
     $st = (string) $vm['status'];
     $stSlug = (string) $vm['status_slug'];
     $section = (string) $vm['section'];
+    $listAt = $section === 'pool'
+        ? (string) (($t['created_at'] ?? '') !== '' ? $t['created_at'] : ($t['updated_at'] ?? ''))
+        : (string) (($t['updated_at'] ?? '') !== '' ? $t['updated_at'] : ($t['created_at'] ?? ''));
     ?>
     <button
       type="button"
@@ -101,6 +104,7 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
       data-task-id="<?php echo h($tid); ?>"
       data-section="<?php echo h($section); ?>"
       data-updated-at="<?php echo h((string) ($t['updated_at'] ?? '')); ?>"
+      data-list-at="<?php echo h($listAt); ?>"
       <?php if ($vm['ack_new']): ?>data-ack-new="1"<?php endif; ?>
       <?php if ($vm['ack_editor']): ?>data-ack-editor="1"<?php endif; ?>
       <?php if ($vm['ack_meeting']): ?>data-ack-meeting="1"<?php endif; ?>
@@ -130,7 +134,7 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
         <?php if ($vm['has_reminder']): ?>
           <span class="edesk-list__pill edesk-list__pill--soon">Soon</span>
         <?php endif; ?>
-        <span class="edesk-list__when" data-ts="<?php echo h((string) ($t['updated_at'] ?? '')); ?>"><?php echo h((string) ($t['updated_at'] ?? '')); ?></span>
+        <span class="edesk-list__when" data-ts="<?php echo h($listAt); ?>"><?php echo h($listAt); ?></span>
         <span class="edesk-list__client"><?php echo h((string) ($t['client_username'] ?? '')); ?></span>
       </span>
     </button>

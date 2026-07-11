@@ -126,15 +126,35 @@
     if (live) live.classList.toggle('edesk-live--sync', !!syncing);
   }
 
+  function parseTs(iso) {
+    if (!iso) return NaN;
+    var t = Date.parse(iso);
+    if (!isNaN(t)) return t;
+    t = Date.parse(String(iso).replace(' ', 'T'));
+    if (!isNaN(t)) return t;
+    if (!/Z|[+-]\d{2}:?\d{2}$/.test(String(iso))) {
+      t = Date.parse(String(iso).replace(' ', 'T') + 'Z');
+    }
+    return t;
+  }
+
   function relativeTime(iso) {
     if (!iso) return '';
-    var t = Date.parse(iso);
+    var t = parseTs(iso);
     if (isNaN(t)) return iso;
     var sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
     if (sec < 60) return sec + 's ago';
     if (sec < 3600) return Math.floor(sec / 60) + 'm ago';
     if (sec < 86400) return Math.floor(sec / 3600) + 'h ago';
     return Math.floor(sec / 86400) + 'd ago';
+  }
+
+  function listAtForRow(row) {
+    if (row.list_at) return row.list_at;
+    if (row.section === 'pool') {
+      return row.created_at || row.updated_at || '';
+    }
+    return row.updated_at || row.created_at || '';
   }
 
   function refreshRelativeTimes() {
@@ -252,8 +272,9 @@
         ? '<span class="task-badge task-badge--' + esc(row.status_slug) + '">' + esc(row.status_label) + '</span>'
         : '';
     var soon = row.has_reminder ? '<span class="edesk-list__pill edesk-list__pill--soon">Soon</span>' : '';
-    var when = row.updated_at
-      ? '<span class="edesk-list__when" data-ts="' + esc(row.updated_at) + '">' + esc(relativeTime(row.updated_at)) + '</span>'
+    var listAt = listAtForRow(row);
+    var when = listAt
+      ? '<span class="edesk-list__when" data-ts="' + esc(listAt) + '">' + esc(relativeTime(listAt)) + '</span>'
       : '';
   var msg = row.msg_count > 0 ? '<span class="edesk-list__msgs">' + row.msg_count + ' msg</span>' : '';
 
@@ -268,6 +289,8 @@
       esc(row.section) +
       '" data-updated-at="' +
       esc(row.updated_at) +
+      '" data-list-at="' +
+      esc(listAt) +
       '" data-notify="' +
       (row.notify ? '1' : '0') +
       '" data-meeting="' +
@@ -353,8 +376,31 @@
     return qs('.edesk-list__item[data-task-id="' + CSS.escape(taskId) + '"]', root);
   }
 
-  function findPanel(taskId) {
-    return qs('.edesk-panel[data-task-id="' + CSS.escape(taskId) + '"]', root);
+  function findPanels(taskId) {
+    return qsa('.edesk-panel[data-task-id="' + CSS.escape(taskId) + '"]', root);
+  }
+
+  function findPanel(taskId, preferSection) {
+    var panels = findPanels(taskId);
+    if (panels.length === 0) return null;
+    if (panels.length === 1) return panels[0];
+    preferSection = preferSection || activeSection || '';
+    if (preferSection) {
+      var preferred = panels.find(function (p) {
+        return p.getAttribute('data-section') === preferSection;
+      });
+      if (preferred) return preferred;
+    }
+    var minePanel = panels.find(function (p) {
+      return p.getAttribute('data-section') === 'mine';
+    });
+    return minePanel || panels[panels.length - 1];
+  }
+
+  function removePanelsForTask(taskId) {
+    findPanels(taskId).forEach(function (panel) {
+      panel.remove();
+    });
   }
 
   function updateUrl(taskId) {
@@ -371,8 +417,7 @@
 
   function mountPanelHtml(taskId, html) {
     if (!panelsHost || !html) return;
-    var existing = findPanel(taskId);
-    if (existing) existing.remove();
+    removePanelsForTask(taskId);
     var wrap = document.createElement('div');
     wrap.innerHTML = html.trim();
     var panel = wrap.firstElementChild;
@@ -417,10 +462,9 @@
     }
 
     var item = findListItem(taskId);
-    var panel = findPanel(taskId);
     if (!item && rowCache[taskId]) {
-      var section = rowCache[taskId].section;
-      showList(section);
+      var cachedSection = rowCache[taskId].section;
+      showList(cachedSection);
       item = findListItem(taskId);
     }
     if (!item) {
@@ -431,6 +475,7 @@
     }
 
     var section = item.getAttribute('data-section') || 'mine';
+    var panel = findPanel(taskId, section);
     if (section !== activeSection) showList(section);
 
     activeTaskId = taskId;
@@ -530,9 +575,12 @@
               return;
             }
             showToast('Task assigned to you.', 'ok');
+            if (data.html) {
+              removePanelsForTask(data.task_id);
+              mountPanelHtml(data.task_id, data.html);
+            }
             if (data.desk) applyDeskLists(data.desk, true);
             if (typeof data.bell === 'number') setDeskBell(data.bell);
-            if (data.html) mountPanelHtml(data.task_id, data.html);
             showList('mine');
             selectTask(data.task_id, { skipFetch: true });
           })

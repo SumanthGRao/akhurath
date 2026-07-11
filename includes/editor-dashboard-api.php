@@ -29,6 +29,14 @@ function akh_editor_desk_board_context(string $editorUsername): array
     $newTasks = array_values(array_filter($all, static function (array $t): bool {
         return akh_task_editor_pool_eligible($t);
     }));
+    usort($newTasks, static function (array $a, array $b): int {
+        $cmp = strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? ''));
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+
+        return strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
+    });
     $mine = array_values(array_filter($all, static function (array $t) use ($editorUsername): bool {
         return strtolower(trim((string) ($t['assigned_editor'] ?? ''))) === $editorUsername;
     }));
@@ -113,9 +121,14 @@ function akh_editor_desk_list_row_json(array $vm): array
     $alert = $vm['task_alert'];
     $priority = is_array($alert) ? (int) ($alert['priority'] ?? 0) : 0;
 
+    $section = (string) $vm['section'];
+    $listAt = $section === 'pool'
+        ? (string) (($t['created_at'] ?? '') !== '' ? $t['created_at'] : ($t['updated_at'] ?? ''))
+        : (string) (($t['updated_at'] ?? '') !== '' ? $t['updated_at'] : ($t['created_at'] ?? ''));
+
     return [
         'id' => (string) $vm['tid'],
-        'section' => (string) $vm['section'],
+        'section' => $section,
         'title' => (string) $vm['headline'],
         'client' => (string) ($t['client_username'] ?? ''),
         'status' => (string) $vm['status'],
@@ -123,6 +136,7 @@ function akh_editor_desk_list_row_json(array $vm): array
         'status_slug' => (string) $vm['status_slug'],
         'updated_at' => (string) ($t['updated_at'] ?? ''),
         'created_at' => (string) ($t['created_at'] ?? ''),
+        'list_at' => $listAt,
         'notify' => (bool) $vm['notify'],
         'unseen_new' => (bool) $vm['unseen_new'],
         'has_reminder' => (bool) $vm['has_reminder'],
@@ -183,51 +197,96 @@ function akh_editor_desk_lists_json(string $editorUsername): array
     return ['pool' => $pool, 'mine' => $mine, 'meetings' => $meetings];
 }
 
+/**
+ * @param array<string, mixed> $t
+ */
+function akh_editor_desk_task_section(array $t, string $editorUsername): string
+{
+    $editorUsername = strtolower(trim($editorUsername));
+    $assigned = strtolower(trim((string) ($t['assigned_editor'] ?? '')));
+    if ($assigned !== '' && $assigned === $editorUsername) {
+        return 'mine';
+    }
+    if (akh_task_editor_pool_eligible($t)) {
+        return 'pool';
+    }
+
+    return 'mine';
+}
+
+/**
+ * @param array{
+ *   newTasks: list<array<string, mixed>>,
+ *   mine: list<array<string, mixed>>,
+ *   dashboardAlerts: array<string, array<string, mixed>>,
+ *   seenNew: list<string>,
+ *   editorReminderCodes: array<string, bool>
+ * } $ctx
+ * @return array{task: array<string, mixed>, section: string}|null
+ */
+function akh_editor_desk_find_task_in_ctx(array $ctx, string $editorUsername, string $taskId): ?array
+{
+    $taskId = trim($taskId);
+    if ($taskId === '') {
+        return null;
+    }
+
+    foreach ($ctx['mine'] as $t) {
+        if (akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
+            return [
+                'task' => $t,
+                'section' => akh_editor_desk_task_section($t, $editorUsername),
+            ];
+        }
+    }
+    foreach ($ctx['newTasks'] as $t) {
+        if (akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
+            return [
+                'task' => $t,
+                'section' => akh_editor_desk_task_section($t, $editorUsername),
+            ];
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @return array{task: array<string, mixed>, section: string}|null
+ */
+function akh_editor_desk_find_task(string $editorUsername, string $taskId): ?array
+{
+    $ctx = akh_editor_desk_board_context($editorUsername);
+
+    return akh_editor_desk_find_task_in_ctx($ctx, $editorUsername, $taskId);
+}
+
 function akh_editor_desk_panel_html(string $editorUsername, string $taskId, string $csrf): string
 {
     $taskId = trim($taskId);
     if ($taskId === '') {
         return '';
     }
+
     $ctx = akh_editor_desk_board_context($editorUsername);
-    foreach ($ctx['newTasks'] as $t) {
-        if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
-            continue;
-        }
-        $vm = akh_editor_task_view_model(
-            $t,
-            $editorUsername,
-            $ctx['dashboardAlerts'],
-            $ctx['editorReminderCodes'],
-            $ctx['seenNew'],
-            'pool'
-        );
-        ob_start();
-        akh_editor_render_detail_panel($vm, $csrf);
-        $html = ob_get_clean();
-
-        return is_string($html) ? $html : '';
-    }
-    foreach ($ctx['mine'] as $t) {
-        if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
-            continue;
-        }
-        $vm = akh_editor_task_view_model(
-            $t,
-            $editorUsername,
-            $ctx['dashboardAlerts'],
-            $ctx['editorReminderCodes'],
-            $ctx['seenNew'],
-            'mine'
-        );
-        ob_start();
-        akh_editor_render_detail_panel($vm, $csrf);
-        $html = ob_get_clean();
-
-        return is_string($html) ? $html : '';
+    $found = akh_editor_desk_find_task_in_ctx($ctx, $editorUsername, $taskId);
+    if ($found === null) {
+        return '';
     }
 
-    return '';
+    $vm = akh_editor_task_view_model(
+        $found['task'],
+        $editorUsername,
+        $ctx['dashboardAlerts'],
+        $ctx['editorReminderCodes'],
+        $ctx['seenNew'],
+        $found['section']
+    );
+    ob_start();
+    akh_editor_render_detail_panel($vm, $csrf);
+    $html = ob_get_clean();
+
+    return is_string($html) ? $html : '';
 }
 
 /**

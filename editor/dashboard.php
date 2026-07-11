@@ -217,6 +217,14 @@ $all = akh_tasks_all_sorted();
 $newTasks = array_values(array_filter($all, static function (array $t): bool {
     return akh_task_editor_pool_eligible($t);
 }));
+usort($newTasks, static function (array $a, array $b): int {
+    $cmp = strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? ''));
+    if ($cmp !== 0) {
+        return $cmp;
+    }
+
+    return strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
+});
 $mine = array_values(array_filter($all, static function (array $t) use ($editor): bool {
     return strtolower(trim((string) ($t['assigned_editor'] ?? ''))) === strtolower(trim($editor));
 }));
@@ -470,18 +478,27 @@ require_once AKH_ROOT . '/includes/header.php';
               <h2 class="edesk-empty__title">Select a task</h2>
               <p>Pick a job from the list to read the brief, client updates, and messages — everything stays on one screen.</p>
             </div>
-            <?php foreach ($newTasks as $t): ?>
-              <?php
-              $vm = akh_editor_task_view_model($t, $editor, $dashboardAlerts, $editorReminderCodes, $seenNew, 'pool');
-              akh_editor_render_detail_panel($vm, $pageCsrf);
-              ?>
-            <?php endforeach; ?>
-            <?php foreach ($mine as $t): ?>
-              <?php
-              $vm = akh_editor_task_view_model($t, $editor, $dashboardAlerts, $editorReminderCodes, $seenNew, 'mine');
-              akh_editor_render_detail_panel($vm, $pageCsrf);
-              ?>
-            <?php endforeach; ?>
+            <?php
+            $renderedPanels = [];
+            foreach ($mine as $t) {
+                $tid = (string) ($t['id'] ?? '');
+                if ($tid === '' || isset($renderedPanels[$tid])) {
+                    continue;
+                }
+                $renderedPanels[$tid] = true;
+                $vm = akh_editor_task_view_model($t, $editor, $dashboardAlerts, $editorReminderCodes, $seenNew, 'mine');
+                akh_editor_render_detail_panel($vm, $pageCsrf);
+            }
+            foreach ($newTasks as $t) {
+                $tid = (string) ($t['id'] ?? '');
+                if ($tid === '' || isset($renderedPanels[$tid])) {
+                    continue;
+                }
+                $renderedPanels[$tid] = true;
+                $vm = akh_editor_task_view_model($t, $editor, $dashboardAlerts, $editorReminderCodes, $seenNew, 'pool');
+                akh_editor_render_detail_panel($vm, $pageCsrf);
+            }
+            ?>
           </div>
         </section>
       </div>
