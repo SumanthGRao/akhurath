@@ -162,7 +162,7 @@
   function mountPermissionPrompt() {
     if (cfg.mode === 'admin_overview') return;
     if (!('Notification' in window) || Notification.permission !== 'default') return;
-    var host = document.querySelector('.portal-card--ticketboard') || document.querySelector('.portal-card');
+    var host = document.getElementById('editor-desk') || document.querySelector('.portal-card--ticketboard') || document.querySelector('.portal-card');
     if (!host) return;
     var wrap = document.createElement('div');
     wrap.className = 'portal-push-prompt';
