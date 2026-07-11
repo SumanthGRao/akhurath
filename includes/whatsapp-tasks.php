@@ -526,6 +526,7 @@ function akh_wa_prepare_studio_task_inputs(array $waRow): array
         'drive_link' => $driveLink,
         'reference_link' => $ref,
         'client_username' => akh_wa_resolve_client_username($waRow),
+        'task_type' => trim((string) ($waRow['task_type'] ?? '')),
     ];
 }
 
@@ -601,6 +602,7 @@ function akh_wa_insert_studio_task_direct(array $inputs, string $taskCode): ?arr
         'description' => $builtDescription,
         'couple_name' => $couple,
         'edit_type' => 'studio_admin',
+        'whatsapp_task_type' => trim((string) ($inputs['task_type'] ?? '')),
         'project_details' => $projectDetails,
         'reference_link' => $referenceLink,
         'delivery_mode' => $deliveryMode,
@@ -805,11 +807,13 @@ function akh_wa_sync_to_studio(array $waRow): ?string
             $newTitle = mb_strlen($title) > 200 ? mb_substr($title, 0, 197) . '…' : $title;
             $newDescription = mb_strlen($description) > 8000 ? mb_substr($description, 0, 7997) . '…' : $description;
             $newDrive = $deliveryMode === 'google_drive' ? $driveLink : '';
+            $newWaType = trim((string) ($waRow['task_type'] ?? ''));
             $changed = (string) ($list[$i]['title'] ?? '') !== $newTitle
                 || (string) ($list[$i]['description'] ?? '') !== $newDescription
                 || (string) ($list[$i]['reference_link'] ?? '') !== $referenceLink
                 || (string) ($list[$i]['delivery_mode'] ?? '') !== $deliveryMode
-                || (string) ($list[$i]['drive_link'] ?? '') !== $newDrive;
+                || (string) ($list[$i]['drive_link'] ?? '') !== $newDrive
+                || (string) ($list[$i]['whatsapp_task_type'] ?? '') !== $newWaType;
             if (!$changed) {
                 break;
             }
@@ -818,6 +822,7 @@ function akh_wa_sync_to_studio(array $waRow): ?string
             $list[$i]['reference_link'] = $referenceLink;
             $list[$i]['delivery_mode'] = $deliveryMode;
             $list[$i]['drive_link'] = $newDrive;
+            $list[$i]['whatsapp_task_type'] = $newWaType;
             $list[$i]['updated_at'] = gmdate('c');
             $updated = true;
             break;

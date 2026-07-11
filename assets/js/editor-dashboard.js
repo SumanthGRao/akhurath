@@ -47,9 +47,16 @@
       headers: { 'X-Requested-With': 'XMLHttpRequest' },
       body: fd,
       credentials: 'same-origin',
-    }).then(function (r) {
-      return r.json();
-    });
+    })
+      .then(function (r) {
+        if (!r.ok) {
+          throw new Error('http_' + r.status);
+        }
+        return r.json();
+      })
+      .catch(function () {
+        return { ok: false, error: 'Request failed. Refresh and try again.' };
+      });
   }
 
   function playNotifyPing() {
@@ -180,6 +187,7 @@
     btn.classList.remove('edesk-list__item--meeting');
     btn.classList.remove('edesk-list__item--meeting-unread');
     btn.setAttribute('data-meeting', '0');
+    btn.setAttribute('data-unread', btn.getAttribute('data-notify') === '1' || btn.getAttribute('data-ack-new') === '1' ? '1' : '0');
     var soon = btn.querySelector('.edesk-list__pill--soon');
     if (soon) soon.remove();
   }
@@ -193,12 +201,14 @@
       btn.classList.remove('edesk-list__item--new');
       var pill = btn.querySelector('.ticket__pill--new');
       if (pill) pill.remove();
+      btn.setAttribute('data-unread', btn.getAttribute('data-notify') === '1' || btn.getAttribute('data-ack-meeting') === '1' ? '1' : '0');
       postAck('new', tid);
     }
     if (btn.getAttribute('data-ack-editor') === '1') {
       btn.removeAttribute('data-ack-editor');
       btn.classList.remove('edesk-list__item--notify');
       btn.setAttribute('data-notify', '0');
+      btn.setAttribute('data-unread', btn.getAttribute('data-ack-new') === '1' || btn.getAttribute('data-ack-meeting') === '1' ? '1' : '0');
       var dot = btn.querySelector('.edesk-list__dot');
       if (dot) dot.remove();
       clearMeetingBadge(btn);
@@ -235,19 +245,43 @@
 
   function showList(section) {
     activeSection = section;
-    qsa('.edesk-tab', root).forEach(function (tab) {
-      var on = tab.getAttribute('data-section') === section;
-      tab.setAttribute('aria-selected', on ? 'true' : 'false');
-    });
-    Object.keys(lists).forEach(function (key) {
-      if (lists[key]) lists[key].hidden = key !== section;
-    });
+    if (activeFilter === 'all') {
+      qsa('.edesk-tab', root).forEach(function (tab) {
+        var on = tab.getAttribute('data-section') === section;
+        tab.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      Object.keys(lists).forEach(function (key) {
+        if (lists[key]) lists[key].hidden = key !== section;
+      });
+    }
     var hint = qs('#edesk-sidebar-hint', root);
     if (hint) {
-      hint.textContent =
-        section === 'pool'
-          ? 'New jobs appear here in real time — claim to move to My tasks.'
-          : 'Live updates for messages, feedback, and status changes.';
+      if (activeFilter === 'unread') {
+        hint.textContent = 'Showing unread tasks from pool and My tasks.';
+      } else if (activeFilter === 'meeting') {
+        hint.textContent = 'Showing meeting-related tasks from pool and My tasks.';
+      } else {
+        hint.textContent =
+          section === 'pool'
+            ? 'New jobs appear here in real time — claim to move to My tasks.'
+            : 'Live updates for messages, feedback, and status changes.';
+      }
+    }
+    applyListFilters();
+  }
+
+  function setFilterMode(filter) {
+    activeFilter = filter || 'all';
+    qsa('.edesk-filter', root).forEach(function (b) {
+      b.classList.toggle('edesk-filter--active', b.getAttribute('data-filter') === activeFilter);
+    });
+    if (activeFilter === 'unread' || activeFilter === 'meeting') {
+      Object.keys(lists).forEach(function (key) {
+        if (lists[key]) lists[key].hidden = false;
+      });
+    } else {
+      showList(activeSection);
+      return;
     }
     applyListFilters();
   }
@@ -263,6 +297,10 @@
     var ackEd = row.ack_editor ? ' data-ack-editor="1"' : '';
     var ackMeet = row.ack_meeting ? ' data-ack-meeting="1"' : '';
     var dot = row.notify ? '<span class="edesk-list__dot" aria-hidden="true"></span>' : '';
+    var typeHtml = row.show_type && row.type_label
+      ? '<span class="edesk-list__type">' + esc(row.type_label) + '</span>'
+      : '';
+    var displayName = row.title || row.type_label || '—';
     var newPill = row.unseen_new ? '<span class="ticket__pill ticket__pill--new">New</span>' : '';
     var waPill = row.from_whatsapp && row.section === 'pool'
       ? '<span class="edesk-list__pill edesk-list__pill--wa">WhatsApp</span>'
@@ -295,6 +333,8 @@
       (row.notify ? '1' : '0') +
       '" data-meeting="' +
       (row.meeting_unread ? '1' : '0') +
+      '" data-unread="' +
+      (row.list_unread ? '1' : '0') +
       '"' +
       ackNew +
       ackEd +
@@ -306,8 +346,10 @@
       esc(row.id) +
       '</span><span class="edesk-list__title">' +
       dot +
-      esc(row.title || '—') +
-      '</span></span>' +
+      typeHtml +
+      '<span class="edesk-list__name">' +
+      esc(displayName) +
+      '</span></span></span>' +
       '<span class="edesk-list__meta">' +
       newPill +
       waPill +
@@ -352,28 +394,48 @@
 
   function applyListFilters() {
     var q = searchQuery.toLowerCase();
+    var crossList = activeFilter === 'unread' || activeFilter === 'meeting';
     qsa('.edesk-list__item', root).forEach(function (item) {
-      var inSection = item.closest('.edesk-list') && !item.closest('.edesk-list').hidden;
+      var list = item.closest('.edesk-list');
+      var inSection = crossList ? !!list : list && !list.hidden;
       if (!inSection) return;
       var text = (item.textContent || '').toLowerCase();
       var matchSearch = q === '' || text.indexOf(q) !== -1;
       var matchFilter = true;
       if (activeFilter === 'unread') {
-        matchFilter =
-          item.getAttribute('data-notify') === '1' ||
-          item.getAttribute('data-ack-new') === '1' ||
-          item.getAttribute('data-ack-meeting') === '1' ||
-          item.getAttribute('data-meeting') === '1';
+        matchFilter = item.getAttribute('data-unread') === '1';
       } else if (activeFilter === 'meeting') {
         matchFilter =
           item.getAttribute('data-meeting') === '1' || item.getAttribute('data-ack-meeting') === '1';
       }
       item.hidden = !(matchSearch && matchFilter);
     });
+    if (crossList) {
+      ['pool', 'mine'].forEach(function (section) {
+        var listEl = lists[section];
+        if (!listEl) return;
+        var hasVisible = !!listEl.querySelector('.edesk-list__item:not([hidden])');
+        var empty = listEl.querySelector('.edesk-list__empty');
+        if (empty) empty.hidden = hasVisible;
+      });
+    }
   }
 
-  function findListItem(taskId) {
-    return qs('.edesk-list__item[data-task-id="' + CSS.escape(taskId) + '"]', root);
+  function findListItem(taskId, preferSection) {
+    var items = qsa('.edesk-list__item[data-task-id="' + CSS.escape(taskId) + '"]', root);
+    if (items.length === 0) return null;
+    if (items.length === 1) return items[0];
+    preferSection = preferSection || activeSection || '';
+    if (preferSection) {
+      var preferred = items.find(function (el) {
+        return el.getAttribute('data-section') === preferSection;
+      });
+      if (preferred) return preferred;
+    }
+    var mineItem = items.find(function (el) {
+      return el.getAttribute('data-section') === 'mine';
+    });
+    return mineItem || items[items.length - 1];
   }
 
   function findPanels(taskId) {
@@ -416,20 +478,41 @@
   }
 
   function mountPanelHtml(taskId, html) {
-    if (!panelsHost || !html) return;
+    if (!panelsHost || !html) return false;
     removePanelsForTask(taskId);
     var wrap = document.createElement('div');
     wrap.innerHTML = html.trim();
     var panel = wrap.firstElementChild;
-    if (!panel) return;
-    if (normId(taskId) !== normId(activeTaskId)) {
-      panel.hidden = true;
-    } else {
-      panel.hidden = false;
-      if (emptyEl) emptyEl.hidden = true;
-    }
+    if (!panel) return false;
+    panel.hidden = normId(taskId) !== normId(activeTaskId);
+    if (!panel.hidden && emptyEl) emptyEl.hidden = true;
     panelsHost.appendChild(panel);
     bindPanelInteractions(panel);
+    return true;
+  }
+
+  function finishClaimSuccess(data) {
+    var taskId = normId(data.task_id);
+    if (!taskId) return;
+    activeTaskId = taskId;
+    activeSection = 'mine';
+    showList('mine');
+    if (data.desk) {
+      renderList('pool', data.desk.pool || [], true);
+      renderList('mine', data.desk.mine || [], true);
+      renderMeetingsBar(data.desk.meetings || []);
+      updateTabBadges(data.desk.pool_count || (data.desk.pool || []).length, data.desk.mine_count || (data.desk.mine || []).length);
+      refreshRelativeTimes();
+    }
+    if (typeof data.bell === 'number') setDeskBell(data.bell);
+    var mounted = data.html ? mountPanelHtml(taskId, data.html) : false;
+    if (!mounted) {
+      fetchPanel(taskId, { show: true }).then(function () {
+        selectTask(taskId, { skipFetch: true });
+      });
+      return;
+    }
+    selectTask(taskId, { skipFetch: true });
   }
 
   function fetchPanel(taskId, opts) {
@@ -575,14 +658,7 @@
               return;
             }
             showToast('Task assigned to you.', 'ok');
-            if (data.html) {
-              removePanelsForTask(data.task_id);
-              mountPanelHtml(data.task_id, data.html);
-            }
-            if (data.desk) applyDeskLists(data.desk, true);
-            if (typeof data.bell === 'number') setDeskBell(data.bell);
-            showList('mine');
-            selectTask(data.task_id, { skipFetch: true });
+            finishClaimSuccess(data);
           })
           .finally(function () {
             if (btn) btn.disabled = false;
@@ -678,20 +754,19 @@
     bar.innerHTML = html;
   }
 
-  function applyDeskLists(desk, preserveSelection) {
+  function applyDeskLists(desk, preserveSelection, skipPanelRefresh) {
     if (!desk) return;
     renderList('pool', desk.pool || [], preserveSelection);
     renderList('mine', desk.mine || [], preserveSelection);
     renderMeetingsBar(desk.meetings || []);
     updateTabBadges(desk.pool_count || (desk.pool || []).length, desk.mine_count || (desk.mine || []).length);
     refreshRelativeTimes();
-    if (preserveSelection && activeTaskId) {
-      var row = rowCache[activeTaskId];
-      var cached = findListItem(activeTaskId);
-      var prev = cached ? cached.getAttribute('data-updated-at') : '';
-      if (row && row.updated_at && row.updated_at !== prev) {
-        fetchPanel(activeTaskId, { noScroll: true });
-      }
+    if (skipPanelRefresh || !preserveSelection || !activeTaskId) return;
+    var row = rowCache[activeTaskId];
+    var cached = findListItem(activeTaskId);
+    var prev = cached ? cached.getAttribute('data-updated-at') : '';
+    if (row && row.updated_at && row.updated_at !== prev) {
+      fetchPanel(activeTaskId, { noScroll: true });
     }
   }
 
@@ -729,6 +804,12 @@
   qsa('.edesk-tab', root).forEach(function (tab) {
     tab.addEventListener('click', function () {
       var section = tab.getAttribute('data-section') || 'mine';
+      if (activeFilter !== 'all') {
+        activeFilter = 'all';
+        qsa('.edesk-filter', root).forEach(function (b) {
+          b.classList.toggle('edesk-filter--active', b.getAttribute('data-filter') === 'all');
+        });
+      }
       showList(section);
       if (isMobile()) {
         selectTask('');
@@ -741,11 +822,7 @@
 
   qsa('.edesk-filter', root).forEach(function (btn) {
     btn.addEventListener('click', function () {
-      activeFilter = btn.getAttribute('data-filter') || 'all';
-      qsa('.edesk-filter', root).forEach(function (b) {
-        b.classList.toggle('edesk-filter--active', b === btn);
-      });
-      applyListFilters();
+      setFilterMode(btn.getAttribute('data-filter') || 'all');
     });
   });
 

@@ -6,6 +6,44 @@ require_once __DIR__ . '/dashboard-alerts.php';
 require_once __DIR__ . '/task-thread-panel.php';
 
 /**
+ * Sidebar label for edit / WhatsApp task type (falls back to couple/title).
+ *
+ * @param array<string, mixed> $t
+ */
+function akh_editor_task_list_type_label(array $t): string
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $editType = trim((string) ($t['edit_type'] ?? ''));
+    if ($editType !== '' && !in_array($editType, ['studio_admin', 'bundle_parent'], true)) {
+        return akh_task_edit_type_label($editType);
+    }
+
+    $waType = trim((string) ($t['whatsapp_task_type'] ?? ''));
+    if ($waType !== '') {
+        return $waType;
+    }
+
+    require_once __DIR__ . '/whatsapp-tasks.php';
+    if (akh_wa_tasks_table_exists()) {
+        $code = akh_task_normalize_id((string) ($t['id'] ?? ''));
+        if ($code !== '') {
+            $waRow = akh_wa_task_by_code($code);
+            if (is_array($waRow)) {
+                $fromWa = trim((string) ($waRow['task_type'] ?? ''));
+                if ($fromWa !== '') {
+                    return $fromWa;
+                }
+            }
+        }
+    }
+
+    $title = trim((string) ($t['title'] ?? ''));
+
+    return $title !== '' ? $title : '—';
+}
+
+/**
  * @param array<string, mixed> $t
  * @param array<string, array<string, mixed>> $dashboardAlerts
  * @param array<string, bool> $editorReminderCodes
@@ -55,6 +93,11 @@ function akh_editor_task_view_model(
         $classes[] = 'edesk-list__item--meeting-unread';
     }
 
+    $headline = (string) ($t['title'] ?? '');
+    $typeLabel = akh_editor_task_list_type_label($t);
+    $showType = $typeLabel !== '' && mb_strtolower($typeLabel) !== mb_strtolower($headline);
+    $listUnread = $notify || $unseenNew || $meetingUnread;
+
     return [
         'task' => $t,
         'tid' => $tid,
@@ -62,7 +105,10 @@ function akh_editor_task_view_model(
         'section' => $section,
         'status' => $st,
         'status_slug' => $stSlug,
-        'headline' => (string) ($t['title'] ?? ''),
+        'headline' => $headline,
+        'type_label' => $typeLabel,
+        'show_type' => $showType,
+        'list_unread' => $listUnread,
         'delivery_mode' => (string) ($t['delivery_mode'] ?? ''),
         'task_alert' => $taskAlert,
         'notify' => $notify,
@@ -110,6 +156,7 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
       <?php if ($vm['ack_meeting']): ?>data-ack-meeting="1"<?php endif; ?>
       data-meeting="<?php echo !empty($vm['meeting_unread']) ? '1' : '0'; ?>"
       data-notify="<?php echo $vm['notify'] ? '1' : '0'; ?>"
+      data-unread="<?php echo !empty($vm['list_unread']) ? '1' : '0'; ?>"
       aria-current="<?php echo $selected ? 'true' : 'false'; ?>"
     >
       <span class="edesk-list__row">
@@ -118,7 +165,10 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
           <?php if ($vm['notify']): ?>
             <span class="edesk-list__dot" aria-hidden="true"></span>
           <?php endif; ?>
-          <?php echo h($headline !== '' ? $headline : '—'); ?>
+          <?php if (!empty($vm['show_type'])): ?>
+            <span class="edesk-list__type"><?php echo h((string) $vm['type_label']); ?></span>
+          <?php endif; ?>
+          <span class="edesk-list__name"><?php echo h($headline !== '' ? $headline : (string) ($vm['type_label'] ?? '—')); ?></span>
         </span>
       </span>
       <span class="edesk-list__meta">

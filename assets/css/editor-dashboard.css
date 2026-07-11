@@ -353,6 +353,24 @@
   overflow: hidden;
 }
 
+.edesk-list__type {
+  display: inline-block;
+  margin-right: 0.35rem;
+  padding: 0.08rem 0.42rem;
+  border-radius: 999px;
+  background: rgba(61, 95, 140, 0.1);
+  color: #3d5f8c;
+  font-family: var(--font-body, Inter, system-ui, sans-serif);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  vertical-align: 0.05em;
+}
+
+.edesk-list__name {
+  font-weight: 600;
+}
+
 .edesk-list__dot {
   display: inline-block;
   width: 0.45rem;
