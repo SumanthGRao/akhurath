@@ -1,5 +1,11 @@
 /* Editor workstation — full viewport master/detail layout */
 
+.page-editor-desk {
+  --font-display: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "Sometype Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 .page-editor-desk .site-header,
 .page-editor-desk .site-footer {
   display: none;

@@ -55,6 +55,9 @@ require_once AKH_ROOT . '/includes/header.php';
 $waCss = base_path('assets/css/whatsapp-dashboard.css');
 $waCssVer = is_file(AKH_ROOT . '/assets/css/whatsapp-dashboard.css') ? (string) filemtime(AKH_ROOT . '/assets/css/whatsapp-dashboard.css') : '';
 ?>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&family=Sometype+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="<?php echo h($waCss . ($waCssVer !== '' ? '?v=' . rawurlencode($waCssVer) : '')); ?>" />
 
   <main id="main" class="portal-main wa-login-main">

@@ -8,11 +8,8 @@
   --line: rgba(26, 23, 21, 0.1);
   --accent: #c9a227;
   --accent-dark: #8a6f18;
-  --font-display: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
-  --font-body: "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "Sometype Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --serif: var(--font-display);
-  --sans: var(--font-body);
+  --serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --sans: "Source Sans 3", system-ui, sans-serif;
   --radius: 12px;
   --shadow: 0 18px 50px rgba(26, 23, 21, 0.08);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);

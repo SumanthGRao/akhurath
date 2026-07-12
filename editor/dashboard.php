@@ -319,6 +319,9 @@ if ($openTicketId !== '') {
 
 require_once AKH_ROOT . '/includes/header.php';
 ?>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&family=Sometype+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="<?php echo h(base_path('assets/css/editor-dashboard.css')); ?>?v=<?php echo h($edeskCssVer); ?>" />
 
   <main id="main" class="portal-main portal-main--board">
