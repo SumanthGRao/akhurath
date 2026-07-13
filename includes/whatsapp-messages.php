@@ -485,16 +485,38 @@ function akh_wa_message_ack_max_id(string $taskCode): int
  */
 function akh_wa_message_is_client_incoming(array $row): bool
 {
-    $direction = strtolower(trim((string) ($row['direction'] ?? 'incoming')));
-    if ($direction !== 'incoming') {
+    $sender = strtolower(trim((string) ($row['sender'] ?? 'client')));
+    if (in_array($sender, ['editor', 'system'], true)) {
         return false;
     }
-    $sender = strtolower(trim((string) ($row['sender'] ?? 'client')));
-    if ($sender === '') {
-        return true;
+    $direction = strtolower(trim((string) ($row['direction'] ?? 'incoming')));
+    if ($direction === '') {
+        $direction = 'incoming';
+    }
+    if ($direction === 'outbound') {
+        return false;
+    }
+    if ($direction === 'outgoing' && $sender === 'editor') {
+        return false;
     }
 
-    return $sender === 'client';
+    return $direction === 'incoming'
+        || ($direction === 'outgoing' && ($sender === '' || $sender === 'client'));
+}
+
+/** SQL fragment: rows that should count as unread client WhatsApp messages. */
+function akh_wa_message_sql_client_incoming_clause(): string
+{
+    return <<<'SQL'
+(
+    LOWER(TRIM(COALESCE(sender, ''))) NOT IN ('editor', 'system')
+    AND LOWER(TRIM(COALESCE(NULLIF(TRIM(direction), ''), 'incoming'))) NOT IN ('outbound')
+    AND NOT (
+        LOWER(TRIM(COALESCE(sender, ''))) = 'editor'
+        AND LOWER(TRIM(COALESCE(NULLIF(TRIM(direction), ''), 'outbound'))) IN ('outbound', 'outgoing')
+    )
+)
+SQL;
 }
 
 /**
@@ -576,10 +598,10 @@ function akh_wa_message_unread_count_for_task(string $taskCode): int
     $ack = akh_wa_message_ack_max_id($taskCode);
 
     try {
+        $clause = akh_wa_message_sql_client_incoming_clause();
         $sql = "SELECT COUNT(*) FROM whatsapp_messages
                 WHERE {$match['sql']}
-                  AND LOWER(TRIM(direction)) = 'incoming'
-                  AND LOWER(TRIM(COALESCE(sender, 'client'))) = 'client'
+                  AND {$clause}
                   AND id > ?";
         $params = array_merge($match['params'], [$ack]);
         $st = akh_db()->prepare($sql);
@@ -606,12 +628,12 @@ function akh_wa_messages_unread_rows(): array
     $out = [];
 
     try {
+        $clause = akh_wa_message_sql_client_incoming_clause();
         $cols = akh_wa_messages_select_columns();
         $st = akh_db()->query(
             "SELECT {$cols}
              FROM whatsapp_messages
-             WHERE LOWER(TRIM(direction)) = 'incoming'
-               AND LOWER(TRIM(COALESCE(sender, 'client'))) = 'client'
+             WHERE {$clause}
              ORDER BY id ASC"
         );
         if ($st === false) {
@@ -624,6 +646,9 @@ function akh_wa_messages_unread_rows(): array
             require_once __DIR__ . '/tasks.php';
             $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
             if ($code === '') {
+                continue;
+            }
+            if (!akh_wa_message_is_client_incoming($row)) {
                 continue;
             }
             $ack = (int) ($acks[$code] ?? 0);
@@ -831,7 +856,7 @@ function akh_wa_messages_to_conversation_rows(array $waRows): array
         if ($sender === 'system') {
             $role = 'system';
             $who = 'System';
-        } elseif ($sender === 'editor' || akh_wa_message_direction_is_outbound($direction)) {
+        } elseif ($sender === 'editor' || (akh_wa_message_direction_is_outbound($direction) && !akh_wa_message_is_client_incoming($row))) {
             $role = 'editor';
             $who = $editorName !== '' ? $editorName : 'Editor';
         } else {

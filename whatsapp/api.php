@@ -33,6 +33,7 @@ try {
             'sig' => akh_wa_tasks_poll_signature(),
             'notify_sig' => $notify['notify_sig'],
             'notify_count' => $notify['count'],
+            'alerts' => $notify['alerts'],
             'notices' => $notify['notices'] ?? [],
             'reminders' => $notify['reminders'] ?? [],
             'meetings' => $notify['meetings'] ?? [],

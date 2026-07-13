@@ -541,6 +541,7 @@
         var needsNotify = data.notify_sig && data.notify_sig !== currentNotifySig;
         if (needsNotify) {
           applyNotifyPayload(data);
+          applyFiltersLocally();
         }
         if (data.reminders) {
           reminderList = data.reminders;

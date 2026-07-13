@@ -461,9 +461,24 @@
     );
   }
 
+  function sortDeskRows(rows) {
+    return (rows || []).slice().sort(function (a, b) {
+      var pa = typeof a.priority === 'number' ? a.priority : 0;
+      var pb = typeof b.priority === 'number' ? b.priority : 0;
+      if (pa !== pb) return pb - pa;
+      var aa = pa > 0 ? 1 : 0;
+      var ab = pb > 0 ? 1 : 0;
+      if (aa !== ab) return ab - aa;
+      var ta = listAtForRow(a);
+      var tb = listAtForRow(b);
+      return String(tb).localeCompare(String(ta));
+    });
+  }
+
   function renderList(section, rows, preserveSelection) {
     var listEl = lists[section];
     if (!listEl) return;
+    rows = sortDeskRows(rows);
     if (!rows || rows.length === 0) {
       listEl.innerHTML =
         '<p class="edesk-list__empty">' +

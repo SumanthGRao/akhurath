@@ -148,10 +148,22 @@ function akh_dashboard_notice_rows(array $alerts): array
             'label' => akh_dashboard_alert_kind_label($alert),
             'preview' => (string) ($alert['preview'] ?? ''),
             'meet_link' => (string) ($alert['meet_link'] ?? ''),
+            'priority' => (int) ($alert['priority'] ?? akh_dashboard_alert_priority((string) ($alert['kind'] ?? ''))),
+            'created_at' => (string) ($alert['created_at'] ?? ''),
         ];
     }
 
     usort($out, static function (array $a, array $b): int {
+        $pa = (int) ($a['priority'] ?? 0);
+        $pb = (int) ($b['priority'] ?? 0);
+        if ($pa !== $pb) {
+            return $pb <=> $pa;
+        }
+        $cmp = strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? ''));
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+
         return strcmp((string) ($b['task_code'] ?? ''), (string) ($a['task_code'] ?? ''));
     });
 

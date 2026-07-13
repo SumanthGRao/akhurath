@@ -126,6 +126,9 @@ function akh_editor_desk_list_row_json(array $vm): array
     $listAt = $section === 'pool'
         ? (string) (($t['created_at'] ?? '') !== '' ? $t['created_at'] : ($t['updated_at'] ?? ''))
         : (string) (($t['updated_at'] ?? '') !== '' ? $t['updated_at'] : ($t['created_at'] ?? ''));
+    if (is_array($alert) && trim((string) ($alert['created_at'] ?? '')) !== '') {
+        $listAt = (string) $alert['created_at'];
+    }
 
     return [
         'id' => (string) $vm['tid'],
