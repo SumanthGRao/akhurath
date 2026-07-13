@@ -231,8 +231,13 @@ function akh_wa_message_n8n_webhook_url(): string
 /**
  * Step 2 — POST exact JSON payload to n8n after a successful editor outbound insert.
  */
-function akh_wa_message_dispatch_n8n_editor_outbound(int $messageId, string $phone, string $taskCode, string $message): void
-{
+function akh_wa_message_dispatch_n8n_editor_outbound(
+    int $messageId,
+    string $phone,
+    string $taskCode,
+    string $message,
+    string $chatAction = ''
+): void {
     $url = akh_wa_message_n8n_webhook_url();
     if ($url === '' || !str_starts_with($url, 'http')) {
         error_log('akh_n8n_webhook: skipped — invalid URL');
@@ -240,12 +245,18 @@ function akh_wa_message_dispatch_n8n_editor_outbound(int $messageId, string $pho
         return;
     }
 
-    $payload = json_encode([
+    $body = [
         'message_id' => $messageId,
         'phone' => $phone,
         'task_code' => $taskCode,
         'message' => $message,
-    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    ];
+    $chatAction = trim($chatAction);
+    if ($chatAction !== '') {
+        $body['chat_action'] = $chatAction;
+    }
+
+    $payload = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if (!is_string($payload)) {
         error_log('akh_n8n_webhook: skipped — could not encode JSON payload');
 
@@ -317,7 +328,8 @@ function akh_wa_message_send_editor_outbound(
     string $taskCode,
     string $phone,
     string $messageText,
-    string $editorUsername = ''
+    string $editorUsername = '',
+    string $chatAction = ''
 ): array {
     require_once __DIR__ . '/tasks.php';
 
@@ -360,7 +372,7 @@ function akh_wa_message_send_editor_outbound(
         return ['ok' => false, 'error' => 'Could not save message.'];
     }
 
-    akh_wa_message_dispatch_n8n_editor_outbound($messageId, $phone, $taskCode, $messageText);
+    akh_wa_message_dispatch_n8n_editor_outbound($messageId, $phone, $taskCode, $messageText, $chatAction);
 
     return ['ok' => true, 'message_id' => $messageId];
 }
