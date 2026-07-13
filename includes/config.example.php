@@ -163,9 +163,8 @@ const AKH_WA_DASHBOARD_REFRESH_SECONDS = 300;
 /**
  * n8n webhook — POST JSON when an editor sends an outbound whatsapp_messages row.
  * Payload: {"message_id":1,"phone":"...","task_code":"AS0001","message":"..."}
- * Leave '' to disable.
  */
-const AKH_N8N_WA_MESSAGE_WEBHOOK_URL = '';
+const AKH_N8N_WA_MESSAGE_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook-test/ada421c4-2607-4b06-990b-51d0c704dd9c';
 
 /**
  * Customer portal: web UI for your NAS / drive (Synology Drive, Nextcloud, etc.).

@@ -193,13 +193,28 @@ function akh_wa_message_insert(array $fields): ?int
 /**
  * Step 2 — POST exact JSON payload to n8n after a successful editor outbound insert.
  */
+function akh_wa_message_n8n_webhook_url(): string
+{
+    $default = 'https://n8n.akhurathstudio.com/webhook-test/ada421c4-2607-4b06-990b-51d0c704dd9c';
+    if (defined('AKH_N8N_WA_MESSAGE_WEBHOOK_URL')) {
+        $configured = trim((string) AKH_N8N_WA_MESSAGE_WEBHOOK_URL);
+        if ($configured !== '') {
+            return $configured;
+        }
+    }
+
+    return $default;
+}
+
+/**
+ * Step 2 — POST exact JSON payload to n8n after a successful editor outbound insert.
+ */
 function akh_wa_message_dispatch_n8n_editor_outbound(int $messageId, string $phone, string $taskCode, string $message): void
 {
-    if (!defined('AKH_N8N_WA_MESSAGE_WEBHOOK_URL')) {
-        return;
-    }
-    $url = trim((string) AKH_N8N_WA_MESSAGE_WEBHOOK_URL);
+    $url = akh_wa_message_n8n_webhook_url();
     if ($url === '' || !str_starts_with($url, 'http')) {
+        error_log('akh_n8n_webhook: skipped — invalid URL');
+
         return;
     }
 
@@ -210,31 +225,61 @@ function akh_wa_message_dispatch_n8n_editor_outbound(int $messageId, string $pho
         'message' => $message,
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if (!is_string($payload)) {
+        error_log('akh_n8n_webhook: skipped — could not encode JSON payload');
+
         return;
     }
 
     try {
         if (!function_exists('curl_init')) {
-            error_log('akh_wa_message_dispatch_n8n_editor_outbound: cURL not available');
+            error_log('akh_n8n_webhook: cURL extension is not available');
 
             return;
         }
         $ch = curl_init($url);
         if ($ch === false) {
+            error_log('akh_n8n_webhook: curl_init failed for URL ' . $url);
+
             return;
         }
+
+        error_log('akh_n8n_webhook: POST ' . $url . ' payload=' . $payload);
+
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
-            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
             CURLOPT_POSTFIELDS => $payload,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => 2,
             CURLOPT_CONNECTTIMEOUT => 2,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
         ]);
-        curl_exec($ch);
+
+        $response = curl_exec($ch);
+        $errno = curl_errno($ch);
+        $error = curl_error($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
+
+        if ($errno !== 0) {
+            error_log('akh_n8n_webhook: cURL errno=' . $errno . ' error=' . $error);
+
+            return;
+        }
+
+        if ($httpCode < 200 || $httpCode >= 300) {
+            error_log(
+                'akh_n8n_webhook: HTTP status=' . $httpCode
+                . ' response=' . mb_substr((string) $response, 0, 500)
+            );
+
+            return;
+        }
+
+        error_log('akh_n8n_webhook: OK HTTP status=' . $httpCode);
     } catch (Throwable $e) {
-        error_log('akh_wa_message_dispatch_n8n_editor_outbound: ' . $e->getMessage());
+        error_log('akh_n8n_webhook: exception ' . $e->getMessage());
     }
 }
 
