@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/dashboard-alerts.php';
 require_once __DIR__ . '/task-thread-panel.php';
+require_once __DIR__ . '/whatsapp-messages.php';
 
 /**
  * Sidebar label for edit / WhatsApp task type (falls back to couple/title).
@@ -163,6 +164,7 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
       data-whatsapp="<?php echo !empty($vm['from_whatsapp']) ? '1' : '0'; ?>"
       data-search="<?php echo h($searchBlob); ?>"
       data-updated-at="<?php echo h((string) ($t['updated_at'] ?? '')); ?>"
+      data-msg-count="<?php echo (int) count(akh_task_merged_conversation_list($t)); ?>"
       data-list-at="<?php echo h($listAt); ?>"
       <?php if ($vm['ack_new']): ?>data-ack-new="1"<?php endif; ?>
       <?php if ($vm['ack_editor']): ?>data-ack-editor="1"<?php endif; ?>

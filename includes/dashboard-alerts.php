@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/task-notification-events.php';
 require_once __DIR__ . '/meeting-requests.php';
+require_once __DIR__ . '/whatsapp-messages.php';
 
 function akh_dashboard_alert_priority(string $kind): int
 {
     return match ($kind) {
         'meeting_reminder' => 100,
         'meeting_request' => 90,
+        'whatsapp_message' => 60,
         default => 50,
     };
 }
@@ -60,6 +62,10 @@ function akh_dashboard_unread_alerts_grouped(): array
         $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $alert);
     }
 
+    foreach (akh_wa_messages_pending_alerts_grouped() as $code => $alert) {
+        $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $alert);
+    }
+
     return $merged;
 }
 
@@ -104,7 +110,9 @@ function akh_dashboard_alerts_poll_signature(): string
 {
     return hash(
         'sha256',
-        akh_task_notification_poll_signature() . '|' . akh_meeting_request_poll_signature()
+        akh_task_notification_poll_signature()
+        . '|' . akh_meeting_request_poll_signature()
+        . '|' . akh_wa_messages_poll_signature()
     );
 }
 
@@ -180,6 +188,9 @@ function akh_dashboard_alert_kind_label(array $alert): string
     if (str_starts_with($kind, 'meeting_')) {
         return akh_meeting_request_kind_label($kind);
     }
+    if ($kind === 'whatsapp_message') {
+        return akh_whatsapp_message_kind_label();
+    }
 
     return akh_task_notification_kind_label($kind);
 }
@@ -193,10 +204,12 @@ function akh_dashboard_mark_task_read(string $taskCode): void
     }
     akh_task_notification_mark_task_read($canonical !== '' ? $canonical : $taskCode);
     akh_meeting_request_mark_task_read($canonical !== '' ? $canonical : $taskCode);
+    akh_wa_message_mark_task_read($canonical !== '' ? $canonical : $taskCode);
 }
 
 function akh_dashboard_mark_all_read(): void
 {
     akh_task_notification_mark_all_read();
     akh_meeting_request_mark_all_read();
+    akh_wa_message_mark_all_read();
 }

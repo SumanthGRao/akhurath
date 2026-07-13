@@ -886,6 +886,11 @@ body.page-wa-dashboard .site-footer {
   color: #a84820;
 }
 
+.wa-alert-pill--message {
+  background: rgba(37, 150, 90, 0.18);
+  color: #1f7a4f;
+}
+
 @keyframes wa-row-reminder-pulse {
   0%, 100% { background: rgba(196, 92, 42, 0.06); }
   50% { background: rgba(196, 92, 42, 0.16); }

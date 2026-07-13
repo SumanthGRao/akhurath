@@ -350,6 +350,8 @@
       esc(row.section) +
       '" data-updated-at="' +
       esc(row.updated_at) +
+      '" data-msg-count="' +
+      esc(String(row.msg_count || 0)) +
       '" data-list-at="' +
       esc(listAt) +
       '" data-status="' +
@@ -810,6 +812,14 @@
     bar.innerHTML = html;
   }
 
+  function shouldRefreshActivePanel(row, cached) {
+    if (!row || !cached) return false;
+    var prevUpdated = cached.getAttribute('data-updated-at') || '';
+    var prevMsgs = cached.getAttribute('data-msg-count') || '0';
+    if (row.updated_at && row.updated_at !== prevUpdated) return true;
+    return String(row.msg_count || 0) !== prevMsgs;
+  }
+
   function applyDeskLists(desk, preserveSelection, skipPanelRefresh) {
     if (!desk) return;
     renderList('pool', desk.pool || [], preserveSelection);
@@ -820,8 +830,7 @@
     if (skipPanelRefresh || !preserveSelection || !activeTaskId) return;
     var row = rowCache[activeTaskId];
     var cached = findListItem(activeTaskId);
-    var prev = cached ? cached.getAttribute('data-updated-at') : '';
-    if (row && row.updated_at && row.updated_at !== prev) {
+    if (shouldRefreshActivePanel(row, cached)) {
       fetchPanel(activeTaskId, { noScroll: true });
     }
   }
@@ -839,8 +848,7 @@
     if (activeTaskId) {
       var row = rowCache[activeTaskId];
       var cached = findListItem(activeTaskId);
-      var prev = cached ? cached.getAttribute('data-updated-at') : '';
-      if (row && row.updated_at && row.updated_at !== prev) {
+      if (shouldRefreshActivePanel(row, cached)) {
         fetchPanel(activeTaskId, { noScroll: true });
       }
     }

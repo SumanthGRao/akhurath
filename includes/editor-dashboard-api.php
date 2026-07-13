@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/editor-dashboard-render.php';
+require_once __DIR__ . '/whatsapp-messages.php';
 
 /**
  * Build the same board slices as editor/dashboard.php for API + live sync.
@@ -155,7 +156,7 @@ function akh_editor_desk_list_row_json(array $vm): array
         'ack_new' => (bool) $vm['ack_new'],
         'ack_editor' => (bool) $vm['ack_editor'],
         'ack_meeting' => (bool) ($vm['ack_meeting'] ?? false),
-        'msg_count' => count(akh_task_conversation_list($t)),
+        'msg_count' => count(akh_task_merged_conversation_list($t)),
         'from_whatsapp' => (string) ($t['edit_type'] ?? '') === 'studio_admin'
             || strtolower(trim((string) ($t['client_username'] ?? ''))) === 'whatsapp',
     ];

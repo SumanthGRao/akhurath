@@ -386,9 +386,11 @@ function akh_task_poll_signature_all(): string
 
     require_once __DIR__ . '/dashboard-alerts.php';
     require_once __DIR__ . '/whatsapp-tasks.php';
+    require_once __DIR__ . '/whatsapp-messages.php';
     $waSig = akh_wa_tasks_poll_signature();
+    $waMsgSig = akh_wa_messages_poll_signature();
 
-    return sha1(implode("\n", $parts) . '|' . akh_dashboard_alerts_poll_signature() . '|' . $waSig);
+    return sha1(implode("\n", $parts) . '|' . akh_dashboard_alerts_poll_signature() . '|' . $waSig . '|' . $waMsgSig);
 }
 
 /** Fingerprint of one client’s tasks (for client dashboard refresh). */

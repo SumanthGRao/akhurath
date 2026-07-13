@@ -3519,6 +3519,12 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   margin-left: 0.35rem;
 }
 
+.ticket__msg--system {
+  background: rgba(120, 120, 120, 0.08);
+  margin: 0 0.5rem;
+  font-style: italic;
+}
+
 .ticket__msg-meta {
   display: flex;
   justify-content: space-between;

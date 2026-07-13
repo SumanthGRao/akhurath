@@ -14,7 +14,8 @@ function akh_render_task_thread_panel(array $t, string $portal, string $csrfToke
     if ($tid === '' || $assigned === '') {
         return;
     }
-    $conv = akh_task_conversation_list($t);
+    require_once __DIR__ . '/whatsapp-messages.php';
+    $conv = akh_task_merged_conversation_list($t);
     $isClient = $portal === 'client';
     $actionField = $isClient ? 'task_action' : 'action';
     $actionVal = 'thread_message';
@@ -31,8 +32,15 @@ function akh_render_task_thread_panel(array $t, string $portal, string $csrfToke
           <?php foreach ($conv as $row): ?>
             <?php
             $role = (string) ($row['role'] ?? '');
-            $bubbleClass = $role === 'editor' ? 'ticket__msg ticket__msg--editor' : 'ticket__msg ticket__msg--client';
-            if ($isClient) {
+            $source = (string) ($row['source'] ?? 'portal');
+            if ($role === 'system') {
+                $bubbleClass = 'ticket__msg ticket__msg--system';
+            } else {
+                $bubbleClass = $role === 'editor' ? 'ticket__msg ticket__msg--editor' : 'ticket__msg ticket__msg--client';
+            }
+            if ($source === 'whatsapp') {
+                $whoLabel = (string) ($row['who'] ?? ($role === 'editor' ? 'Editor' : 'Client'));
+            } elseif ($isClient) {
                 $whoLabel = $role === 'editor' ? 'Editor' : 'You';
             } else {
                 $whoLabel = $role === 'editor' ? 'You' : 'Client';

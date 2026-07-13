@@ -76,6 +76,9 @@
     if (kind === 'meeting_reminder') {
       return { className: 'wa-alert-pill wa-alert-pill--reminder', label: 'Soon' };
     }
+    if (kind === 'whatsapp_message') {
+      return { className: 'wa-alert-pill wa-alert-pill--message', label: 'Message' };
+    }
     return { className: 'wa-alert-pill', label: 'Update' };
   }
 

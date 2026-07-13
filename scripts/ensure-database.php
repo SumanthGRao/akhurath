@@ -166,6 +166,15 @@ if (is_file($migrationNotifyStatus) && akh_ensure_table_exists($pdo, $schema, 't
     }
 }
 
+$migrationWaMessages = AKH_ROOT . '/sql/migrations/010_whatsapp_messages.sql';
+if (is_file($migrationWaMessages) && !akh_ensure_table_exists($pdo, $schema, 'whatsapp_messages')) {
+    echo "Applying sql/migrations/010_whatsapp_messages.sql ...\n";
+    $sqlWaMessages = file_get_contents($migrationWaMessages);
+    if (is_string($sqlWaMessages) && trim($sqlWaMessages) !== '') {
+        $pdo->exec($sqlWaMessages);
+    }
+}
+
 echo "Schema patches are up to date.\n";
 
 if (!$migrateCustomers && !$migrateEditors) {
