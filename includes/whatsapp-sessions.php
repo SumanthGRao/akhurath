@@ -24,13 +24,23 @@ function akh_wa_chat_close_message_text(): string
         . "You can reply 'Hi' at any time to see the main menu again.";
 }
 
+function akh_wa_session_phone_digits(string $phone): string
+{
+    return preg_replace('/\D+/', '', trim($phone));
+}
+
+function akh_wa_session_sql_phone_digits_expr(string $column = 'phone'): string
+{
+    return "REPLACE(REPLACE(REPLACE(TRIM({$column}), '+', ''), ' ', ''), '-', '')";
+}
+
 /**
  * @return list<string>
  */
 function akh_wa_phone_digit_variants(string $phone): array
 {
     $raw = trim($phone);
-    $digits = preg_replace('/\D+/', '', $raw);
+    $digits = akh_wa_session_phone_digits($raw);
     if ($digits === '') {
         return $raw !== '' ? [$raw] : [];
     }
@@ -51,232 +61,202 @@ function akh_wa_phone_digit_variants(string $phone): array
 }
 
 /**
- * Collect likely client phone strings for a task (tasks row, recent messages, active session).
+ * Task codes / ids that may appear in whatsapp_sessions.selected_task.
  *
  * @return list<string>
  */
-function akh_wa_session_phone_candidates(string $taskCode, string $primaryPhone = ''): array
+function akh_wa_session_task_match_variants(string $taskCode): array
 {
     require_once __DIR__ . '/tasks.php';
     require_once __DIR__ . '/whatsapp-tasks.php';
-    require_once __DIR__ . '/whatsapp-messages.php';
 
     $taskCode = akh_task_normalize_id(trim($taskCode));
-    $phones = [];
-
-    foreach (akh_wa_phone_digit_variants($primaryPhone) as $variant) {
-        $phones[] = $variant;
+    if ($taskCode === '') {
+        return [];
     }
 
-    if ($taskCode !== '') {
-        $wa = akh_wa_task_by_code($taskCode);
-        if (is_array($wa)) {
-            foreach (akh_wa_phone_digit_variants((string) ($wa['phone'] ?? '')) as $variant) {
-                $phones[] = $variant;
-            }
+    $variants = akh_task_id_match_variants($taskCode);
+    $wa = akh_wa_task_by_code($taskCode);
+    if (is_array($wa)) {
+        $waId = trim((string) ($wa['id'] ?? ''));
+        if ($waId !== '') {
+            $variants[] = $waId;
         }
-
-        if (akh_wa_messages_table_exists()) {
-            $match = akh_wa_message_task_match_clause($taskCode);
-            if ($match['sql'] !== '0') {
-                try {
-                    $sql = "SELECT phone FROM whatsapp_messages
-                            WHERE {$match['sql']} AND TRIM(COALESCE(phone, '')) <> ''
-                            ORDER BY id DESC LIMIT 5";
-                    $st = akh_db()->prepare($sql);
-                    $st->execute($match['params']);
-                    while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
-                        if (!is_array($row)) {
-                            continue;
-                        }
-                        foreach (akh_wa_phone_digit_variants((string) ($row['phone'] ?? '')) as $variant) {
-                            $phones[] = $variant;
-                        }
-                    }
-                } catch (Throwable $e) {
-                    error_log('akh_wa_session_phone_candidates messages: ' . $e->getMessage());
-                }
-            }
-        }
-
-        if (akh_wa_sessions_table_exists()) {
-            $taskVariants = akh_task_id_match_variants($taskCode);
-            if ($taskVariants !== []) {
-                $tph = implode(',', array_fill(0, count($taskVariants), '?'));
-                try {
-                    $st = akh_db()->prepare(
-                        "SELECT phone FROM whatsapp_sessions
-                         WHERE TRIM(COALESCE(selected_task, '')) IN ({$tph})
-                         LIMIT 5"
-                    );
-                    $st->execute($taskVariants);
-                    while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
-                        if (!is_array($row)) {
-                            continue;
-                        }
-                        foreach (akh_wa_phone_digit_variants((string) ($row['phone'] ?? '')) as $variant) {
-                            $phones[] = $variant;
-                        }
-                    }
-                } catch (Throwable $e) {
-                    error_log('akh_wa_session_phone_candidates sessions: ' . $e->getMessage());
-                }
-            }
+        $waCode = trim((string) ($wa['task_code'] ?? ''));
+        if ($waCode !== '') {
+            $variants[] = $waCode;
         }
     }
 
-    return array_values(array_unique(array_filter($phones, static fn (string $v): bool => $v !== '')));
+    return array_values(array_unique(array_filter($variants, static fn (string $v): bool => $v !== '')));
 }
 
 /**
- * @param list<string> $phoneVariants
- * @param list<string> $taskVariants
- * @return array{sql: string, params: list<string>}|null
+ * @return ?array<string, mixed>
  */
-function akh_wa_session_match_clause(array $phoneVariants, array $taskVariants): ?array
+function akh_wa_session_row_by_phone_digits(string $phoneDigits): ?array
 {
-    $where = [];
-    $params = [];
-
-    if ($phoneVariants !== []) {
-        $ph = implode(',', array_fill(0, count($phoneVariants), '?'));
-        $where[] = "TRIM(phone) IN ({$ph})";
-        foreach ($phoneVariants as $variant) {
-            $params[] = $variant;
-        }
-
-        $digitSet = [];
-        foreach ($phoneVariants as $variant) {
-            $digits = preg_replace('/\D+/', '', $variant);
-            if ($digits !== '') {
-                $digitSet[$digits] = true;
-            }
-        }
-        if ($digitSet !== []) {
-            $digits = array_keys($digitSet);
-            $dph = implode(',', array_fill(0, count($digits), '?'));
-            $where[] = "REPLACE(REPLACE(REPLACE(TRIM(phone), '+', ''), ' ', ''), '-', '') IN ({$dph})";
-            foreach ($digits as $digit) {
-                $params[] = $digit;
-            }
-        }
-    }
-
-    if ($taskVariants !== []) {
-        $tph = implode(',', array_fill(0, count($taskVariants), '?'));
-        $where[] = "TRIM(COALESCE(selected_task, '')) IN ({$tph})";
-        foreach ($taskVariants as $variant) {
-            $params[] = $variant;
-        }
-    }
-
-    if ($where === []) {
+    if ($phoneDigits === '' || !akh_wa_sessions_table_exists()) {
         return null;
     }
 
-    return [
-        'sql' => '(' . implode(' OR ', $where) . ')',
-        'params' => $params,
-    ];
-}
-
-/**
- * @return array{ok: bool, rows: int, phone?: string, error?: string}
- */
-function akh_wa_session_verify_menu_state(array $phoneVariants, array $taskVariants): array
-{
-    $match = akh_wa_session_match_clause($phoneVariants, $taskVariants);
-    if ($match === null) {
-        return ['ok' => false, 'rows' => 0, 'error' => 'No phone or task match criteria.'];
-    }
+    $expr = akh_wa_session_sql_phone_digits_expr('phone');
 
     try {
         $sql = "SELECT phone, current_step, selected_task
                 FROM whatsapp_sessions
-                WHERE {$match['sql']}
+                WHERE {$expr} = ?
                 LIMIT 1";
         $st = akh_db()->prepare($sql);
-        $st->execute($match['params']);
+        $st->execute([$phoneDigits]);
         $row = $st->fetch(PDO::FETCH_ASSOC);
-        if (!is_array($row)) {
-            return ['ok' => false, 'rows' => 0, 'error' => 'No WhatsApp session row matched this client.'];
-        }
 
-        $step = strtolower(trim((string) ($row['current_step'] ?? '')));
-        $selected = trim((string) ($row['selected_task'] ?? ''));
-        $ok = $step === 'menu' && $selected === '';
-
-        return [
-            'ok' => $ok,
-            'rows' => $ok ? 1 : 0,
-            'phone' => trim((string) ($row['phone'] ?? '')),
-            'error' => $ok ? null : 'Session row exists but is not back on the menu yet.',
-        ];
+        return is_array($row) ? $row : null;
     } catch (Throwable $e) {
-        error_log('akh_wa_session_verify_menu_state: ' . $e->getMessage());
+        error_log('akh_wa_session_row_by_phone_digits: ' . $e->getMessage());
 
-        return ['ok' => false, 'rows' => 0, 'error' => 'Could not verify WhatsApp session state.'];
+        return null;
     }
 }
 
 /**
- * Reset WhatsApp bot session state for a client phone / active task.
+ * @return ?array<string, mixed>
+ */
+function akh_wa_session_row_by_task_code(string $taskCode): ?array
+{
+    $taskVariants = akh_wa_session_task_match_variants($taskCode);
+    if ($taskVariants === [] || !akh_wa_sessions_table_exists()) {
+        return null;
+    }
+
+    $tph = implode(',', array_fill(0, count($taskVariants), '?'));
+
+    try {
+        $sql = "SELECT phone, current_step, selected_task
+                FROM whatsapp_sessions
+                WHERE TRIM(COALESCE(selected_task, '')) IN ({$tph})
+                LIMIT 1";
+        $st = akh_db()->prepare($sql);
+        $st->execute($taskVariants);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+
+        return is_array($row) ? $row : null;
+    } catch (Throwable $e) {
+        error_log('akh_wa_session_row_by_task_code: ' . $e->getMessage());
+
+        return null;
+    }
+}
+
+function akh_wa_session_reset_sql_set_clause(): string
+{
+    return "current_step = 'menu',
+            selected_task = NULL,
+            project_name = NULL,
+            task_type = NULL,
+            project_details = NULL,
+            reference_link = NULL,
+            delivery_type = NULL,
+            drive_link = NULL,
+            comments = NULL";
+}
+
+/**
+ * Reset WhatsApp bot session for the client tied to this task/message phone.
  *
  * @return array{ok: bool, rows: int, phone?: string, error?: string}
  */
 function akh_wa_session_reset_for_context(string $taskCode, string $phone = ''): array
 {
-    require_once __DIR__ . '/tasks.php';
-
     if (!akh_wa_sessions_table_exists()) {
         return ['ok' => false, 'rows' => 0, 'error' => 'Table whatsapp_sessions was not found.'];
     }
 
-    $taskCode = akh_task_normalize_id(trim($taskCode));
-    $phoneVariants = akh_wa_session_phone_candidates($taskCode, $phone);
-    $taskVariants = $taskCode !== '' ? akh_task_id_match_variants($taskCode) : [];
+    require_once __DIR__ . '/tasks.php';
 
-    $match = akh_wa_session_match_clause($phoneVariants, $taskVariants);
-    if ($match === null) {
-        return ['ok' => false, 'rows' => 0, 'error' => 'No client phone number is linked to this task.'];
-    }
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    $phoneDigits = akh_wa_session_phone_digits($phone);
+    $taskVariants = $taskCode !== '' ? akh_wa_session_task_match_variants($taskCode) : [];
+    $setSql = akh_wa_session_reset_sql_set_clause();
+    $phoneExpr = akh_wa_session_sql_phone_digits_expr('phone');
+    $totalRows = 0;
 
     try {
-        $sql = "UPDATE whatsapp_sessions SET
-                    current_step = 'menu',
-                    selected_task = NULL,
-                    project_name = NULL,
-                    task_type = NULL,
-                    project_details = NULL,
-                    reference_link = NULL,
-                    delivery_type = NULL,
-                    drive_link = NULL,
-                    comments = NULL
-                WHERE {$match['sql']}";
-        $st = akh_db()->prepare($sql);
-        $st->execute($match['params']);
-        $rows = $st->rowCount();
+        if ($phoneDigits !== '') {
+            $sql = "UPDATE whatsapp_sessions SET {$setSql} WHERE {$phoneExpr} = ?";
+            $st = akh_db()->prepare($sql);
+            $st->execute([$phoneDigits]);
+            $totalRows += $st->rowCount();
+        }
+
+        if ($taskVariants !== []) {
+            $tph = implode(',', array_fill(0, count($taskVariants), '?'));
+            $sql = "UPDATE whatsapp_sessions SET {$setSql}
+                    WHERE TRIM(COALESCE(selected_task, '')) IN ({$tph})";
+            $st = akh_db()->prepare($sql);
+            $st->execute($taskVariants);
+            $totalRows += $st->rowCount();
+        }
+
+        $sessionRow = null;
+        if ($phoneDigits !== '') {
+            $sessionRow = akh_wa_session_row_by_phone_digits($phoneDigits);
+        }
+        if ($sessionRow === null && $taskCode !== '') {
+            $sessionRow = akh_wa_session_row_by_task_code($taskCode);
+        }
+
+        if ($sessionRow === null) {
+            error_log(
+                'akh_wa_session_reset: no session row found task=' . $taskCode
+                . ' phone_digits=' . $phoneDigits
+                . ' updated_rows=' . $totalRows
+            );
+
+            return ['ok' => false, 'rows' => $totalRows, 'error' => 'No WhatsApp session row matched this client.'];
+        }
+
+        $exactPhone = trim((string) ($sessionRow['phone'] ?? ''));
+        if ($exactPhone !== '') {
+            $sql = "UPDATE whatsapp_sessions SET {$setSql} WHERE phone = ?";
+            $st = akh_db()->prepare($sql);
+            $st->execute([$exactPhone]);
+            $totalRows += $st->rowCount();
+        }
+
+        $after = $phoneDigits !== ''
+            ? akh_wa_session_row_by_phone_digits($phoneDigits)
+            : akh_wa_session_row_by_task_code($taskCode);
+        if ($after === null) {
+            $after = $sessionRow;
+        }
+
+        $step = strtolower(trim((string) ($after['current_step'] ?? '')));
+        $selected = trim((string) ($after['selected_task'] ?? ''));
 
         error_log(
             'akh_wa_session_reset: task=' . $taskCode
-            . ' phones=' . json_encode($phoneVariants, JSON_UNESCAPED_SLASHES)
+            . ' phone_digits=' . $phoneDigits
+            . ' exact_phone=' . $exactPhone
             . ' tasks=' . json_encode($taskVariants, JSON_UNESCAPED_SLASHES)
-            . ' rows=' . $rows
+            . ' updated_rows=' . $totalRows
+            . ' after_step=' . $step
+            . ' after_selected=' . $selected
         );
 
-        $verify = akh_wa_session_verify_menu_state($phoneVariants, $taskVariants);
-        if (($verify['ok'] ?? false) === true) {
+        if ($step !== 'menu' || $selected !== '') {
             return [
-                'ok' => true,
-                'rows' => max($rows, 1),
-                'phone' => (string) ($verify['phone'] ?? $phone),
+                'ok' => false,
+                'rows' => $totalRows,
+                'phone' => $exactPhone !== '' ? $exactPhone : $phone,
+                'error' => 'WhatsApp session was found but current_step did not reset to menu (now: ' . ($step !== '' ? $step : 'empty') . ').',
             ];
         }
 
         return [
-            'ok' => false,
-            'rows' => $rows,
-            'error' => (string) ($verify['error'] ?? 'Could not reset the WhatsApp session.'),
+            'ok' => true,
+            'rows' => max($totalRows, 1),
+            'phone' => $exactPhone !== '' ? $exactPhone : $phone,
         ];
     } catch (Throwable $e) {
         error_log('akh_wa_session_reset_for_context: ' . $e->getMessage());
@@ -345,14 +325,9 @@ function akh_editor_end_whatsapp_chat(string $editorUsername, string $taskId): a
         ];
     }
 
-    $resolvedPhone = trim((string) ($reset['phone'] ?? $phone));
-    if ($resolvedPhone === '') {
-        $resolvedPhone = $phone;
-    }
-
     $send = akh_wa_message_send_editor_outbound(
         $taskCode,
-        $resolvedPhone,
+        $phone,
         akh_wa_chat_close_message_text(),
         $editorUsername
     );
