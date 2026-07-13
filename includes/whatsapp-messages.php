@@ -195,7 +195,7 @@ function akh_wa_message_insert(array $fields): ?int
  */
 function akh_wa_message_n8n_webhook_url(): string
 {
-    $default = 'https://n8n.akhurathstudio.com/webhook-test/ada421c4-2607-4b06-990b-51d0c704dd9c';
+    $default = 'https://n8n.akhurathstudio.com/webhook/ada421c4-2607-4b06-990b-51d0c704dd9c';
     if (defined('AKH_N8N_WA_MESSAGE_WEBHOOK_URL')) {
         $configured = trim((string) AKH_N8N_WA_MESSAGE_WEBHOOK_URL);
         if ($configured !== '') {
