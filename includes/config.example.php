@@ -161,6 +161,12 @@ const AKH_WA_DASHBOARD_PASS_HASH = '$2y$12$CQb.aKIcjY.Fz6s4PV1h8.BMrtswBIJI1QaNT
 const AKH_WA_DASHBOARD_REFRESH_SECONDS = 300;
 
 /**
+ * n8n (or other automation) webhook — POST JSON when a row is inserted into whatsapp_messages
+ * (e.g. editor reply from the desk). Leave '' to disable.
+ */
+const AKH_N8N_WA_MESSAGE_WEBHOOK_URL = '';
+
+/**
  * Customer portal: web UI for your NAS / drive (Synology Drive, Nextcloud, etc.).
  * After login, the dashboard links here — users sign in on YOUR drive with the
  * credentials you create on the NAS (same username if you sync accounts, or separate).

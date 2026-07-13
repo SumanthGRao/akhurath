@@ -3,6 +3,109 @@
 declare(strict_types=1);
 
 /**
+ * @param array<string, mixed> $t
+ * @return list<array{at: string, role: string, who: string, text: string, source: string}>
+ */
+function akh_task_thread_conversation_for(array $t): array
+{
+    require_once __DIR__ . '/whatsapp-messages.php';
+
+    return akh_task_merged_conversation_list($t);
+}
+
+/**
+ * Fingerprint for live thread sync (portal + WhatsApp message counts / latest WA id).
+ *
+ * @param array<string, mixed> $t
+ */
+function akh_task_merged_conversation_sig(array $t): string
+{
+    require_once __DIR__ . '/tasks.php';
+    require_once __DIR__ . '/whatsapp-messages.php';
+
+    $tid = akh_task_normalize_id((string) ($t['id'] ?? ''));
+    $parts = [(string) count(akh_task_conversation_list($t))];
+    if ($tid !== '' && akh_wa_messages_table_exists()) {
+        $match = akh_wa_message_task_match_clause($tid);
+        if ($match['sql'] !== '0') {
+            try {
+                $sql = "SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS m
+                        FROM whatsapp_messages WHERE {$match['sql']}";
+                $st = akh_db()->prepare($sql);
+                $st->execute($match['params']);
+                $row = $st->fetch(PDO::FETCH_ASSOC);
+                if (is_array($row)) {
+                    $parts[] = (string) ($row['c'] ?? '0');
+                    $parts[] = (string) ($row['m'] ?? '0');
+                }
+            } catch (Throwable) {
+                // best-effort
+            }
+        }
+    }
+
+    return hash('sha256', implode('|', $parts));
+}
+
+/**
+ * @param list<array{at: string, role: string, who: string, text: string, source?: string}> $conv
+ */
+function akh_render_task_thread_bubbles(array $conv, string $portal): void
+{
+    $isClient = $portal === 'client';
+    foreach ($conv as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $role = (string) ($row['role'] ?? '');
+        $source = (string) ($row['source'] ?? 'portal');
+        if ($role === 'system') {
+            $bubbleClass = 'ticket__msg ticket__msg--system';
+        } else {
+            $bubbleClass = $role === 'editor' ? 'ticket__msg ticket__msg--editor' : 'ticket__msg ticket__msg--client';
+        }
+        if ($source === 'whatsapp') {
+            $whoLabel = (string) ($row['who'] ?? ($role === 'editor' ? 'Editor' : 'Client'));
+        } elseif ($isClient) {
+            $whoLabel = $role === 'editor' ? 'Editor' : 'You';
+        } else {
+            $whoLabel = $role === 'editor' ? 'You' : (string) ($row['who'] ?? 'Client');
+        }
+        ?>
+        <div class="<?php echo h($bubbleClass); ?>">
+          <div class="ticket__msg-meta">
+            <span><?php echo h($whoLabel); ?></span>
+            <span class="ticket__msg-time"><?php echo h((string) ($row['at'] ?? '')); ?></span>
+          </div>
+          <div class="ticket__msg-body"><?php echo nl2br(h((string) ($row['text'] ?? ''))); ?></div>
+        </div>
+        <?php
+    }
+}
+
+/**
+ * @param array<string, mixed> $t
+ */
+function akh_render_task_thread_scroll_html(array $t, string $portal): string
+{
+    $tid = (string) ($t['id'] ?? '');
+    $assigned = trim((string) ($t['assigned_editor'] ?? ''));
+    if ($tid === '' || $assigned === '') {
+        return '';
+    }
+
+    ob_start();
+    $conv = akh_task_thread_conversation_for($t);
+    if ($conv === []) {
+        echo '<p class="ticket__thread-empty">No messages yet.</p>';
+    } else {
+        akh_render_task_thread_bubbles($conv, $portal);
+    }
+
+    return (string) ob_get_clean();
+}
+
+/**
  * Compact client ↔ editor message column (shown when an editor is assigned).
  *
  * @param array<string, mixed> $t
@@ -14,8 +117,6 @@ function akh_render_task_thread_panel(array $t, string $portal, string $csrfToke
     if ($tid === '' || $assigned === '') {
         return;
     }
-    require_once __DIR__ . '/whatsapp-messages.php';
-    $conv = akh_task_merged_conversation_list($t);
     $isClient = $portal === 'client';
     $actionField = $isClient ? 'task_action' : 'action';
     $actionVal = 'thread_message';
@@ -26,35 +127,13 @@ function akh_render_task_thread_panel(array $t, string $portal, string $csrfToke
         <p class="ticket__thread-lead"><?php echo $isClient ? 'Short notes to your editor.' : 'Short notes to the client.'; ?></p>
       </div>
       <div class="ticket__thread-scroll">
-        <?php if ($conv === []): ?>
+        <?php
+        $conv = akh_task_thread_conversation_for($t);
+        if ($conv === []): ?>
           <p class="ticket__thread-empty">No messages yet.</p>
-        <?php else: ?>
-          <?php foreach ($conv as $row): ?>
-            <?php
-            $role = (string) ($row['role'] ?? '');
-            $source = (string) ($row['source'] ?? 'portal');
-            if ($role === 'system') {
-                $bubbleClass = 'ticket__msg ticket__msg--system';
-            } else {
-                $bubbleClass = $role === 'editor' ? 'ticket__msg ticket__msg--editor' : 'ticket__msg ticket__msg--client';
-            }
-            if ($source === 'whatsapp') {
-                $whoLabel = (string) ($row['who'] ?? ($role === 'editor' ? 'Editor' : 'Client'));
-            } elseif ($isClient) {
-                $whoLabel = $role === 'editor' ? 'Editor' : 'You';
-            } else {
-                $whoLabel = $role === 'editor' ? 'You' : 'Client';
-            }
-            ?>
-            <div class="<?php echo h($bubbleClass); ?>">
-              <div class="ticket__msg-meta">
-                <span><?php echo h($whoLabel); ?></span>
-                <span class="ticket__msg-time"><?php echo h((string) ($row['at'] ?? '')); ?></span>
-              </div>
-              <div class="ticket__msg-body"><?php echo nl2br(h((string) ($row['text'] ?? ''))); ?></div>
-            </div>
-          <?php endforeach; ?>
-        <?php endif; ?>
+        <?php else:
+            akh_render_task_thread_bubbles($conv, $portal);
+        endif; ?>
       </div>
       <form class="ticket__thread-form" method="post" action="">
         <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>" />

@@ -175,6 +175,21 @@ if (is_file($migrationWaMessages) && !akh_ensure_table_exists($pdo, $schema, 'wh
     }
 }
 
+if (akh_ensure_table_exists($pdo, $schema, 'whatsapp_messages')) {
+    if (!akh_ensure_column_exists($pdo, $schema, 'whatsapp_messages', 'customer_name')) {
+        echo "Adding column whatsapp_messages.customer_name ...\n";
+        $pdo->exec(
+            'ALTER TABLE whatsapp_messages ADD COLUMN customer_name VARCHAR(255) NULL DEFAULT NULL AFTER sender'
+        );
+    }
+    if (!akh_ensure_column_exists($pdo, $schema, 'whatsapp_messages', 'editor_name')) {
+        echo "Adding column whatsapp_messages.editor_name ...\n";
+        $pdo->exec(
+            'ALTER TABLE whatsapp_messages ADD COLUMN editor_name VARCHAR(255) NULL DEFAULT NULL AFTER customer_name'
+        );
+    }
+}
+
 echo "Schema patches are up to date.\n";
 
 if (!$migrateCustomers && !$migrateEditors) {

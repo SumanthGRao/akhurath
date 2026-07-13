@@ -9,6 +9,7 @@ require_once AKH_ROOT . '/includes/editor-leave.php';
 require_once AKH_ROOT . '/includes/tasks.php';
 require_once AKH_ROOT . '/includes/dashboard-alerts.php';
 require_once AKH_ROOT . '/includes/task-thread-panel.php';
+require_once AKH_ROOT . '/includes/editor-dashboard-api.php';
 require_once AKH_ROOT . '/includes/csrf.php';
 
 akh_require_editor();
@@ -56,6 +57,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim((string) ($_POST['ajax_action'
         }
         exit;
     }
+    if ($ajax === 'thread_poll') {
+        $taskId = trim((string) ($_POST['task_id'] ?? ''));
+        try {
+            echo json_encode(akh_editor_desk_thread_poll($editor, $taskId), JSON_THROW_ON_ERROR);
+        } catch (\Throwable) {
+            echo json_encode(['ok' => false]);
+        }
+        exit;
+    }
     if ($ajax === 'thread_send') {
         $taskId = trim((string) ($_POST['task_id'] ?? ''));
         $body = trim((string) ($_POST['thread_body'] ?? ''));
@@ -65,10 +75,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim((string) ($_POST['ajax_action'
             exit;
         }
         try {
+            $tAfter = akh_task_by_id($taskId);
             echo json_encode([
                 'ok' => true,
                 'task_id' => $taskId,
                 'html' => akh_editor_desk_panel_html($editor, $taskId, akh_csrf_token()),
+                'msg_sig' => is_array($tAfter) ? akh_task_merged_conversation_sig($tAfter) : '',
                 'bell' => akh_task_editor_board_bell_count($editor),
             ], JSON_THROW_ON_ERROR);
         } catch (\Throwable) {
@@ -304,7 +316,6 @@ $attendanceSinceLabel = $attendanceSinceTs !== null ? date('M j, g:i A', $attend
 $leavePendingCount = AKH_EDITOR_ATTENDANCE_ENABLED ? akh_editor_leave_pending_for_editor($editor) : 0;
 
 require_once AKH_ROOT . '/includes/editor-dashboard-render.php';
-require_once AKH_ROOT . '/includes/editor-dashboard-api.php';
 $edeskCssVer = is_file(AKH_ROOT . '/assets/css/editor-dashboard.css') ? (string) filemtime(AKH_ROOT . '/assets/css/editor-dashboard.css') : '1';
 $edeskJsVer = is_file(AKH_ROOT . '/assets/js/editor-dashboard.js') ? (string) filemtime(AKH_ROOT . '/assets/js/editor-dashboard.js') : '1';
 $defaultDeskTab = $mine !== [] ? 'mine' : 'pool';

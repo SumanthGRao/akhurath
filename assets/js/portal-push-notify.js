@@ -5,8 +5,8 @@
 (function () {
   'use strict';
 
-  var POLL_MS = 14000;
-  var FIRST_POLL_MS = 2200;
+  var POLL_MS = cfg.mode === 'editor' ? 8000 : 14000;
+  var FIRST_POLL_MS = cfg.mode === 'editor' ? 800 : 2200;
   var cfg = window._akhPortalPush;
   if (!cfg || !cfg.mode || !cfg.csrf) {
     return;

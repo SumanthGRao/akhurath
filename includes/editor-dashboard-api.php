@@ -157,6 +157,7 @@ function akh_editor_desk_list_row_json(array $vm): array
         'ack_editor' => (bool) $vm['ack_editor'],
         'ack_meeting' => (bool) ($vm['ack_meeting'] ?? false),
         'msg_count' => count(akh_task_merged_conversation_list($t)),
+        'msg_sig' => akh_task_merged_conversation_sig($t),
         'from_whatsapp' => (string) ($t['edit_type'] ?? '') === 'studio_admin'
             || strtolower(trim((string) ($t['client_username'] ?? ''))) === 'whatsapp',
     ];
@@ -298,6 +299,36 @@ function akh_editor_desk_panel_html(string $editorUsername, string $taskId, stri
     $html = ob_get_clean();
 
     return is_string($html) ? $html : '';
+}
+
+/**
+ * @return array{ok: bool, task_id?: string, msg_sig?: string, html?: string, error?: string}
+ */
+function akh_editor_desk_thread_poll(string $editorUsername, string $taskId): array
+{
+    $taskId = trim($taskId);
+    if ($taskId === '') {
+        return ['ok' => false, 'error' => 'bad_task'];
+    }
+
+    $found = akh_editor_desk_find_task($editorUsername, $taskId);
+    if ($found === null) {
+        return ['ok' => false, 'error' => 'not_found'];
+    }
+
+    $t = $found['task'];
+    if (strtolower(trim((string) ($t['assigned_editor'] ?? ''))) !== strtolower(trim($editorUsername))) {
+        return ['ok' => false, 'error' => 'not_yours'];
+    }
+
+    $canonicalId = (string) ($t['id'] ?? $taskId);
+
+    return [
+        'ok' => true,
+        'task_id' => $canonicalId,
+        'msg_sig' => akh_task_merged_conversation_sig($t),
+        'html' => akh_render_task_thread_scroll_html($t, 'editor'),
+    ];
 }
 
 /**

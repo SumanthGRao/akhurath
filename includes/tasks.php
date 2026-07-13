@@ -770,12 +770,22 @@ function akh_task_editor_append_thread(string $taskId, string $editorUsername, s
         if (($t['assigned_editor'] ?? null) !== $editorUsername) {
             return 'Task not found.';
         }
-        $conv = akh_task_conversation_list($t);
-        $conv[] = ['at' => gmdate('c'), 'role' => 'editor', 'who' => $editorUsername, 'text' => $body];
-        if (count($conv) > 100) {
-            $conv = array_slice($conv, -100);
+
+        require_once __DIR__ . '/whatsapp-messages.php';
+        if (akh_wa_messages_table_exists()) {
+            $canonicalId = akh_task_normalize_id((string) ($t['id'] ?? $taskId));
+            if (akh_wa_message_insert_editor_reply($canonicalId !== '' ? $canonicalId : $taskId, $editorUsername, $body) === null) {
+                return 'Could not save message.';
+            }
+        } else {
+            $conv = akh_task_conversation_list($t);
+            $conv[] = ['at' => gmdate('c'), 'role' => 'editor', 'who' => $editorUsername, 'text' => $body];
+            if (count($conv) > 100) {
+                $conv = array_slice($conv, -100);
+            }
+            $list[$i]['conversation'] = $conv;
         }
-        $list[$i]['conversation'] = $conv;
+
         $list[$i]['client_editor_notify'] = true;
         $snippet = mb_strlen($body) > 140 ? mb_substr($body, 0, 139) . '…' : $body;
         $list[$i]['client_notify_detail'] = 'New message from editor: ' . $snippet;

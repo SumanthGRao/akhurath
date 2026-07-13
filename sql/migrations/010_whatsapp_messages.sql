@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
   task_code VARCHAR(20) NULL DEFAULT NULL,
   direction ENUM('incoming', 'outgoing') NULL DEFAULT NULL,
   sender ENUM('client', 'editor', 'system') NULL DEFAULT 'client',
+  customer_name VARCHAR(255) NULL DEFAULT NULL,
+  editor_name VARCHAR(255) NULL DEFAULT NULL,
   message TEXT NULL DEFAULT NULL,
   whatsapp_message_id VARCHAR(255) NULL DEFAULT NULL,
   status ENUM('pending', 'sent', 'delivered', 'read', 'received') NULL DEFAULT 'received',

@@ -10,6 +10,13 @@
   var csrf = root.getAttribute('data-csrf') || '';
   var BellKey = 'akh_editor_bell_last';
   var rowCache = {};
+  var lastThreadSigByTask = {};
+  var threadPollInterval = null;
+  var deskPollInterval = null;
+  var liveClockInterval = null;
+  var lastSyncAt = Date.now();
+  var THREAD_POLL_MS = 1500;
+  var DESK_POLL_MS = 4000;
   var activeTaskId = '';
   var activeSection = 'mine';
   var activeStatusFilter = 'all';
@@ -143,11 +150,46 @@
     }, 4200);
   }
 
-  function setLiveStatus(text, syncing) {
+  function setLiveStatus(text, syncing, state) {
     var live = qs('#edesk-live', root);
     var timeEl = qs('#edesk-live-time', root);
     if (timeEl) timeEl.textContent = text;
-    if (live) live.classList.toggle('edesk-live--sync', !!syncing);
+    if (live) {
+      live.classList.toggle('edesk-live--sync', !!syncing);
+      if (state === 'new') {
+        live.classList.add('edesk-live--new');
+        setTimeout(function () {
+          live.classList.remove('edesk-live--new');
+        }, 2200);
+      }
+    }
+  }
+
+  function markSyncSuccess(flashNew) {
+    lastSyncAt = Date.now();
+    updateLiveClock();
+    if (flashNew) {
+      setLiveStatus('New message', false, 'new');
+      setTimeout(updateLiveClock, 2200);
+    }
+  }
+
+  function updateLiveClock() {
+    var sec = Math.max(0, Math.floor((Date.now() - lastSyncAt) / 1000));
+    var label = sec < 2 ? 'just now' : sec + 's ago';
+    setLiveStatus('Synced ' + label, false);
+  }
+
+  function startLiveClock() {
+    if (liveClockInterval) return;
+    updateLiveClock();
+    liveClockInterval = setInterval(updateLiveClock, 1000);
+  }
+
+  function stopLiveClock() {
+    if (!liveClockInterval) return;
+    clearInterval(liveClockInterval);
+    liveClockInterval = null;
   }
 
   function parseTs(iso) {
@@ -535,6 +577,114 @@
     window.history.replaceState({}, '', url.pathname + url.search + url.hash);
   }
 
+  function snapshotTaskRow(taskId) {
+    var row = rowCache[taskId];
+    if (!row) return null;
+    return {
+      updated_at: row.updated_at || '',
+      msg_count: row.msg_count || 0,
+      msg_sig: row.msg_sig || '',
+    };
+  }
+
+  function rowNeedsPanelRefresh(row, prev) {
+    if (!row || !prev) return false;
+    if (row.updated_at && row.updated_at !== prev.updated_at) return true;
+    return (row.msg_sig || '') !== (prev.msg_sig || '');
+  }
+
+  function rowNeedsThreadOnlyRefresh(row, prev) {
+    if (!row || !prev) return false;
+    if (row.updated_at && row.updated_at !== prev.updated_at) return false;
+    return (row.msg_sig || '') !== (prev.msg_sig || '');
+  }
+
+  function rememberThreadSig(taskId, sig) {
+    if (!taskId || !sig) return;
+    lastThreadSigByTask[taskId] = sig;
+  }
+
+  function updateThreadScroll(panel, html) {
+    var scroll = panel.querySelector('.ticket__thread-scroll');
+    if (!scroll || typeof html !== 'string') return false;
+    var nearBottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 96;
+    scroll.innerHTML = html;
+    if (nearBottom) {
+      scroll.scrollTop = scroll.scrollHeight;
+    }
+    return true;
+  }
+
+  function pollThread(taskId, force) {
+    taskId = normId(taskId);
+    if (!taskId) return Promise.resolve();
+    var panel = findPanel(taskId);
+    if (!panel || !panel.querySelector('.ticket__thread')) return Promise.resolve();
+    return postAjax('thread_poll', { task_id: taskId }).then(function (data) {
+      if (!data || !data.ok || typeof data.html !== 'string') return data;
+      var sig = data.msg_sig || '';
+      var prevSig = lastThreadSigByTask[taskId] || '';
+      if (!force && sig !== '' && sig === prevSig) return data;
+      var isNew = sig !== '' && sig !== prevSig && prevSig !== '';
+      if (sig !== '') rememberThreadSig(taskId, sig);
+      updateThreadScroll(panel, data.html);
+      markSyncSuccess(isNew);
+      return data;
+    });
+  }
+
+  function stopThreadPoll() {
+    if (threadPollInterval) {
+      clearInterval(threadPollInterval);
+      threadPollInterval = null;
+    }
+    var live = qs('#edesk-live', root);
+    if (live) live.classList.remove('edesk-live--active');
+  }
+
+  function startThreadPoll() {
+    stopThreadPoll();
+    var live = qs('#edesk-live', root);
+    if (live) live.classList.add('edesk-live--active');
+    threadPollInterval = setInterval(function () {
+      if (document.hidden || !activeTaskId) return;
+      pollThread(activeTaskId, false);
+    }, THREAD_POLL_MS);
+  }
+
+  function startDeskPoll() {
+    if (deskPollInterval) return;
+    deskPollInterval = setInterval(function () {
+      if (document.hidden) return;
+      setLiveStatus('Syncing…', true);
+      postAjax('poll', {})
+        .then(function (data) {
+          handlePoll(data);
+          markSyncSuccess(false);
+        })
+        .catch(function () {
+          setLiveStatus('Reconnecting…', false);
+        });
+    }, DESK_POLL_MS);
+  }
+
+  function syncActiveThreadPoll(taskId) {
+    taskId = normId(taskId);
+    if (!taskId) {
+      stopThreadPoll();
+      return;
+    }
+    var panel = findPanel(taskId);
+    if (!panel || !panel.querySelector('.ticket__thread')) {
+      stopThreadPoll();
+      return;
+    }
+    var row = rowCache[taskId];
+    if (row && row.msg_sig) rememberThreadSig(taskId, row.msg_sig);
+    startThreadPoll();
+    pollThread(taskId, true);
+  }
+
   function mountPanelHtml(taskId, html) {
     if (!panelsHost || !html) return false;
     removePanelsForTask(taskId);
@@ -546,6 +696,9 @@
     if (!panel.hidden && emptyEl) emptyEl.hidden = true;
     panelsHost.appendChild(panel);
     bindPanelInteractions(panel);
+    if (normId(taskId) === normId(activeTaskId)) {
+      syncActiveThreadPoll(taskId);
+    }
     return true;
   }
 
@@ -589,6 +742,7 @@
     taskId = normId(taskId);
     if (!taskId) {
       activeTaskId = '';
+      stopThreadPoll();
       qsa('.edesk-list__item--active', root).forEach(function (el) {
         el.classList.remove('edesk-list__item--active');
         el.setAttribute('aria-current', 'false');
@@ -647,6 +801,7 @@
     setMobileDetail(true);
     if (!opts.skipUrl) updateUrl(taskId);
     if (panelsHost && !opts.noScroll) panelsHost.scrollTop = 0;
+    syncActiveThreadPoll(taskId);
   }
 
   function bindStatusForms(scope) {
@@ -767,6 +922,7 @@
             form.querySelector('[name="thread_body"]').value = '';
             showToast('Message sent.', 'ok');
             if (data.html) mountPanelHtml(tid, data.html);
+            if (data.msg_sig) rememberThreadSig(tid, data.msg_sig);
             selectTask(tid, { skipFetch: true, noScroll: true });
             if (typeof data.bell === 'number') setDeskBell(data.bell);
           })
@@ -812,16 +968,9 @@
     bar.innerHTML = html;
   }
 
-  function shouldRefreshActivePanel(row, cached) {
-    if (!row || !cached) return false;
-    var prevUpdated = cached.getAttribute('data-updated-at') || '';
-    var prevMsgs = cached.getAttribute('data-msg-count') || '0';
-    if (row.updated_at && row.updated_at !== prevUpdated) return true;
-    return String(row.msg_count || 0) !== prevMsgs;
-  }
-
   function applyDeskLists(desk, preserveSelection, skipPanelRefresh) {
     if (!desk) return;
+    var prevActive = preserveSelection && activeTaskId ? snapshotTaskRow(activeTaskId) : null;
     renderList('pool', desk.pool || [], preserveSelection);
     renderList('mine', desk.mine || [], preserveSelection);
     renderMeetingsBar(desk.meetings || []);
@@ -829,10 +978,12 @@
     refreshRelativeTimes();
     if (skipPanelRefresh || !preserveSelection || !activeTaskId) return;
     var row = rowCache[activeTaskId];
-    var cached = findListItem(activeTaskId);
-    if (shouldRefreshActivePanel(row, cached)) {
-      fetchPanel(activeTaskId, { noScroll: true });
+    if (!rowNeedsPanelRefresh(row, prevActive)) return;
+    if (rowNeedsThreadOnlyRefresh(row, prevActive)) {
+      pollThread(activeTaskId, true);
+      return;
     }
+    fetchPanel(activeTaskId, { noScroll: true });
   }
 
   function handlePoll(data) {
@@ -843,15 +994,7 @@
     }
     if (typeof data.bell === 'number') setDeskBell(data.bell);
 
-    setLiveStatus('Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), false);
-
-    if (activeTaskId) {
-      var row = rowCache[activeTaskId];
-      var cached = findListItem(activeTaskId);
-      if (shouldRefreshActivePanel(row, cached)) {
-        fetchPanel(activeTaskId, { noScroll: true });
-      }
-    }
+    markSyncSuccess(false);
 
     return true;
   }
@@ -987,11 +1130,22 @@
     var first = qs('.edesk-list__item--notify[data-section="mine"]', root)
       || qs('.edesk-list__item[data-section="' + defaultTab + '"]', root);
     if (first) selectTask(first.getAttribute('data-task-id') || '', { noScroll: true });
+  } else {
+    stopThreadPoll();
   }
 
   refreshRelativeTimes();
+  startLiveClock();
+  startDeskPoll();
+  markSyncSuccess(false);
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) return;
+    if (activeTaskId) pollThread(activeTaskId, false);
+    postAjax('poll', {}).then(handlePoll).catch(function () {});
+  });
+
   setInterval(refreshRelativeTimes, 45000);
-  setLiveStatus('Connected', false);
 
   var startBell = parseInt(root.getAttribute('data-bell') || '0', 10);
   var lastBell = parseInt(sessionStorage.getItem(BellKey) || '-1', 10);
@@ -1004,7 +1158,11 @@
     handlePoll: handlePoll,
     showToast: showToast,
     setLiveSyncing: function (on) {
-      setLiveStatus(on ? 'Syncing…' : 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), on);
+      if (on) {
+        setLiveStatus('Syncing…', true);
+      } else {
+        markSyncSuccess(false);
+      }
     },
   };
 })();
