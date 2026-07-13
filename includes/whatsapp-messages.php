@@ -111,11 +111,33 @@ function akh_wa_message_phone_for_task(string $taskCode): string
     }
 
     $wa = akh_wa_task_by_code($taskCode);
-    if (!is_array($wa)) {
-        return '';
+    if (is_array($wa)) {
+        $phone = trim((string) ($wa['phone'] ?? ''));
+        if ($phone !== '') {
+            return $phone;
+        }
     }
 
-    return trim((string) ($wa['phone'] ?? ''));
+    if (akh_wa_messages_table_exists()) {
+        $match = akh_wa_message_task_match_clause($taskCode);
+        if ($match['sql'] !== '0') {
+            try {
+                $sql = "SELECT phone FROM whatsapp_messages
+                        WHERE {$match['sql']} AND TRIM(COALESCE(phone, '')) <> ''
+                        ORDER BY id DESC LIMIT 1";
+                $st = akh_db()->prepare($sql);
+                $st->execute($match['params']);
+                $phone = $st->fetchColumn();
+                if (is_string($phone) && trim($phone) !== '') {
+                    return trim($phone);
+                }
+            } catch (Throwable $e) {
+                error_log('akh_wa_message_phone_for_task: ' . $e->getMessage());
+            }
+        }
+    }
+
+    return '';
 }
 
 function akh_wa_message_direction_is_outbound(string $direction): bool
