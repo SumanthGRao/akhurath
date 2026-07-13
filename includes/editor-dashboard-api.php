@@ -157,6 +157,7 @@ function akh_editor_desk_list_row_json(array $vm): array
         'ack_editor' => (bool) $vm['ack_editor'],
         'ack_meeting' => (bool) ($vm['ack_meeting'] ?? false),
         'msg_count' => count(akh_task_merged_conversation_list($t)),
+        'unread_msg_count' => akh_wa_message_unread_count_for_task((string) $vm['tid_norm']),
         'msg_sig' => akh_task_merged_conversation_sig($t),
         'from_whatsapp' => (string) ($t['edit_type'] ?? '') === 'studio_admin'
             || strtolower(trim((string) ($t['client_username'] ?? ''))) === 'whatsapp',

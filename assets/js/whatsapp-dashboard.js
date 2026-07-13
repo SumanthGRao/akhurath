@@ -820,7 +820,11 @@
   }
 
   if (window.AkhMeetingAlerts) {
-    AkhMeetingAlerts.init({ notifySig: cfg.notifySig || '', reminders: cfg.reminders || [] });
+    AkhMeetingAlerts.init({
+      notifySig: cfg.notifySig || '',
+      notifyCount: parseInt(cfg.notifyCount, 10) || 0,
+      reminders: cfg.reminders || [],
+    });
   }
   if (cfg.reminders) {
     reminderList = cfg.reminders;

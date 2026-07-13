@@ -912,6 +912,9 @@ function akh_task_ajax_editor_view_ack(string $editorUsername, string $taskId, s
     } elseif ($ackKind === 'meeting') {
         require_once __DIR__ . '/dashboard-alerts.php';
         akh_dashboard_mark_task_read($taskId);
+    } elseif ($ackKind === 'message') {
+        require_once __DIR__ . '/whatsapp-messages.php';
+        akh_wa_message_mark_task_read($taskId);
     } elseif ($ackKind === 'editor_task') {
         if ($t === null || strtolower((string) ($t['assigned_editor'] ?? '')) !== $editorUsername) {
             return ['ok' => false, 'error' => 'not_yours'];
@@ -924,7 +927,7 @@ function akh_task_ajax_editor_view_ack(string $editorUsername, string $taskId, s
     }
 
     $out = ['ok' => true, 'bell' => akh_task_editor_board_bell_count($editorUsername)];
-    if ($ackKind === 'meeting' || $ackKind === 'editor_task') {
+    if ($ackKind === 'meeting' || $ackKind === 'editor_task' || $ackKind === 'message') {
         require_once __DIR__ . '/editor-dashboard-api.php';
         $out['desk'] = akh_editor_desk_poll_bundle($editorUsername);
     }

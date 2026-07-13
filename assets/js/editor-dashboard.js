@@ -10,6 +10,7 @@
   var csrf = root.getAttribute('data-csrf') || '';
   var BellKey = 'akh_editor_bell_last';
   var rowCache = {};
+  var lastDeskBell = parseInt(root.getAttribute('data-bell') || '0', 10);
   var lastThreadSigByTask = {};
   var threadPollInterval = null;
   var deskPollInterval = null;
@@ -251,6 +252,19 @@
     if (soon) soon.remove();
   }
 
+  function unreadMsgCount(row) {
+    if (!row) return 0;
+    if (typeof row.unread_msg_count === 'number') return row.unread_msg_count;
+    return 0;
+  }
+
+  function clearMsgBadge(btn) {
+    if (!btn) return;
+    btn.setAttribute('data-msg-count', '0');
+    var msgs = btn.querySelector('.edesk-list__msgs');
+    if (msgs) msgs.remove();
+  }
+
   function ackOpenedItem(btn) {
     if (!btn) return;
     var tid = btn.getAttribute('data-task-id');
@@ -272,9 +286,19 @@
       if (dot) dot.remove();
       clearMeetingBadge(btn);
       postAck('editor_task', tid);
+      clearMsgBadge(btn);
+      if (rowCache[tid]) rowCache[tid].unread_msg_count = 0;
     } else if (btn.getAttribute('data-ack-meeting') === '1') {
       clearMeetingBadge(btn);
       postAck('meeting', tid);
+    }
+    var unreadMsgs = parseInt(btn.getAttribute('data-msg-count') || '0', 10);
+    if (unreadMsgs > 0) {
+      clearMsgBadge(btn);
+      if (rowCache[tid]) rowCache[tid].unread_msg_count = 0;
+      if (btn.getAttribute('data-ack-editor') !== '1') {
+        postAck('message', tid);
+      }
     }
   }
 
@@ -379,7 +403,8 @@
     var when = listAt
       ? '<span class="edesk-list__when" data-ts="' + esc(listAt) + '">' + esc(relativeTime(listAt)) + '</span>'
       : '';
-  var msg = row.msg_count > 0 ? '<span class="edesk-list__msgs">' + row.msg_count + ' msg</span>' : '';
+    var unreadMsgs = unreadMsgCount(row);
+    var msg = unreadMsgs > 0 ? '<span class="edesk-list__msgs">' + unreadMsgs + ' msg</span>' : '';
 
     return (
       '<button type="button" class="' +
@@ -393,7 +418,7 @@
       '" data-updated-at="' +
       esc(row.updated_at) +
       '" data-msg-count="' +
-      esc(String(row.msg_count || 0)) +
+      esc(String(unreadMsgs)) +
       '" data-list-at="' +
       esc(listAt) +
       '" data-status="' +
@@ -1020,7 +1045,11 @@
     if (data.desk) {
       applyDeskLists(data.desk, true);
     }
-    if (typeof data.bell === 'number') setDeskBell(data.bell);
+    if (typeof data.bell === 'number') {
+      if (data.bell > lastDeskBell) playNotifyPing();
+      lastDeskBell = data.bell;
+      setDeskBell(data.bell);
+    }
 
     markSyncSuccess(false);
 

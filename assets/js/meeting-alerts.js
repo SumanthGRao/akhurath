@@ -11,6 +11,7 @@
   var titleEl = null;
   var bodyEl = null;
   var lastNotifySig = '';
+  var lastNotifyCount = -1;
 
   function ensureModal() {
     if (modalEl) {
@@ -153,11 +154,17 @@
     if (!sig || sig === lastNotifySig) {
       return;
     }
+    var n = typeof count === 'number' ? count : 0;
+    if (lastNotifyCount >= 0 && n > lastNotifyCount) {
+      playChime(1);
+    }
     lastNotifySig = sig;
+    lastNotifyCount = n;
   }
 
   function init(cfg) {
     lastNotifySig = (cfg && cfg.notifySig) || '';
+    lastNotifyCount = cfg && typeof cfg.notifyCount === 'number' ? cfg.notifyCount : -1;
     ensureModal();
     if (cfg && cfg.reminders) {
       processReminders(cfg.reminders);

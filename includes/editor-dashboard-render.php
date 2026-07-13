@@ -164,7 +164,7 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
       data-whatsapp="<?php echo !empty($vm['from_whatsapp']) ? '1' : '0'; ?>"
       data-search="<?php echo h($searchBlob); ?>"
       data-updated-at="<?php echo h((string) ($t['updated_at'] ?? '')); ?>"
-      data-msg-count="<?php echo (int) count(akh_task_merged_conversation_list($t)); ?>"
+      data-msg-count="<?php echo (int) akh_wa_message_unread_count_for_task((string) ($vm['tid_norm'] ?? $tid)); ?>"
       data-list-at="<?php echo h($listAt); ?>"
       <?php if ($vm['ack_new']): ?>data-ack-new="1"<?php endif; ?>
       <?php if ($vm['ack_editor']): ?>data-ack-editor="1"<?php endif; ?>
@@ -199,7 +199,12 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
         <?php if ($vm['has_reminder']): ?>
           <span class="edesk-list__pill edesk-list__pill--soon">Soon</span>
         <?php endif; ?>
-        <span class="edesk-list__when" data-ts="<?php echo h($listAt); ?>"><?php echo h($listAt); ?></span>
+        <?php
+        $waUnread = akh_wa_message_unread_count_for_task((string) ($vm['tid_norm'] ?? $tid));
+        if ($waUnread > 0):
+        ?>
+          <span class="edesk-list__msgs"><?php echo (int) $waUnread; ?> msg</span>
+        <?php endif; ?>
         <span class="edesk-list__client"><?php echo h((string) ($t['client_username'] ?? '')); ?></span>
       </span>
     </button>
