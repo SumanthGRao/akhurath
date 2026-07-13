@@ -688,6 +688,34 @@
   color: var(--edesk-muted);
 }
 
+.edesk-card--thread .ticket__thread-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--edesk-border, rgba(0, 0, 0, 0.08));
+}
+
+.ticket__thread-toolbar-lead {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--edesk-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.edesk-end-chat {
+  color: #a84820;
+  border-color: rgba(168, 72, 32, 0.28);
+}
+
+.edesk-end-chat:hover {
+  background: rgba(168, 72, 32, 0.08);
+}
+
 .edesk-card--thread .ticket__thread {
   border: 0;
   background: transparent;

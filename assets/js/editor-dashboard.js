@@ -852,6 +852,34 @@
         });
       });
     });
+    qsa('.edesk-end-chat', panel).forEach(function (btn) {
+      if (btn.getAttribute('data-bound') === '1') return;
+      btn.setAttribute('data-bound', '1');
+      btn.addEventListener('click', function () {
+        var taskId = btn.getAttribute('data-task-id') || '';
+        if (!taskId) return;
+        if (
+          !window.confirm(
+            'Close this WhatsApp chat and return the client to the bot menu? A goodbye message will be sent.'
+          )
+        ) {
+          return;
+        }
+        btn.disabled = true;
+        postAjax('end_chat', { task_id: taskId })
+          .then(function (data) {
+            if (!data || !data.ok) {
+              showToast((data && data.error) || 'Could not end chat.', 'err');
+              return;
+            }
+            showToast('Chat closed. Goodbye message sent.', 'ok');
+            pollThread(taskId, true);
+          })
+          .finally(function () {
+            btn.disabled = false;
+          });
+      });
+    });
   }
 
   function bindAjaxForms() {

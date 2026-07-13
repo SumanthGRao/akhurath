@@ -387,7 +387,20 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
           </section>
 
           <?php if ($section === 'mine'): ?>
+            <?php
+            $waPhone = akh_wa_message_phone_for_task($tid);
+            ?>
             <div class="edesk-card edesk-card--thread">
+              <?php if ($waPhone !== ''): ?>
+                <div class="ticket__thread-toolbar">
+                  <p class="ticket__thread-toolbar-lead">WhatsApp conversation</p>
+                  <button
+                    type="button"
+                    class="btn btn--ghost btn--sm edesk-end-chat"
+                    data-task-id="<?php echo h($tid); ?>"
+                  >End Chat</button>
+                </div>
+              <?php endif; ?>
               <?php akh_render_task_thread_panel($t, 'editor', $pageCsrf); ?>
             </div>
           <?php endif; ?>

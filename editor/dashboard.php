@@ -66,6 +66,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim((string) ($_POST['ajax_action'
         }
         exit;
     }
+    if ($ajax === 'end_chat') {
+        require_once AKH_ROOT . '/includes/whatsapp-sessions.php';
+        $taskId = trim((string) ($_POST['task_id'] ?? ''));
+        try {
+            echo json_encode(akh_editor_end_whatsapp_chat($editor, $taskId), JSON_THROW_ON_ERROR);
+        } catch (\Throwable $e) {
+            error_log('end_chat: ' . $e->getMessage());
+            echo json_encode(['ok' => false, 'error' => 'Could not end chat.']);
+        }
+        exit;
+    }
     if ($ajax === 'thread_send') {
         $taskId = trim((string) ($_POST['task_id'] ?? ''));
         $body = trim((string) ($_POST['thread_body'] ?? ''));
