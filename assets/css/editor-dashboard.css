@@ -310,6 +310,10 @@
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
+.edesk-list__item[hidden] {
+  display: none !important;
+}
+
 .edesk-list__item:hover {
   border-color: rgba(61, 95, 140, 0.28);
   box-shadow: 0 2px 10px rgba(28, 32, 40, 0.05);

@@ -446,6 +446,7 @@
         }
         var show = matchSearch && matchStatus;
         item.hidden = !show;
+        item.setAttribute('aria-hidden', show ? 'false' : 'true');
         if (show) visibleCount += 1;
       });
 
