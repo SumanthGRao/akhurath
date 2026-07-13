@@ -774,8 +774,15 @@ function akh_task_editor_append_thread(string $taskId, string $editorUsername, s
         require_once __DIR__ . '/whatsapp-messages.php';
         if (akh_wa_messages_table_exists()) {
             $canonicalId = akh_task_normalize_id((string) ($t['id'] ?? $taskId));
-            if (akh_wa_message_insert_editor_reply($canonicalId !== '' ? $canonicalId : $taskId, $editorUsername, $body) === null) {
-                return 'Could not save message.';
+            $phone = akh_wa_message_phone_for_task($canonicalId !== '' ? $canonicalId : $taskId);
+            $send = akh_wa_message_send_editor_outbound(
+                $canonicalId !== '' ? $canonicalId : $taskId,
+                $phone,
+                $body,
+                $editorUsername
+            );
+            if (($send['ok'] ?? false) !== true) {
+                return (string) ($send['error'] ?? 'Could not save message.');
             }
         } else {
             $conv = akh_task_conversation_list($t);

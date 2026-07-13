@@ -188,6 +188,17 @@ if (akh_ensure_table_exists($pdo, $schema, 'whatsapp_messages')) {
             'ALTER TABLE whatsapp_messages ADD COLUMN editor_name VARCHAR(255) NULL DEFAULT NULL AFTER customer_name'
         );
     }
+    $dirCol = $pdo->query(
+        "SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = " . $pdo->quote($schema) . " AND TABLE_NAME = 'whatsapp_messages' AND COLUMN_NAME = 'direction'"
+    );
+    $dirType = $dirCol !== false ? $dirCol->fetchColumn() : false;
+    if (is_string($dirType) && !str_contains($dirType, 'outbound')) {
+        echo "Adding whatsapp_messages.direction value outbound ...\n";
+        $pdo->exec(
+            "ALTER TABLE whatsapp_messages MODIFY COLUMN direction ENUM('incoming', 'outgoing', 'outbound') NULL DEFAULT NULL"
+        );
+    }
 }
 
 echo "Schema patches are up to date.\n";

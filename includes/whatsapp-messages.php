@@ -118,6 +118,13 @@ function akh_wa_message_phone_for_task(string $taskCode): string
     return trim((string) ($wa['phone'] ?? ''));
 }
 
+function akh_wa_message_direction_is_outbound(string $direction): bool
+{
+    $direction = strtolower(trim($direction));
+
+    return $direction === 'outbound' || $direction === 'outgoing';
+}
+
 /**
  * @param array<string, mixed> $fields
  */
@@ -133,9 +140,9 @@ function akh_wa_message_insert(array $fields): ?int
         return null;
     }
 
-    $direction = strtolower(trim((string) ($fields['direction'] ?? 'outgoing')));
-    if (!in_array($direction, ['incoming', 'outgoing'], true)) {
-        $direction = 'outgoing';
+    $direction = strtolower(trim((string) ($fields['direction'] ?? 'outbound')));
+    if (!in_array($direction, ['incoming', 'outgoing', 'outbound'], true)) {
+        $direction = 'outbound';
     }
     $sender = strtolower(trim((string) ($fields['sender'] ?? 'editor')));
     if (!in_array($sender, ['client', 'editor', 'system'], true)) {
@@ -175,15 +182,6 @@ function akh_wa_message_insert(array $fields): ?int
             return null;
         }
 
-        $row = $fields;
-        $row['id'] = $id;
-        $row['task_code'] = $taskCode;
-        $row['direction'] = $direction;
-        $row['sender'] = $sender;
-        $row['message'] = $message;
-        $row['status'] = $status;
-        akh_wa_message_dispatch_n8n_webhook($row);
-
         return $id;
     } catch (Throwable $e) {
         error_log('akh_wa_message_insert: ' . $e->getMessage());
@@ -192,28 +190,10 @@ function akh_wa_message_insert(array $fields): ?int
     }
 }
 
-function akh_wa_message_insert_editor_reply(string $taskCode, string $editorUsername, string $body): ?int
-{
-    $customerName = akh_wa_message_customer_name_for_task($taskCode);
-    $editorName = akh_wa_message_editor_display_name($editorUsername);
-    $phone = akh_wa_message_phone_for_task($taskCode);
-
-    return akh_wa_message_insert([
-        'task_code' => $taskCode,
-        'phone' => $phone,
-        'direction' => 'outgoing',
-        'sender' => 'editor',
-        'message' => $body,
-        'customer_name' => $customerName,
-        'editor_name' => $editorName,
-        'status' => 'pending',
-    ]);
-}
-
 /**
- * @param array<string, mixed> $row
+ * Step 2 — POST exact JSON payload to n8n after a successful editor outbound insert.
  */
-function akh_wa_message_dispatch_n8n_webhook(array $row): void
+function akh_wa_message_dispatch_n8n_editor_outbound(int $messageId, string $phone, string $taskCode, string $message): void
 {
     if (!defined('AKH_N8N_WA_MESSAGE_WEBHOOK_URL')) {
         return;
@@ -223,44 +203,133 @@ function akh_wa_message_dispatch_n8n_webhook(array $row): void
         return;
     }
 
-    $payload = json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $payload = json_encode([
+        'message_id' => $messageId,
+        'phone' => $phone,
+        'task_code' => $taskCode,
+        'message' => $message,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if (!is_string($payload)) {
         return;
     }
 
     try {
-        if (function_exists('curl_init')) {
-            $ch = curl_init($url);
-            if ($ch === false) {
-                return;
-            }
-            curl_setopt_array($ch, [
-                CURLOPT_POST => true,
-                CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
-                CURLOPT_POSTFIELDS => $payload,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => 4,
-                CURLOPT_CONNECTTIMEOUT => 2,
-            ]);
-            curl_exec($ch);
-            curl_close($ch);
+        if (!function_exists('curl_init')) {
+            error_log('akh_wa_message_dispatch_n8n_editor_outbound: cURL not available');
 
             return;
         }
-
-        $ctx = stream_context_create([
-            'http' => [
-                'method' => 'POST',
-                'header' => "Content-Type: application/json\r\nAccept: application/json\r\n",
-                'content' => $payload,
-                'timeout' => 4,
-                'ignore_errors' => true,
-            ],
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return;
+        }
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 2,
+            CURLOPT_CONNECTTIMEOUT => 2,
         ]);
-        @file_get_contents($url, false, $ctx);
+        curl_exec($ch);
+        curl_close($ch);
     } catch (Throwable $e) {
-        error_log('akh_wa_message_dispatch_n8n_webhook: ' . $e->getMessage());
+        error_log('akh_wa_message_dispatch_n8n_editor_outbound: ' . $e->getMessage());
     }
+}
+
+/**
+ * Editor outbound message handler (Step 1: insert, Step 2: n8n webhook).
+ *
+ * Phone and task_code are taken from the active editor desk context — the open
+ * task's whatsapp_tasks row (phone) and normalized task id (task_code).
+ *
+ * @return array{ok: true, message_id: int}|array{ok: false, error: string}
+ */
+function akh_wa_message_send_editor_outbound(
+    string $taskCode,
+    string $phone,
+    string $messageText,
+    string $editorUsername = ''
+): array {
+    require_once __DIR__ . '/tasks.php';
+
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    $phone = trim($phone);
+    $messageText = trim($messageText);
+    $editorUsername = strtolower(trim($editorUsername));
+
+    if ($taskCode === '') {
+        return ['ok' => false, 'error' => 'Task code is required.'];
+    }
+    if ($messageText === '' || mb_strlen($messageText) > 2000) {
+        return ['ok' => false, 'error' => 'Message must be between 1 and 2000 characters.'];
+    }
+    if (!akh_wa_messages_table_exists()) {
+        return ['ok' => false, 'error' => 'Message store is not available.'];
+    }
+
+    if ($phone === '') {
+        $phone = akh_wa_message_phone_for_task($taskCode);
+    }
+
+    $customerName = akh_wa_message_customer_name_for_task($taskCode);
+    $editorName = $editorUsername !== ''
+        ? akh_wa_message_editor_display_name($editorUsername)
+        : '';
+
+    $messageId = akh_wa_message_insert([
+        'phone' => $phone,
+        'task_code' => $taskCode,
+        'direction' => 'outbound',
+        'sender' => 'editor',
+        'message' => $messageText,
+        'status' => 'pending',
+        'customer_name' => $customerName,
+        'editor_name' => $editorName,
+    ]);
+
+    if ($messageId === null) {
+        return ['ok' => false, 'error' => 'Could not save message.'];
+    }
+
+    akh_wa_message_dispatch_n8n_editor_outbound($messageId, $phone, $taskCode, $messageText);
+
+    return ['ok' => true, 'message_id' => $messageId];
+}
+
+function akh_wa_message_insert_editor_reply(string $taskCode, string $editorUsername, string $body): ?int
+{
+    $result = akh_wa_message_send_editor_outbound(
+        $taskCode,
+        akh_wa_message_phone_for_task($taskCode),
+        $body,
+        $editorUsername
+    );
+
+    if (($result['ok'] ?? false) !== true) {
+        return null;
+    }
+
+    return (int) ($result['message_id'] ?? 0);
+}
+
+/**
+ * @deprecated Use akh_wa_message_dispatch_n8n_editor_outbound() for editor sends.
+ * @param array<string, mixed> $row
+ */
+function akh_wa_message_dispatch_n8n_webhook(array $row): void
+{
+    $messageId = (int) ($row['id'] ?? 0);
+    if ($messageId < 1) {
+        return;
+    }
+    akh_wa_message_dispatch_n8n_editor_outbound(
+        $messageId,
+        trim((string) ($row['phone'] ?? '')),
+        akh_task_normalize_id(trim((string) ($row['task_code'] ?? ''))),
+        trim((string) ($row['message'] ?? ''))
+    );
 }
 
 function akh_wa_messages_table_exists(): bool
@@ -683,7 +752,7 @@ function akh_wa_messages_to_conversation_rows(array $waRows): array
         if ($sender === 'system') {
             $role = 'system';
             $who = 'System';
-        } elseif ($sender === 'editor' || $direction === 'outgoing') {
+        } elseif ($sender === 'editor' || akh_wa_message_direction_is_outbound($direction)) {
             $role = 'editor';
             $who = $editorName !== '' ? $editorName : 'Editor';
         } else {

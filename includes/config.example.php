@@ -161,8 +161,9 @@ const AKH_WA_DASHBOARD_PASS_HASH = '$2y$12$CQb.aKIcjY.Fz6s4PV1h8.BMrtswBIJI1QaNT
 const AKH_WA_DASHBOARD_REFRESH_SECONDS = 300;
 
 /**
- * n8n (or other automation) webhook — POST JSON when a row is inserted into whatsapp_messages
- * (e.g. editor reply from the desk). Leave '' to disable.
+ * n8n webhook — POST JSON when an editor sends an outbound whatsapp_messages row.
+ * Payload: {"message_id":1,"phone":"...","task_code":"AS0001","message":"..."}
+ * Leave '' to disable.
  */
 const AKH_N8N_WA_MESSAGE_WEBHOOK_URL = '';
 

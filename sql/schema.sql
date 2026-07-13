@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
   id INT NOT NULL AUTO_INCREMENT,
   phone VARCHAR(20) NULL DEFAULT NULL,
   task_code VARCHAR(20) NULL DEFAULT NULL,
-  direction ENUM('incoming', 'outgoing') NULL DEFAULT NULL,
+  direction ENUM('incoming', 'outgoing', 'outbound') NULL DEFAULT NULL,
   sender ENUM('client', 'editor', 'system') NULL DEFAULT 'client',
   customer_name VARCHAR(255) NULL DEFAULT NULL,
   editor_name VARCHAR(255) NULL DEFAULT NULL,
