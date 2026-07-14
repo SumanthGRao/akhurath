@@ -30,4 +30,14 @@ declare(strict_types=1);
  * define('AKH_DB_DSN', 'mysql:host=127.0.0.1;dbname=akhurath_studio;charset=utf8mb4');
  * define('AKH_DB_USER', 'root');
  * define('AKH_DB_PASS', '');
+ *
+ * === TrueNAS / n8n JSON bridge (no local MySQL) ===
+ * Use when PHP should read dashboard JSON from n8n instead of PDO on localhost.
+ * bootstrap.php loads includes/dashboard-data-bridge.php and sets $dashboard_data.
+ *
+ * define('AKH_CHAT_API_URL', 'https://n8n.akhurathstudio.com/webhook/YOUR_WEBHOOK_ID');
+ *
+ * Optional: fetch in this file instead of bootstrap (same result after normalize):
+ * require_once dirname(__DIR__) . '/includes/dashboard-data-bridge.php';
+ * $dashboard_data = akh_dashboard_data_fetch();
  */
