@@ -40,7 +40,7 @@ function akh_wa_tasks_table_exists(): bool
         return akh_dashboard_data_whatsapp_tasks() !== [] || akh_dashboard_data_tasks_merged_for_board() !== [];
     }
 
-    if (!function_exists('akh_db')) {
+    if (!function_exists('akh_db') || !akh_db_is_pdo()) {
         return false;
     }
 
@@ -72,7 +72,7 @@ function akh_wa_editors_for_select(): array
         return $out;
     }
 
-    if (!function_exists('akh_db')) {
+    if (!function_exists('akh_db') || !akh_db_is_pdo()) {
         return [];
     }
 

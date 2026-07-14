@@ -39,10 +39,18 @@ $dbLocal = AKH_ROOT . '/config/database.local.php';
 if (is_file($dbLocal)) {
     require_once $dbLocal;
 }
+
+$akhLoadDb = function_exists('getAkhurathChatData')
+    || (defined('AKH_DB_DSN') && defined('AKH_DB_USER') && defined('AKH_DB_PASS'));
+if ($akhLoadDb) {
+    require_once __DIR__ . '/db.php';
+}
+
 require_once __DIR__ . '/dashboard-data-bridge.php';
 akh_dashboard_data_bootstrap();
-if (defined('AKH_DB_DSN') && defined('AKH_DB_USER') && defined('AKH_DB_PASS')) {
-    require_once __DIR__ . '/db.php';
+
+if (defined('AKH_DB_DSN') && defined('AKH_DB_USER') && defined('AKH_DB_PASS')
+    && function_exists('akh_db_is_pdo') && akh_db_is_pdo()) {
     require_once __DIR__ . '/app-kv.php';
 }
 

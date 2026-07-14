@@ -6,10 +6,10 @@ require_once __DIR__ . '/site-notify-mail.php';
 require_once __DIR__ . '/whatsapp-task-sync.php';
 require_once __DIR__ . '/task-notification-events.php';
 
-/** Tasks, task_seq counter, and editor-seen map live in MySQL app_kv when the DB is bootstrapped. */
+/** Tasks, task_seq counter, and editor-seen map live in MySQL app_kv when PDO is active. */
 function akh_tasks_storage_is_database(): bool
 {
-    return function_exists('akh_db');
+    return function_exists('akh_db_is_pdo') && akh_db_is_pdo();
 }
 
 function akh_tasks_require_kv(): void

@@ -26,22 +26,16 @@ function akh_task_merged_conversation_sig(array $t): string
     $tid = akh_task_normalize_id((string) ($t['id'] ?? ''));
     $parts = [(string) count(akh_task_conversation_list($t))];
     if ($tid !== '' && akh_wa_messages_table_exists()) {
-        $match = akh_wa_message_task_match_clause($tid);
-        if ($match['sql'] !== '0') {
-            try {
-                $sql = "SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS m
-                        FROM whatsapp_messages WHERE {$match['sql']}";
-                $st = akh_db()->prepare($sql);
-                $st->execute($match['params']);
-                $row = $st->fetch(PDO::FETCH_ASSOC);
-                if (is_array($row)) {
-                    $parts[] = (string) ($row['c'] ?? '0');
-                    $parts[] = (string) ($row['m'] ?? '0');
-                }
-            } catch (Throwable) {
-                // best-effort
+        $waRows = akh_wa_messages_list_for_task($tid);
+        $maxId = 0;
+        foreach ($waRows as $row) {
+            if (!is_array($row)) {
+                continue;
             }
+            $maxId = max($maxId, (int) ($row['id'] ?? 0));
         }
+        $parts[] = (string) count($waRows);
+        $parts[] = (string) $maxId;
     }
 
     return hash('sha256', implode('|', $parts));

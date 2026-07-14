@@ -10,6 +10,10 @@ $GLOBALS['akh_wa_message_columns_cache'] = null;
 
 function akh_wa_messages_column_exists(string $column): bool
 {
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        return in_array($column, ['id', 'phone', 'task_code', 'direction', 'sender', 'message', 'status', 'created_at', 'customer_name', 'editor_name'], true);
+    }
+
     if (!akh_wa_messages_table_exists()) {
         return false;
     }
@@ -119,20 +123,30 @@ function akh_wa_message_phone_for_task(string $taskCode): string
     }
 
     if (akh_wa_messages_table_exists()) {
-        $match = akh_wa_message_task_match_clause($taskCode);
-        if ($match['sql'] !== '0') {
-            try {
-                $sql = "SELECT phone FROM whatsapp_messages
-                        WHERE {$match['sql']} AND TRIM(COALESCE(phone, '')) <> ''
-                        ORDER BY id DESC LIMIT 1";
-                $st = akh_db()->prepare($sql);
-                $st->execute($match['params']);
-                $phone = $st->fetchColumn();
-                if (is_string($phone) && trim($phone) !== '') {
-                    return trim($phone);
+        if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+            $rows = akh_wa_messages_list_for_task($taskCode, 1);
+            for ($i = count($rows) - 1; $i >= 0; $i--) {
+                $phone = trim((string) ($rows[$i]['phone'] ?? ''));
+                if ($phone !== '') {
+                    return $phone;
                 }
-            } catch (Throwable $e) {
-                error_log('akh_wa_message_phone_for_task: ' . $e->getMessage());
+            }
+        } else {
+            $match = akh_wa_message_task_match_clause($taskCode);
+            if ($match['sql'] !== '0') {
+                try {
+                    $sql = "SELECT phone FROM whatsapp_messages
+                            WHERE {$match['sql']} AND TRIM(COALESCE(phone, '')) <> ''
+                            ORDER BY id DESC LIMIT 1";
+                    $st = akh_db()->prepare($sql);
+                    $st->execute($match['params']);
+                    $phone = $st->fetchColumn();
+                    if (is_string($phone) && trim($phone) !== '') {
+                        return trim($phone);
+                    }
+                } catch (Throwable $e) {
+                    error_log('akh_wa_message_phone_for_task: ' . $e->getMessage());
+                }
             }
         }
     }
@@ -153,6 +167,14 @@ function akh_wa_message_direction_is_outbound(string $direction): bool
 function akh_wa_message_insert(array $fields): ?int
 {
     if (!akh_wa_messages_table_exists()) {
+        return null;
+    }
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        return null;
+    }
+
+    if (!akh_db_is_pdo()) {
         return null;
     }
 
@@ -414,10 +436,14 @@ function akh_wa_message_dispatch_n8n_webhook(array $row): void
 function akh_wa_messages_table_exists(): bool
 {
     if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
-        return akh_dashboard_data_whatsapp_messages() !== [];
+        if (akh_dashboard_data_whatsapp_messages() !== []) {
+            return true;
+        }
+
+        return function_exists('akh_db_data') && akh_db_data() !== [];
     }
 
-    if (!function_exists('akh_db')) {
+    if (!function_exists('akh_db') || !akh_db_is_pdo()) {
         return false;
     }
 
@@ -435,6 +461,11 @@ function akh_wa_message_acks_kv_key(): string
     return 'whatsapp_message_dashboard_acks';
 }
 
+function akh_wa_message_acks_file(): string
+{
+    return AKH_ROOT . '/data/whatsapp-message-acks.json';
+}
+
 /** @return array<string, int> task_code => last read message id */
 function akh_wa_message_acks_load(): array
 {
@@ -443,9 +474,32 @@ function akh_wa_message_acks_load(): array
     }
 
     require_once __DIR__ . '/tasks.php';
-    akh_tasks_require_kv();
 
-    $raw = akh_kv_get(akh_wa_message_acks_kv_key());
+    $raw = null;
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        if (function_exists('akh_dashboard_data_app_kv_raw')) {
+            $kvRaw = akh_dashboard_data_app_kv_raw(akh_wa_message_acks_kv_key());
+            if (is_string($kvRaw)) {
+                $raw = $kvRaw;
+            } elseif (is_array($kvRaw)) {
+                try {
+                    $raw = json_encode($kvRaw, JSON_THROW_ON_ERROR);
+                } catch (Throwable) {
+                    $raw = null;
+                }
+            }
+        }
+        if ($raw === null && is_file(akh_wa_message_acks_file())) {
+            $fileRaw = @file_get_contents(akh_wa_message_acks_file());
+            if (is_string($fileRaw) && $fileRaw !== '') {
+                $raw = $fileRaw;
+            }
+        }
+    } else {
+        akh_tasks_require_kv();
+        $raw = akh_kv_get(akh_wa_message_acks_kv_key());
+    }
+
     $out = [];
     if ($raw !== null && $raw !== '') {
         $decoded = json_decode($raw, true);
@@ -463,6 +517,37 @@ function akh_wa_message_acks_load(): array
     $GLOBALS['akh_wa_message_acks_cache'] = $out;
 
     return $out;
+}
+
+/**
+ * @param array<string, int> $acks
+ */
+function akh_wa_message_acks_save(array $acks): bool
+{
+    try {
+        $json = json_encode($acks, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    } catch (Throwable) {
+        return false;
+    }
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $path = akh_wa_message_acks_file();
+        $dir = dirname($path);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+
+        return @file_put_contents($path, $json, LOCK_EX) !== false;
+    }
+
+    akh_tasks_require_kv();
+    try {
+        akh_kv_set(akh_wa_message_acks_kv_key(), $json);
+    } catch (Throwable) {
+        return false;
+    }
+
+    return true;
 }
 
 function akh_wa_message_acks_invalidate(): void
@@ -569,10 +654,19 @@ function akh_wa_messages_list_for_task(string $taskCode, int $limit = 300): arra
             }
         }
 
+        usort($out, static function (array $a, array $b): int {
+            $cmp = strcmp((string) ($a['created_at'] ?? ''), (string) ($b['created_at'] ?? ''));
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+
+            return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+        });
+
         return $out;
     }
 
-    if (!akh_wa_messages_table_exists()) {
+    if (!akh_wa_messages_table_exists() || !akh_db_is_pdo()) {
         return [];
     }
 
@@ -618,12 +712,31 @@ function akh_wa_message_unread_count_for_task(string $taskCode): int
         return 0;
     }
 
+    $ack = akh_wa_message_ack_max_id($taskCode);
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $count = 0;
+        foreach (akh_wa_messages_list_for_task($taskCode, 500) as $row) {
+            if (!is_array($row) || !akh_wa_message_is_client_incoming($row)) {
+                continue;
+            }
+            if ((int) ($row['id'] ?? 0) <= $ack) {
+                continue;
+            }
+            $count++;
+        }
+
+        return $count;
+    }
+
+    if (!akh_db_is_pdo()) {
+        return 0;
+    }
+
     $match = akh_wa_message_task_match_clause($taskCode);
     if ($match['sql'] === '0') {
         return 0;
     }
-
-    $ack = akh_wa_message_ack_max_id($taskCode);
 
     try {
         $clause = akh_wa_message_sql_client_incoming_clause();
@@ -654,6 +767,33 @@ function akh_wa_messages_unread_rows(): array
 
     $acks = akh_wa_message_acks_load();
     $out = [];
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        require_once __DIR__ . '/tasks.php';
+        foreach (akh_dashboard_data_whatsapp_messages() as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+            if ($code === '') {
+                continue;
+            }
+            if (!akh_wa_message_is_client_incoming($row)) {
+                continue;
+            }
+            $ack = (int) ($acks[$code] ?? 0);
+            if ((int) ($row['id'] ?? 0) <= $ack) {
+                continue;
+            }
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    if (!akh_db_is_pdo()) {
+        return [];
+    }
 
     try {
         $clause = akh_wa_message_sql_client_incoming_clause();
@@ -763,6 +903,31 @@ function akh_wa_messages_poll_signature(): string
         return 'missing';
     }
 
+    $acks = akh_wa_message_acks_load();
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $rows = akh_dashboard_data_whatsapp_messages();
+        $count = count($rows);
+        $maxId = 0;
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $maxId = max($maxId, (int) ($row['id'] ?? 0));
+        }
+
+        return hash(
+            'sha256',
+            (string) $count
+            . '|' . (string) $maxId
+            . '|' . json_encode($acks, JSON_UNESCAPED_SLASHES)
+        );
+    }
+
+    if (!akh_db_is_pdo()) {
+        return 'missing';
+    }
+
     try {
         $row = akh_db()->query(
             'SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS m FROM whatsapp_messages'
@@ -804,21 +969,29 @@ function akh_wa_message_mark_task_read(string $taskCode): void
     }
 
     $maxId = 0;
-    try {
-        $sql = "SELECT COALESCE(MAX(id), 0) FROM whatsapp_messages WHERE {$match['sql']}";
-        $st = akh_db()->prepare($sql);
-        $st->execute($match['params']);
-        $maxId = (int) $st->fetchColumn();
-    } catch (Throwable $e) {
-        error_log('akh_wa_message_mark_task_read: ' . $e->getMessage());
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        foreach (akh_wa_messages_list_for_task($taskCode, 500) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $maxId = max($maxId, (int) ($row['id'] ?? 0));
+        }
+    } elseif (akh_db_is_pdo()) {
+        try {
+            $sql = "SELECT COALESCE(MAX(id), 0) FROM whatsapp_messages WHERE {$match['sql']}";
+            $st = akh_db()->prepare($sql);
+            $st->execute($match['params']);
+            $maxId = (int) $st->fetchColumn();
+        } catch (Throwable $e) {
+            error_log('akh_wa_message_mark_task_read: ' . $e->getMessage());
 
-        return;
+            return;
+        }
     }
 
     $acks = akh_wa_message_acks_load();
     $acks[$taskCode] = max((int) ($acks[$taskCode] ?? 0), $maxId);
-    akh_tasks_require_kv();
-    akh_kv_set(akh_wa_message_acks_kv_key(), json_encode($acks, JSON_UNESCAPED_SLASHES) ?: '{}');
+    akh_wa_message_acks_save($acks);
     akh_wa_message_acks_invalidate();
 }
 
@@ -831,16 +1004,9 @@ function akh_wa_message_mark_all_read(): void
     require_once __DIR__ . '/tasks.php';
 
     $acks = akh_wa_message_acks_load();
-    try {
-        $st = akh_db()->query(
-            'SELECT task_code, MAX(id) AS max_id
-             FROM whatsapp_messages
-             GROUP BY task_code'
-        );
-        if ($st === false) {
-            return;
-        }
-        while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        foreach (akh_dashboard_data_whatsapp_messages() as $row) {
             if (!is_array($row)) {
                 continue;
             }
@@ -848,16 +1014,36 @@ function akh_wa_message_mark_all_read(): void
             if ($code === '') {
                 continue;
             }
-            $acks[$code] = max((int) ($acks[$code] ?? 0), (int) ($row['max_id'] ?? 0));
+            $acks[$code] = max((int) ($acks[$code] ?? 0), (int) ($row['id'] ?? 0));
         }
-    } catch (Throwable $e) {
-        error_log('akh_wa_message_mark_all_read: ' . $e->getMessage());
+    } elseif (akh_db_is_pdo()) {
+        try {
+            $st = akh_db()->query(
+                'SELECT task_code, MAX(id) AS max_id
+                 FROM whatsapp_messages
+                 GROUP BY task_code'
+            );
+            if ($st === false) {
+                return;
+            }
+            while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+                if ($code === '') {
+                    continue;
+                }
+                $acks[$code] = max((int) ($acks[$code] ?? 0), (int) ($row['max_id'] ?? 0));
+            }
+        } catch (Throwable $e) {
+            error_log('akh_wa_message_mark_all_read: ' . $e->getMessage());
 
-        return;
+            return;
+        }
     }
 
-    akh_tasks_require_kv();
-    akh_kv_set(akh_wa_message_acks_kv_key(), json_encode($acks, JSON_UNESCAPED_SLASHES) ?: '{}');
+    akh_wa_message_acks_save($acks);
     akh_wa_message_acks_invalidate();
 }
 

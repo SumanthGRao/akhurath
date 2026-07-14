@@ -51,13 +51,22 @@ function akh_dashboard_data_normalize(mixed $raw): array
         return $raw['json'];
     }
 
-    // Flat list legacy: treat as tasks.
+    // Flat list legacy: messages or tasks.
     if (array_is_list($raw)) {
+        $messages = [];
         $tasks = [];
         foreach ($raw as $row) {
-            if (is_array($row)) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (isset($row['message']) || isset($row['direction']) || isset($row['sender'])) {
+                $messages[] = $row;
+            } else {
                 $tasks[] = $row;
             }
+        }
+        if ($messages !== []) {
+            return ['whatsapp_messages' => $messages];
         }
 
         return $tasks === [] ? [] : ['tasks' => $tasks];
@@ -152,8 +161,20 @@ function akh_dashboard_data_bootstrap(): void
         return;
     }
 
+    if (function_exists('akh_db_is_bridge') && akh_db_is_bridge()) {
+        $dashboard_data = akh_db_data();
+
+        return;
+    }
+
     if (defined('AKH_CHAT_API_URL')) {
         $dashboard_data = akh_dashboard_data_fetch();
+
+        return;
+    }
+
+    if (function_exists('getAkhurathChatData')) {
+        $dashboard_data = akh_dashboard_data_normalize(getAkhurathChatData());
 
         return;
     }
@@ -411,6 +432,10 @@ function akh_dashboard_data_bridge_enabled(): bool
 /** Read tasks, attendance, and related desk data from n8n instead of MySQL/files. */
 function akh_dashboard_data_bridge_reads(): bool
 {
+    if (function_exists('akh_db_is_bridge') && akh_db_is_bridge()) {
+        return true;
+    }
+
     return akh_dashboard_data_bridge_enabled();
 }
 
@@ -659,6 +684,21 @@ function akh_dashboard_data_whatsapp_messages(): array
         if ($rows !== []) {
             return $rows;
         }
+    }
+
+    $all = akh_dashboard_data_all();
+    if (array_is_list($all)) {
+        $out = [];
+        foreach ($all as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (isset($row['message']) || isset($row['direction']) || isset($row['sender'])) {
+                $out[] = $row;
+            }
+        }
+
+        return $out;
     }
 
     return [];

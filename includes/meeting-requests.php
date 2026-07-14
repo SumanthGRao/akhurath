@@ -47,7 +47,7 @@ function akh_meeting_requests_table_exists(): bool
         return akh_dashboard_data_meetings() !== [];
     }
 
-    if (!function_exists('akh_db')) {
+    if (!function_exists('akh_db') || !akh_db_is_pdo()) {
         return false;
     }
 
@@ -615,7 +615,7 @@ function akh_meeting_request_assigned_task_codes(): array
         }
     }
 
-    if (!function_exists('akh_db')) {
+    if (!function_exists('akh_db') || !akh_db_is_pdo()) {
         return $assigned;
     }
 
@@ -685,7 +685,7 @@ function akh_meeting_request_assigned_task_codes_for_editor(string $editorUserna
         return $assigned;
     }
 
-    if (!function_exists('akh_db')) {
+    if (!function_exists('akh_db') || !akh_db_is_pdo()) {
         return $assigned;
     }
 

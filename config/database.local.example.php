@@ -42,7 +42,15 @@ declare(strict_types=1);
  *
  * n8n must return grouped JSON — see includes/n8n-dashboard-payload.example.json
  *
- * Optional: fetch in this file instead of bootstrap (same result after normalize):
- * require_once dirname(__DIR__) . '/includes/dashboard-data-bridge.php';
- * $dashboard_data = akh_dashboard_data_fetch();
+ * Optional: define getAkhurathChatData() to return grouped JSON from n8n:
+ *
+ * function getAkhurathChatData(): array {
+ *     $ch = curl_init('https://n8n.akhurathstudio.com/webhook/...');
+ *     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 5]);
+ *     $response = curl_exec($ch);
+ *     curl_close($ch);
+ *     return json_decode((string) $response, true) ?: [];
+ * }
+ *
+ * Or use AKH_CHAT_API_URL (bootstrap fetches automatically).
  */
