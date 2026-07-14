@@ -5,13 +5,28 @@ declare(strict_types=1);
 /**
  * n8n JSON bridge for chat / ops dashboards (TrueNAS and similar).
  *
- * database.local.php (gitignored) should define AKH_CHAT_API_URL and optionally
- * set $dashboard_data; bootstrap calls akh_dashboard_data_bootstrap() to normalize it.
+ * Expected grouped payload (see includes/n8n-dashboard-payload.example.json):
+ *   tasks, whatsapp_tasks, attendance, editors, logs, meetings, alerts, counters
+ *
+ * database.local.php defines AKH_CHAT_API_URL and may pre-set $dashboard_data.
  */
+
+/** Top-level keys the chat dashboard reads from n8n. */
+const AKH_DASHBOARD_DATA_KEYS = [
+    'tasks',
+    'whatsapp_tasks',
+    'task_pool',
+    'attendance',
+    'editors',
+    'logs',
+    'meetings',
+    'alerts',
+    'counters',
+];
 
 /**
  * @param mixed $raw
- * @return array<int|string, mixed>
+ * @return array<string, mixed>
  */
 function akh_dashboard_data_normalize(mixed $raw): array
 {
@@ -19,13 +34,54 @@ function akh_dashboard_data_normalize(mixed $raw): array
         return [];
     }
 
+    // n8n "Respond to Webhook" often wraps as [{ ... }] or { data: { ... } }.
+    if (array_is_list($raw) && count($raw) === 1 && is_array($raw[0]) && akh_dashboard_data_looks_grouped($raw[0])) {
+        return $raw[0];
+    }
+
+    if (isset($raw['data']) && is_array($raw['data']) && akh_dashboard_data_looks_grouped($raw['data'])) {
+        return $raw['data'];
+    }
+
+    if (isset($raw['body']) && is_array($raw['body']) && akh_dashboard_data_looks_grouped($raw['body'])) {
+        return $raw['body'];
+    }
+
+    if (isset($raw['json']) && is_array($raw['json']) && akh_dashboard_data_looks_grouped($raw['json'])) {
+        return $raw['json'];
+    }
+
+    // Flat list legacy: treat as tasks.
+    if (array_is_list($raw)) {
+        $tasks = [];
+        foreach ($raw as $row) {
+            if (is_array($row)) {
+                $tasks[] = $row;
+            }
+        }
+
+        return $tasks === [] ? [] : ['tasks' => $tasks];
+    }
+
     return $raw;
 }
 
 /**
- * Fetch dashboard rows from the n8n webhook (see AKH_CHAT_API_URL).
- *
- * @return array<int|string, mixed>
+ * @param array<string, mixed> $payload
+ */
+function akh_dashboard_data_looks_grouped(array $payload): bool
+{
+    foreach (AKH_DASHBOARD_DATA_KEYS as $key) {
+        if (array_key_exists($key, $payload)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @return array<string, mixed>
  */
 function akh_dashboard_data_fetch(): array
 {
@@ -52,8 +108,8 @@ function akh_dashboard_data_fetch(): array
     curl_setopt_array($ch, [
         CURLOPT_URL => $url,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 3,
-        CURLOPT_CONNECTTIMEOUT => 2,
+        CURLOPT_TIMEOUT => 5,
+        CURLOPT_CONNECTTIMEOUT => 3,
         CURLOPT_HTTPHEADER => ['Accept: application/json', 'Content-Type: application/json'],
     ]);
 
@@ -85,7 +141,7 @@ function akh_dashboard_data_fetch(): array
     return akh_dashboard_data_normalize($decoded);
 }
 
-/** Load global $dashboard_data once per request (empty array on failure). */
+/** Load global $dashboard_data once per request (empty grouped array on failure). */
 function akh_dashboard_data_bootstrap(): void
 {
     global $dashboard_data;
@@ -106,7 +162,7 @@ function akh_dashboard_data_bootstrap(): void
 }
 
 /**
- * @return array<int|string, mixed>
+ * @return array<string, mixed>
  */
 function akh_dashboard_data_all(): array
 {
@@ -120,28 +176,24 @@ function akh_dashboard_data_all(): array
 }
 
 /**
- * Top-level section (attendance, logs, counters, rows, …) or [] when missing.
- *
  * @return list<array<string, mixed>>
  */
-function akh_dashboard_data_section(string $key): array
+function akh_dashboard_data_list_section(string $key): array
 {
     $all = akh_dashboard_data_all();
-    if ($all === []) {
+    if ($all === [] || !isset($all[$key]) || !is_array($all[$key])) {
         return [];
     }
 
-    if (array_is_list($all)) {
-        return [];
-    }
+    $section = $all[$key];
 
-    $section = $all[$key] ?? null;
-    if (!is_array($section)) {
-        return [];
+    // attendance may be { events: [...] } from app_kv.editor_attendance
+    if ($key === 'attendance' && isset($section['events']) && is_array($section['events'])) {
+        $section = $section['events'];
     }
 
     if (!array_is_list($section)) {
-        return [$section];
+        return is_array($section) ? [$section] : [];
     }
 
     $out = [];
@@ -155,100 +207,78 @@ function akh_dashboard_data_section(string $key): array
 }
 
 /**
- * Main table rows: either a list payload or dashboard_data['rows'].
+ * Studio board tasks — $dashboard_data['tasks'].
  *
  * @return list<array<string, mixed>>
  */
-function akh_dashboard_data_rows(): array
+function akh_dashboard_data_tasks(): array
 {
-    $all = akh_dashboard_data_all();
-    if ($all === []) {
-        return [];
+    return akh_dashboard_data_list_section('tasks');
+}
+
+/**
+ * Unassigned pool — $dashboard_data['task_pool'] or derived from tasks.
+ *
+ * @return list<array<string, mixed>>
+ */
+function akh_dashboard_data_task_pool(): array
+{
+    $pool = akh_dashboard_data_list_section('task_pool');
+    if ($pool !== []) {
+        return $pool;
     }
 
-    if (array_is_list($all)) {
-        $out = [];
-        foreach ($all as $row) {
-            if (is_array($row)) {
-                $out[] = $row;
-            }
-        }
-
-        return $out;
-    }
-
-    $rows = akh_dashboard_data_section('rows');
-    if ($rows !== []) {
-        return $rows;
-    }
-
-    foreach (['chats', 'messages', 'tasks', 'data'] as $altKey) {
-        $alt = akh_dashboard_data_section($altKey);
-        if ($alt !== []) {
-            return $alt;
+    $out = [];
+    foreach (akh_dashboard_data_tasks() as $task) {
+        $status = strtolower(trim((string) ($task['status'] ?? 'new')));
+        $editor = trim((string) ($task['assigned_editor'] ?? ''));
+        if ($status === 'new' && $editor === '') {
+            $out[] = $task;
         }
     }
 
-    return [];
+    return $out;
 }
 
 /**
- * @return array<string, int|float|string>
- */
-function akh_dashboard_data_counters(): array
-{
-    $all = akh_dashboard_data_all();
-    if ($all === [] || array_is_list($all)) {
-        $rows = akh_dashboard_data_rows();
-
-        return [
-            'total_rows' => count($rows),
-            'active_chats' => count($rows),
-            'unread' => 0,
-            'editors_online' => 0,
-        ];
-    }
-
-    $counters = $all['counters'] ?? $all['counts'] ?? $all['stats'] ?? [];
-    if (!is_array($counters)) {
-        $counters = [];
-    }
-
-    $rows = akh_dashboard_data_rows();
-
-    return [
-        'total_rows' => (int) ($counters['total_rows'] ?? $counters['total'] ?? count($rows)),
-        'active_chats' => (int) ($counters['active_chats'] ?? $counters['active'] ?? count($rows)),
-        'unread' => (int) ($counters['unread'] ?? $counters['unread_count'] ?? 0),
-        'editors_online' => (int) ($counters['editors_online'] ?? $counters['online_editors'] ?? 0),
-    ];
-}
-
-/**
+ * WhatsApp task board — $dashboard_data['whatsapp_tasks'].
+ *
  * @return list<array<string, mixed>>
  */
-function akh_dashboard_data_attendance_rows(): array
+function akh_dashboard_data_whatsapp_tasks(): array
 {
-    $rows = akh_dashboard_data_section('attendance');
-    if ($rows !== []) {
-        return $rows;
-    }
-
-    $events = akh_dashboard_data_section('attendance_events');
-    if ($events !== []) {
-        return $events;
-    }
-
-    return akh_dashboard_data_section('events');
+    return akh_dashboard_data_list_section('whatsapp_tasks');
 }
 
 /**
+ * Attendance punch events — $dashboard_data['attendance'].
+ *
  * @return list<array<string, mixed>>
  */
-function akh_dashboard_data_log_rows(): array
+function akh_dashboard_data_attendance(): array
 {
-    foreach (['logs', 'activity', 'activity_log', 'events_log'] as $key) {
-        $rows = akh_dashboard_data_section($key);
+    return akh_dashboard_data_list_section('attendance');
+}
+
+/**
+ * Editor roster + shift state — $dashboard_data['editors'].
+ *
+ * @return list<array<string, mixed>>
+ */
+function akh_dashboard_data_editors(): array
+{
+    return akh_dashboard_data_list_section('editors');
+}
+
+/**
+ * Activity / message log — $dashboard_data['logs'].
+ *
+ * @return list<array<string, mixed>>
+ */
+function akh_dashboard_data_logs(): array
+{
+    foreach (['logs', 'activity', 'whatsapp_messages', 'messages'] as $key) {
+        $rows = akh_dashboard_data_list_section($key);
         if ($rows !== []) {
             return $rows;
         }
@@ -257,15 +287,110 @@ function akh_dashboard_data_log_rows(): array
     return [];
 }
 
-function akh_dashboard_data_is_available(): bool
+/**
+ * Meeting requests — $dashboard_data['meetings'].
+ *
+ * @return list<array<string, mixed>>
+ */
+function akh_dashboard_data_meetings(): array
 {
-    return akh_dashboard_data_rows() !== []
-        || akh_dashboard_data_attendance_rows() !== []
-        || akh_dashboard_data_log_rows() !== []
-        || akh_dashboard_data_all() !== [];
+    return akh_dashboard_data_list_section('meetings');
 }
 
-function akh_dashboard_data_row_count(): int
+/**
+ * Alert map keyed by task code — $dashboard_data['alerts'].
+ *
+ * @return array<string, array<string, mixed>>
+ */
+function akh_dashboard_data_alerts(): array
 {
-    return count(akh_dashboard_data_rows());
+    $all = akh_dashboard_data_all();
+    $alerts = $all['alerts'] ?? [];
+    if (!is_array($alerts) || $alerts === []) {
+        return [];
+    }
+
+    if (array_is_list($alerts)) {
+        $out = [];
+        foreach ($alerts as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $code = trim((string) ($row['task_code'] ?? $row['task_id'] ?? ''));
+            if ($code !== '') {
+                $out[$code] = $row;
+            }
+        }
+
+        return $out;
+    }
+
+    $out = [];
+    foreach ($alerts as $code => $row) {
+        if (is_string($code) && is_array($row)) {
+            $out[$code] = $row;
+        }
+    }
+
+    return $out;
+}
+
+/**
+ * @return array<string, int|float|string>
+ */
+function akh_dashboard_data_counters(): array
+{
+    $all = akh_dashboard_data_all();
+    $counters = is_array($all['counters'] ?? null) ? $all['counters'] : [];
+
+    $tasks = akh_dashboard_data_tasks();
+    $waTasks = akh_dashboard_data_whatsapp_tasks();
+    $pool = akh_dashboard_data_task_pool();
+    $editors = akh_dashboard_data_editors();
+    $logs = akh_dashboard_data_logs();
+
+    $online = 0;
+    foreach ($editors as $ed) {
+        if (!empty($ed['clocked_in']) || !empty($ed['on_shift'])) {
+            ++$online;
+        }
+    }
+
+    return [
+        'total_tasks' => (int) ($counters['total_tasks'] ?? $counters['total'] ?? max(count($tasks), count($waTasks))),
+        'pool_count' => (int) ($counters['pool_count'] ?? count($pool)),
+        'active_chats' => (int) ($counters['active_chats'] ?? $counters['active'] ?? count($waTasks)),
+        'unread_messages' => (int) ($counters['unread_messages'] ?? $counters['unread'] ?? 0),
+        'editors_online' => (int) ($counters['editors_online'] ?? $counters['online_editors'] ?? $online),
+        'log_count' => (int) ($counters['log_count'] ?? count($logs)),
+    ];
+}
+
+/**
+ * @return list<string>
+ */
+function akh_dashboard_data_received_keys(): array
+{
+    $all = akh_dashboard_data_all();
+    if ($all === []) {
+        return [];
+    }
+
+    return array_values(array_filter(
+        array_keys($all),
+        static fn (string $k): bool => $k !== '' && isset($all[$k]) && $all[$k] !== [] && $all[$k] !== null
+    ));
+}
+
+function akh_dashboard_data_has_grouped_payload(): bool
+{
+    foreach (['tasks', 'whatsapp_tasks', 'attendance', 'editors'] as $key) {
+        if (akh_dashboard_data_list_section($key) !== []) {
+            return true;
+        }
+    }
+
+    $counters = akh_dashboard_data_all()['counters'] ?? null;
+
+    return is_array($counters) && $counters !== [];
 }

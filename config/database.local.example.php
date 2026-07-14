@@ -37,6 +37,8 @@ declare(strict_types=1);
  *
  * define('AKH_CHAT_API_URL', 'https://n8n.akhurathstudio.com/webhook/YOUR_WEBHOOK_ID');
  *
+ * n8n must return grouped JSON — see includes/n8n-dashboard-payload.example.json
+ *
  * Optional: fetch in this file instead of bootstrap (same result after normalize):
  * require_once dirname(__DIR__) . '/includes/dashboard-data-bridge.php';
  * $dashboard_data = akh_dashboard_data_fetch();

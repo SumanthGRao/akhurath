@@ -1,0 +1,83 @@
+{
+  "tasks": [
+    {
+      "id": "AS0001",
+      "title": "Highlights reel",
+      "status": "assigned",
+      "assigned_editor": "jane",
+      "client_username": "whatsapp",
+      "edit_type": "studio_admin",
+      "created_at": "2026-07-14 10:00:00",
+      "updated_at": "2026-07-14 12:30:00",
+      "editor_feedback_notify": false,
+      "from_whatsapp": true
+    }
+  ],
+  "whatsapp_tasks": [
+    {
+      "id": 1,
+      "task_code": "AS0001",
+      "customer_name": "Priya & Arjun",
+      "phone": "919876543210",
+      "project_name": "Wedding highlights",
+      "task_type": "Highlights",
+      "status": "assigned",
+      "assigned_editor": 2,
+      "assigned_editor_username": "jane",
+      "instructions": "5 min reel",
+      "created_at": "2026-07-14 10:00:00",
+      "updated_at": "2026-07-14 12:30:00"
+    }
+  ],
+  "attendance": [
+    {
+      "editor": "jane",
+      "type": "clock_in",
+      "at": 1720944000,
+      "created_at": "2026-07-14 09:30:00"
+    }
+  ],
+  "editors": [
+    {
+      "id": 2,
+      "username": "jane",
+      "clocked_in": true,
+      "shift_started_at": 1720944000
+    }
+  ],
+  "logs": [
+    {
+      "task_code": "AS0001",
+      "message": "Client sent reference link",
+      "direction": "incoming",
+      "sender": "client",
+      "customer_name": "Priya",
+      "created_at": "2026-07-14 11:05:00"
+    }
+  ],
+  "meetings": [
+    {
+      "task_code": "AS0002",
+      "customer_name": "Client",
+      "start_time": "2026-07-15 15:00:00",
+      "meet_link": "https://meet.google.com/abc-defg-hij",
+      "status": "pending"
+    }
+  ],
+  "alerts": {
+    "AS0001": {
+      "kind": "whatsapp_message",
+      "preview": "New message from client",
+      "priority": 60,
+      "created_at": "2026-07-14 11:05:00",
+      "count": 1
+    }
+  },
+  "counters": {
+    "pool_count": 3,
+    "active_chats": 5,
+    "unread_messages": 2,
+    "editors_online": 1,
+    "total_tasks": 12
+  }
+}
