@@ -127,6 +127,13 @@ function akh_editor_attendance_open_shift_started_at_for(string $editor): ?int
  */
 function akh_editor_attendance_read_doc(): array
 {
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $doc = akh_dashboard_data_attendance_doc();
+        if (($doc['events'] ?? []) !== []) {
+            return $doc;
+        }
+    }
+
     $path = akh_editor_attendance_file();
     if (!is_file($path)) {
         return akh_editor_attendance_default_doc();

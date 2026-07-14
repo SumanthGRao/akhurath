@@ -36,6 +36,10 @@ function akh_wa_task_normalize_status(string $status): ?string
 
 function akh_wa_tasks_table_exists(): bool
 {
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        return akh_dashboard_data_whatsapp_tasks() !== [] || akh_dashboard_data_tasks_merged_for_board() !== [];
+    }
+
     if (!function_exists('akh_db')) {
         return false;
     }
@@ -52,6 +56,22 @@ function akh_wa_tasks_table_exists(): bool
 /** @return array<int, string> editor id => username */
 function akh_wa_editors_for_select(): array
 {
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $out = [];
+        foreach (akh_dashboard_data_editors() as $ed) {
+            if (!is_array($ed)) {
+                continue;
+            }
+            $id = (int) ($ed['id'] ?? 0);
+            $username = trim((string) ($ed['username'] ?? ''));
+            if ($id > 0 && $username !== '') {
+                $out[$id] = $username;
+            }
+        }
+
+        return $out;
+    }
+
     if (!function_exists('akh_db')) {
         return [];
     }
@@ -79,6 +99,10 @@ function akh_wa_editors_for_select(): array
  */
 function akh_wa_tasks_list(array $filters = []): array
 {
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        return akh_dashboard_data_whatsapp_tasks_filtered($filters);
+    }
+
     if (!akh_wa_tasks_table_exists()) {
         throw new RuntimeException('Table whatsapp_tasks was not found. Import sql/migrations/004_whatsapp_tasks.sql.');
     }
@@ -196,6 +220,23 @@ function akh_wa_tasks_poll_signature(): string
 function akh_wa_task_by_code(string $taskCode): ?array
 {
     require_once __DIR__ . '/tasks.php';
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $code = akh_task_normalize_id($taskCode);
+        if ($code === '') {
+            return null;
+        }
+        foreach (akh_dashboard_data_whatsapp_tasks() as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (akh_task_ids_match((string) ($row['task_code'] ?? ''), $code)) {
+                return $row;
+            }
+        }
+
+        return null;
+    }
 
     if (!akh_wa_tasks_table_exists()) {
         return null;
@@ -634,6 +675,13 @@ function akh_wa_editor_username_by_id(int $editorId): ?string
     if ($editorId <= 0) {
         return null;
     }
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $map = akh_dashboard_data_editor_id_map();
+
+        return $map[$editorId] ?? null;
+    }
+
     $st = akh_db()->prepare('SELECT username FROM users WHERE id = ? AND role = ? LIMIT 1');
     $st->execute([$editorId, 'editor']);
     $row = $st->fetch(PDO::FETCH_ASSOC);
@@ -885,6 +933,10 @@ function akh_wa_sync_to_studio(array $waRow): ?string
  */
 function akh_wa_sync_whatsapp_pool_to_studio_board(): int
 {
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        return 0;
+    }
+
     if (!akh_wa_tasks_table_exists() || !function_exists('akh_db')) {
         return 0;
     }

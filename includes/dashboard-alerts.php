@@ -53,6 +53,19 @@ function akh_dashboard_merge_alert(?array $base, array $incoming): array
  */
 function akh_dashboard_unread_alerts_grouped(): array
 {
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $bridge = akh_dashboard_data_alerts();
+        if ($bridge !== []) {
+            foreach ($bridge as $code => $alert) {
+                if (is_array($alert)) {
+                    $bridge[$code]['priority'] = (int) ($alert['priority'] ?? akh_dashboard_alert_priority((string) ($alert['kind'] ?? '')));
+                }
+            }
+
+            return $bridge;
+        }
+    }
+
     $merged = akh_task_notification_pending_alerts_grouped();
     foreach ($merged as $code => $alert) {
         $merged[$code]['priority'] = akh_dashboard_alert_priority((string) ($alert['kind'] ?? 'client_update'));

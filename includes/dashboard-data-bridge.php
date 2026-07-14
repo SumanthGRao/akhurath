@@ -384,7 +384,14 @@ function akh_dashboard_data_received_keys(): array
 
 function akh_dashboard_data_has_grouped_payload(): bool
 {
-    foreach (['tasks', 'whatsapp_tasks', 'attendance', 'editors'] as $key) {
+    foreach (['tasks', 'whatsapp_tasks', 'attendance', 'editors', 'app_kv'] as $key) {
+        if ($key === 'app_kv') {
+            $kv = akh_dashboard_data_all()['app_kv'] ?? null;
+            if (is_array($kv) && $kv !== []) {
+                return true;
+            }
+            continue;
+        }
         if (akh_dashboard_data_list_section($key) !== []) {
             return true;
         }
@@ -394,3 +401,308 @@ function akh_dashboard_data_has_grouped_payload(): bool
 
     return is_array($counters) && $counters !== [];
 }
+
+/** True when database.local.php defines the n8n webhook URL. */
+function akh_dashboard_data_bridge_enabled(): bool
+{
+    return defined('AKH_CHAT_API_URL') && trim((string) AKH_CHAT_API_URL) !== '';
+}
+
+/** Read tasks, attendance, and related desk data from n8n instead of MySQL/files. */
+function akh_dashboard_data_bridge_reads(): bool
+{
+    return akh_dashboard_data_bridge_enabled();
+}
+
+/**
+ * @return mixed
+ */
+function akh_dashboard_data_app_kv_raw(string $key)
+{
+    $all = akh_dashboard_data_all();
+    $kv = $all['app_kv'] ?? null;
+    if (!is_array($kv) || !array_key_exists($key, $kv)) {
+        return null;
+    }
+
+    return $kv[$key];
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function akh_dashboard_data_tasks_from_app_kv(): array
+{
+    $raw = akh_dashboard_data_app_kv_raw('tasks');
+    if ($raw === null) {
+        return [];
+    }
+    if (is_string($raw)) {
+        try {
+            $raw = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            return [];
+        }
+    }
+    if (!is_array($raw)) {
+        return [];
+    }
+    $out = [];
+    foreach ($raw as $row) {
+        if (is_array($row)) {
+            $out[] = $row;
+        }
+    }
+
+    return $out;
+}
+
+/**
+ * @return array<string, string> editor user id => username
+ */
+function akh_dashboard_data_editor_id_map(): array
+{
+    $map = [];
+    foreach (akh_dashboard_data_editors() as $ed) {
+        if (!is_array($ed)) {
+            continue;
+        }
+        $id = (int) ($ed['id'] ?? 0);
+        $username = strtolower(trim((string) ($ed['username'] ?? $ed['editor'] ?? '')));
+        if ($id > 0 && $username !== '') {
+            $map[$id] = $username;
+        }
+    }
+
+    return $map;
+}
+
+/**
+ * @param array<string, mixed> $wa
+ * @param array<int, string> $editorIdMap
+ * @return array<string, mixed>
+ */
+function akh_dashboard_wa_row_to_studio_task(array $wa, array $editorIdMap): array
+{
+    require_once __DIR__ . '/tasks.php';
+    require_once __DIR__ . '/whatsapp-tasks.php';
+
+    $taskId = akh_task_normalize_id((string) ($wa['task_code'] ?? $wa['id'] ?? ''));
+    $editorUsername = strtolower(trim((string) ($wa['assigned_editor_username'] ?? '')));
+    if ($editorUsername === '' && isset($wa['assigned_editor'])) {
+        $eid = (int) $wa['assigned_editor'];
+        $editorUsername = strtolower(trim((string) ($editorIdMap[$eid] ?? '')));
+    }
+
+    $title = trim((string) ($wa['project_name'] ?? ''));
+    if ($title === '') {
+        $title = trim((string) ($wa['customer_name'] ?? ''));
+    }
+    if ($title === '') {
+        $title = $taskId;
+    }
+
+    $client = trim((string) ($wa['customer_name'] ?? ''));
+    if ($client === '') {
+        $client = 'whatsapp';
+    }
+
+    return [
+        'id' => $taskId,
+        'title' => $title,
+        'status' => akh_wa_map_status_to_studio((string) ($wa['status'] ?? 'new')),
+        'assigned_editor' => $editorUsername !== '' ? $editorUsername : null,
+        'client_username' => $client,
+        'edit_type' => 'studio_admin',
+        'description' => trim((string) ($wa['instructions'] ?? '')),
+        'reference_link' => trim((string) ($wa['reference_link'] ?? '')),
+        'delivery_mode' => trim((string) ($wa['delivery_type'] ?? '')),
+        'drive_link' => trim((string) ($wa['drive_link'] ?? '')),
+        'created_at' => (string) ($wa['created_at'] ?? ''),
+        'updated_at' => (string) ($wa['updated_at'] ?? ''),
+        'editor_feedback_notify' => false,
+        'client_feedback' => '',
+        'client_meeting_date' => '',
+        'client_meeting_link' => '',
+        'deliverable_output' => '',
+        'conversation' => [],
+        'phone' => trim((string) ($wa['phone'] ?? '')),
+    ];
+}
+
+/**
+ * Studio board tasks merged from payload tasks + whatsapp_tasks.
+ *
+ * @return list<array<string, mixed>>
+ */
+function akh_dashboard_data_tasks_merged_for_board(): array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $editorIdMap = akh_dashboard_data_editor_id_map();
+    $byId = [];
+
+    foreach (akh_dashboard_data_tasks_from_app_kv() as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $id = akh_task_normalize_id((string) ($row['id'] ?? ''));
+        if ($id !== '') {
+            $byId[$id] = akh_task_normalize_row_from_storage($row);
+        }
+    }
+
+    foreach (akh_dashboard_data_tasks() as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $id = akh_task_normalize_id((string) ($row['id'] ?? $row['task_code'] ?? ''));
+        if ($id !== '') {
+            $byId[$id] = akh_task_normalize_row_from_storage($row);
+        }
+    }
+
+    foreach (akh_dashboard_data_whatsapp_tasks() as $wa) {
+        if (!is_array($wa)) {
+            continue;
+        }
+        $studio = akh_dashboard_wa_row_to_studio_task($wa, $editorIdMap);
+        $id = akh_task_normalize_id((string) ($studio['id'] ?? ''));
+        if ($id === '') {
+            continue;
+        }
+        if (!isset($byId[$id])) {
+            $byId[$id] = $studio;
+        }
+    }
+
+    return array_values($byId);
+}
+
+/**
+ * @return array{events: list<array{editor: string, type: string, at: int}>}
+ */
+function akh_dashboard_data_attendance_doc(): array
+{
+    $raw = akh_dashboard_data_app_kv_raw('editor_attendance');
+    if (is_array($raw) && isset($raw['events']) && is_array($raw['events'])) {
+        $events = $raw['events'];
+    } else {
+        $events = akh_dashboard_data_attendance();
+    }
+
+    $out = [];
+    foreach ($events as $event) {
+        if (!is_array($event)) {
+            continue;
+        }
+        $editor = strtolower(trim((string) ($event['editor'] ?? $event['username'] ?? '')));
+        $type = strtolower(trim((string) ($event['type'] ?? $event['action'] ?? '')));
+        if ($type === 'in') {
+            $type = 'clock_in';
+        } elseif ($type === 'out') {
+            $type = 'clock_out';
+        }
+        $at = (int) ($event['at'] ?? 0);
+        if ($at < 1 && isset($event['created_at'])) {
+            $ts = strtotime((string) $event['created_at']);
+            if ($ts !== false) {
+                $at = $ts;
+            }
+        }
+        if ($editor === '' || ($type !== 'clock_in' && $type !== 'clock_out') || $at < 1) {
+            continue;
+        }
+        $out[] = ['editor' => $editor, 'type' => $type, 'at' => $at];
+    }
+
+    return ['events' => $out];
+}
+
+/**
+ * @return array<string, list<string>>
+ */
+function akh_dashboard_data_editor_seen_map(): array
+{
+    $raw = akh_dashboard_data_app_kv_raw('editor_seen_tasks');
+    if ($raw === null) {
+        $raw = akh_dashboard_data_all()['editor_seen_tasks'] ?? null;
+    }
+    if (is_string($raw)) {
+        try {
+            $raw = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            return [];
+        }
+    }
+    if (!is_array($raw)) {
+        return [];
+    }
+    $out = [];
+    foreach ($raw as $k => $v) {
+        if (!is_string($k) || !is_array($v)) {
+            continue;
+        }
+        $out[strtolower($k)] = array_values(array_filter($v, 'is_string'));
+    }
+
+    return $out;
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function akh_dashboard_data_whatsapp_messages(): array
+{
+    foreach (['whatsapp_messages', 'messages', 'logs'] as $key) {
+        $rows = akh_dashboard_data_list_section($key);
+        if ($rows !== []) {
+            return $rows;
+        }
+    }
+
+    return [];
+}
+
+/**
+ * @param array<string, mixed> $filters
+ * @return list<array<string, mixed>>
+ */
+function akh_dashboard_data_whatsapp_tasks_filtered(array $filters = []): array
+{
+    $rows = akh_dashboard_data_whatsapp_tasks();
+    if ($rows === []) {
+        return [];
+    }
+
+    $status = isset($filters['status']) ? strtolower(trim((string) $filters['status'])) : '';
+    $q = strtolower(trim((string) ($filters['q'] ?? '')));
+
+    $out = [];
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        if ($status !== '' && strtolower(trim((string) ($row['status'] ?? ''))) !== $status) {
+            continue;
+        }
+        if ($q !== '') {
+            $hay = strtolower(implode(' ', [
+                (string) ($row['task_code'] ?? ''),
+                (string) ($row['project_name'] ?? ''),
+                (string) ($row['customer_name'] ?? ''),
+            ]));
+            if (!str_contains($hay, $q)) {
+                continue;
+            }
+        }
+        $out[] = $row;
+    }
+
+    usort($out, static function (array $a, array $b): int {
+        return strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
+    });
+
+    return $out;
+}
+

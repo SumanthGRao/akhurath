@@ -37,6 +37,9 @@ declare(strict_types=1);
  *
  * define('AKH_CHAT_API_URL', 'https://n8n.akhurathstudio.com/webhook/YOUR_WEBHOOK_ID');
  *
+ * On TrueNAS / n8n-only hosts: do NOT define AKH_DB_* below — remove Hostinger MySQL lines.
+ * The editor desk reads tasks and attendance from the grouped webhook JSON.
+ *
  * n8n must return grouped JSON — see includes/n8n-dashboard-payload.example.json
  *
  * Optional: fetch in this file instead of bootstrap (same result after normalize):

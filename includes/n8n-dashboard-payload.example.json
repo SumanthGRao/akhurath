@@ -79,5 +79,15 @@
     "unread_messages": 2,
     "editors_online": 1,
     "total_tasks": 12
-  }
+  },
+  "app_kv": {
+    "tasks": [],
+    "editor_attendance": {
+      "events": [
+        { "editor": "jane", "type": "clock_in", "at": 1720944000 }
+      ]
+    },
+    "editor_seen_tasks": {}
+  },
+  "whatsapp_messages": []
 }

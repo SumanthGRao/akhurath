@@ -43,6 +43,10 @@ function akh_meeting_request_has_column(string $column): bool
 
 function akh_meeting_requests_table_exists(): bool
 {
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        return akh_dashboard_data_meetings() !== [];
+    }
+
     if (!function_exists('akh_db')) {
         return false;
     }
@@ -256,6 +260,26 @@ function akh_meeting_request_unread_filter(): array
  */
 function akh_meeting_request_unread_rows(): array
 {
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $rows = akh_dashboard_data_meetings();
+        if ($rows === []) {
+            return [];
+        }
+        $out = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $status = strtolower(trim((string) ($row['status'] ?? 'pending')));
+            if (in_array($status, akh_meeting_request_dismissed_statuses(), true)) {
+                continue;
+            }
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
     if (!akh_meeting_requests_table_exists()) {
         return [];
     }
@@ -638,6 +662,27 @@ function akh_meeting_request_assigned_task_codes_for_editor(string $editorUserna
         if ($id !== '') {
             $assigned[$id] = true;
         }
+    }
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        foreach (akh_dashboard_data_whatsapp_tasks() as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $rowEditor = strtolower(trim((string) ($row['assigned_editor_username'] ?? '')));
+            if ($rowEditor === '' && isset($row['assigned_editor'])) {
+                $rowEditor = strtolower(trim((string) (akh_dashboard_data_editor_id_map()[(int) $row['assigned_editor']] ?? '')));
+            }
+            if ($rowEditor !== $editorUsername) {
+                continue;
+            }
+            $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+            if ($code !== '') {
+                $assigned[$code] = true;
+            }
+        }
+
+        return $assigned;
     }
 
     if (!function_exists('akh_db')) {

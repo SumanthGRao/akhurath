@@ -220,6 +220,13 @@ function akh_task_seq_bootstrap_next(array $tasks): int
  */
 function akh_task_editor_seen_load(): array
 {
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $seen = akh_dashboard_data_editor_seen_map();
+        if ($seen !== []) {
+            return $seen;
+        }
+    }
+
     if (akh_tasks_storage_is_database()) {
         akh_tasks_require_kv();
         $raw = akh_kv_get('editor_seen_tasks');
@@ -954,6 +961,13 @@ function akh_task_ajax_client_view_ack(string $clientUsername, string $taskId): 
  */
 function akh_tasks_load(): array
 {
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $bridge = akh_dashboard_data_tasks_merged_for_board();
+        if ($bridge !== []) {
+            return $bridge;
+        }
+    }
+
     if (akh_tasks_storage_is_database()) {
         akh_tasks_require_kv();
         $raw = akh_kv_get('tasks');

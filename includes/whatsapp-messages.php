@@ -413,6 +413,10 @@ function akh_wa_message_dispatch_n8n_webhook(array $row): void
 
 function akh_wa_messages_table_exists(): bool
 {
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        return akh_dashboard_data_whatsapp_messages() !== [];
+    }
+
     if (!function_exists('akh_db')) {
         return false;
     }
@@ -544,6 +548,30 @@ function akh_wa_message_task_match_clause(string $taskCode): array
  */
 function akh_wa_messages_list_for_task(string $taskCode, int $limit = 300): array
 {
+    require_once __DIR__ . '/tasks.php';
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $code = akh_task_normalize_id($taskCode);
+        if ($code === '') {
+            return [];
+        }
+        $out = [];
+        foreach (akh_dashboard_data_whatsapp_messages() as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (!akh_task_ids_match((string) ($row['task_code'] ?? ''), $code)) {
+                continue;
+            }
+            $out[] = $row;
+            if (count($out) >= $limit) {
+                break;
+            }
+        }
+
+        return $out;
+    }
+
     if (!akh_wa_messages_table_exists()) {
         return [];
     }
