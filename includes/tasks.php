@@ -2325,6 +2325,14 @@ function akh_task_set_status(
     if (!akh_tasks_save_locked($list)) {
         return null;
     }
+    if ($prevSt !== $newStatus) {
+        akh_whatsapp_dispatch_n8n_status_update(
+            (string) ($out['id'] ?? $taskId),
+            $newStatus,
+            $statusComment,
+            $editorUsername
+        );
+    }
     if (akh_task_is_bundle_child($out)) {
         $pid = trim((string) ($out['parent_task_id'] ?? ''));
         if ($pid !== '') {

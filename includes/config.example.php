@@ -168,6 +168,12 @@ const AKH_WA_DASHBOARD_REFRESH_SECONDS = 300;
 const AKH_N8N_WA_MESSAGE_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook/ada421c4-2607-4b06-990b-51d0c704dd9c';
 
 /**
+ * n8n webhook — POST JSON when an editor saves a workflow status change.
+ * Payload: {"task_code":"AS0001","status":"in_progress","comment":"…","updated_by":"jane"}
+ */
+const AKH_N8N_TASK_STATUS_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook/8054f3a3-50da-4270-88f3-8e6aa1be1a5a';
+
+/**
  * Customer portal: web UI for your NAS / drive (Synology Drive, Nextcloud, etc.).
  * After login, the dashboard links here — users sign in on YOUR drive with the
  * credentials you create on the NAS (same username if you sync accounts, or separate).
