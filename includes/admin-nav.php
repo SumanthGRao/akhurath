@@ -16,6 +16,7 @@ $items = [
     'index.php' => 'Overview',
     'tasks.php' => 'Tasks',
     'attendance.php' => 'Attendance',
+    'dashboard-access.php' => 'Access',
     'account.php' => 'Account',
 ];
 $base = base_path('admin/');

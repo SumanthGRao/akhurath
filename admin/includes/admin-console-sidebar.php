@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * @var string $adminConsoleActive One of: tasks, create, clients, editors.
- *            Use '' on Overview, Attendance, Account, etc. (no console link marked active).
+ *            Use '' on Overview, Attendance, Access, Account, etc. (no console link marked active).
  */
 
 $adminBase = base_path('admin/');

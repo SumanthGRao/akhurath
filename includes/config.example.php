@@ -160,6 +160,9 @@ const AKH_WA_DASHBOARD_PASS_HASH = '$2y$12$CQb.aKIcjY.Fz6s4PV1h8.BMrtswBIJI1QaNT
 /** Auto-refresh interval in seconds (default 5 minutes). */
 const AKH_WA_DASHBOARD_REFRESH_SECONDS = 300;
 
+/** HR attendance dashboard (read-only editor clock data). */
+const AKH_HR_DASHBOARD_ENABLED = true;
+
 /**
  * n8n webhook — POST JSON when an editor sends an outbound whatsapp_messages row.
  * Payload: {"message_id":1,"phone":"...","task_code":"AS0001","message":"..."}

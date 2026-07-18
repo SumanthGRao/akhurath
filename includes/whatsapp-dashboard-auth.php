@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/dashboard-credentials.php';
+
 function akh_wa_dashboard_enabled(): bool
 {
     return defined('AKH_WA_DASHBOARD_ENABLED') && AKH_WA_DASHBOARD_ENABLED;
@@ -9,6 +11,10 @@ function akh_wa_dashboard_enabled(): bool
 
 function akh_wa_dashboard_configured(): bool
 {
+    if (akh_dashboard_credentials_wa_configured()) {
+        return true;
+    }
+
     $user = defined('AKH_WA_DASHBOARD_USER') ? trim((string) AKH_WA_DASHBOARD_USER) : '';
     $hash = defined('AKH_WA_DASHBOARD_PASS_HASH') ? trim((string) AKH_WA_DASHBOARD_PASS_HASH) : '';
 
@@ -38,12 +44,13 @@ function akh_wa_dashboard_login(string $username, string $password): bool
     }
 
     $key = strtolower(trim($username));
-    $expected = strtolower(trim((string) AKH_WA_DASHBOARD_USER));
+    $wa = akh_dashboard_credentials_wa();
+    $expected = strtolower(trim($wa['user']));
     if ($key === '' || $key !== $expected) {
         return false;
     }
 
-    $hash = (string) AKH_WA_DASHBOARD_PASS_HASH;
+    $hash = (string) $wa['pass_hash'];
     if (!password_verify($password, $hash)) {
         return false;
     }
