@@ -107,3 +107,37 @@ function akh_wa_dashboard_thread_send(string $operator, string $taskCode, string
         'html' => akh_render_task_thread_scroll_html($tAfter, 'editor'),
     ];
 }
+
+/**
+ * @return array{ok: bool, task_code?: string, message_id?: int, html?: string, error?: string}
+ */
+function akh_wa_dashboard_end_chat(string $operator, string $taskCode): array
+{
+    $operator = strtolower(trim($operator));
+    if ($operator === '') {
+        return ['ok' => false, 'error' => 'auth'];
+    }
+
+    $t = akh_wa_dashboard_task_context($taskCode);
+    if ($t === null) {
+        return ['ok' => false, 'error' => 'not_found'];
+    }
+
+    $canonical = akh_task_normalize_id((string) ($t['id'] ?? $taskCode));
+    require_once __DIR__ . '/whatsapp-sessions.php';
+    $close = akh_wa_close_chat_session($canonical, $operator);
+    if (($close['ok'] ?? false) !== true) {
+        return ['ok' => false, 'error' => (string) ($close['error'] ?? 'Could not end chat.')];
+    }
+
+    $tAfter = akh_wa_dashboard_task_context($canonical);
+
+    return [
+        'ok' => true,
+        'task_code' => $canonical,
+        'message_id' => (int) ($close['message_id'] ?? 0),
+        'html' => is_array($tAfter)
+            ? akh_render_task_thread_scroll_html($tAfter, 'editor')
+            : '',
+    ];
+}

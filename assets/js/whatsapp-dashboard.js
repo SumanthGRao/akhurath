@@ -66,6 +66,7 @@
     chatTitle: document.getElementById('wa-chat-title'),
     chatMeta: document.getElementById('wa-chat-meta'),
     chatSend: document.getElementById('wa-chat-send'),
+    chatEnd: document.getElementById('wa-chat-end'),
   };
 
   function normalizeTaskCode(code) {
@@ -816,6 +817,29 @@
       });
   }
 
+  function endChat() {
+    if (!chatTaskCode) return;
+    if (!window.confirm('End this WhatsApp chat? The client will receive a goodbye message and the session will close.')) {
+      return;
+    }
+    setChatError('');
+    if (els.chatEnd) els.chatEnd.disabled = true;
+    post('end_chat', { task_code: chatTaskCode })
+      .then(function (data) {
+        if (!data || !data.ok) {
+          throw new Error((data && data.error) || 'Could not end chat.');
+        }
+        if (data.html) mountChatHtml(data.html);
+        loadTasks(true);
+      })
+      .catch(function (err) {
+        setChatError(err.message || 'Could not end chat.');
+      })
+      .finally(function () {
+        if (els.chatEnd) els.chatEnd.disabled = false;
+      });
+  }
+
   function bindEvents() {
     document.querySelectorAll('[data-wa-filter-status]').forEach(function (btn) {
       btn.addEventListener('click', function () {
@@ -960,6 +984,7 @@
     if (els.chatClose) els.chatClose.addEventListener('click', closeChat);
     if (els.chatBackdrop) els.chatBackdrop.addEventListener('click', closeChat);
     if (els.chatForm) els.chatForm.addEventListener('submit', sendChat);
+    if (els.chatEnd) els.chatEnd.addEventListener('click', endChat);
 
     document.addEventListener('keydown', function (ev) {
       if (ev.key === 'Escape') {
@@ -1008,6 +1033,7 @@
   updateMeetingBanner();
   applyFiltersLocally();
   bindEvents();
+  setChatOpen(false);
   resetCountdown();
   countdownTimer = setInterval(tickCountdown, 1000);
   refreshTimer = setInterval(function () {

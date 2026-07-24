@@ -3,7 +3,14 @@
 
   var STORAGE_KEY = 'akh-theme';
 
+  function themeAllowed() {
+    return !!(document.body && document.body.classList.contains('akh-theme-enabled'));
+  }
+
   function currentTheme() {
+    if (!themeAllowed()) {
+      return 'light';
+    }
     var attr = document.documentElement.getAttribute('data-theme');
     if (attr === 'dark' || attr === 'light') {
       return attr;
@@ -18,6 +25,11 @@
   }
 
   function applyTheme(theme) {
+    if (!themeAllowed()) {
+      document.documentElement.removeAttribute('data-theme');
+      return;
+    }
+
     var next = theme === 'dark' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', next);
     try {

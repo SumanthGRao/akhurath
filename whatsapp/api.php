@@ -80,6 +80,17 @@ try {
         exit;
     }
 
+    if ($action === 'end_chat') {
+        $operator = (string) (akh_wa_dashboard_current() ?? '');
+        $taskCode = trim((string) ($_POST['task_code'] ?? ''));
+        $result = akh_wa_dashboard_end_chat($operator, $taskCode);
+        if (($result['ok'] ?? false) !== true) {
+            http_response_code(400);
+        }
+        echo json_encode($result, JSON_THROW_ON_ERROR);
+        exit;
+    }
+
     if ($action === 'list') {
         $filters = [
             'status' => (string) ($_POST['status'] ?? ''),

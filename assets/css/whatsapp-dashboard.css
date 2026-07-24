@@ -998,6 +998,14 @@ body.page-wa-dashboard .site-footer {
   font-weight: 700;
 }
 
+.wa-chat-backdrop[hidden] {
+  display: none !important;
+}
+
+.wa-chat-drawer[hidden] {
+  display: none !important;
+}
+
 .wa-chat-backdrop {
   position: fixed;
   inset: 0;
@@ -1069,6 +1077,23 @@ body.page-wa-dashboard .site-footer {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
+}
+
+.wa-chat-drawer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.wa-chat-drawer__actions .wa-btn--primary {
+  margin-left: auto;
+}
+
+#wa-chat-end {
+  margin-right: auto;
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.35);
 }
 
 .wa-chat-drawer__form textarea {

@@ -70,10 +70,10 @@ $bodyClass = $bodyClass ?? '';
   <link rel="stylesheet" href="<?php echo h($akhCssHref); ?>" />
   <?php
     require_once __DIR__ . '/theme-mode.php';
-    akh_theme_mode_head();
+    akh_theme_mode_head($bodyClass);
   ?>
 </head>
-<body class="<?php echo h($bodyClass); ?>">
+<body class="<?php echo h(akh_theme_mode_body_class($bodyClass)); ?>">
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <div class="site-header__inner">

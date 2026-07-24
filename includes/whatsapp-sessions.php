@@ -15,10 +15,57 @@ function akh_wa_chat_close_message_text(): string
  *
  * @return array{ok: true, message_id: int}|array{ok: false, error: string}
  */
-function akh_editor_end_whatsapp_chat(string $editorUsername, string $taskId): array
+function akh_wa_close_chat_session(string $taskCode, string $operatorUsername): array
 {
     require_once __DIR__ . '/tasks.php';
     require_once __DIR__ . '/whatsapp-messages.php';
+    require_once __DIR__ . '/whatsapp-tasks.php';
+
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    $operatorUsername = strtolower(trim($operatorUsername));
+    if ($taskCode === '' || $operatorUsername === '') {
+        return ['ok' => false, 'error' => 'Invalid request.'];
+    }
+
+    $phone = akh_wa_message_phone_for_task($taskCode);
+    if ($phone === '') {
+        $wa = akh_wa_task_by_code($taskCode);
+        if (is_array($wa)) {
+            $phone = trim((string) ($wa['phone'] ?? ''));
+        }
+    }
+    if ($phone === '') {
+        return ['ok' => false, 'error' => 'No WhatsApp phone number is linked to this task.'];
+    }
+
+    $send = akh_wa_message_send_editor_outbound(
+        $taskCode,
+        $phone,
+        akh_wa_chat_close_message_text(),
+        $operatorUsername,
+        'close'
+    );
+    if (($send['ok'] ?? false) !== true) {
+        return [
+            'ok' => false,
+            'error' => (string) ($send['error'] ?? 'Could not send the goodbye message.'),
+        ];
+    }
+
+    return [
+        'ok' => true,
+        'message_id' => (int) ($send['message_id'] ?? 0),
+    ];
+}
+
+/**
+ * Editor desk — end chat (assigned editor only).
+ *
+ * @return array{ok: true, message_id: int}|array{ok: false, error: string}
+ */
+function akh_editor_end_whatsapp_chat(string $editorUsername, string $taskId): array
+{
+    require_once __DIR__ . '/tasks.php';
 
     $editorUsername = strtolower(trim($editorUsername));
     $taskId = trim($taskId);
@@ -47,27 +94,5 @@ function akh_editor_end_whatsapp_chat(string $editorUsername, string $taskId): a
         return ['ok' => false, 'error' => 'Task code is missing.'];
     }
 
-    $phone = akh_wa_message_phone_for_task($taskCode);
-    if ($phone === '') {
-        return ['ok' => false, 'error' => 'No WhatsApp phone number is linked to this task.'];
-    }
-
-    $send = akh_wa_message_send_editor_outbound(
-        $taskCode,
-        $phone,
-        akh_wa_chat_close_message_text(),
-        $editorUsername,
-        'close'
-    );
-    if (($send['ok'] ?? false) !== true) {
-        return [
-            'ok' => false,
-            'error' => (string) ($send['error'] ?? 'Could not send the goodbye message.'),
-        ];
-    }
-
-    return [
-        'ok' => true,
-        'message_id' => (int) ($send['message_id'] ?? 0),
-    ];
+    return akh_wa_close_chat_session($taskCode, $editorUsername);
 }

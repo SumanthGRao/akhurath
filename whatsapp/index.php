@@ -81,10 +81,10 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
   <link rel="stylesheet" href="<?php echo h(base_path('assets/css/whatsapp-dashboard.css') . ($waCssVer !== '' ? '?v=' . rawurlencode($waCssVer) : '')); ?>" />
   <?php
     require_once AKH_ROOT . '/includes/theme-mode.php';
-    akh_theme_mode_head();
+    akh_theme_mode_head($bodyClass);
   ?>
 </head>
-<body class="<?php echo h($bodyClass); ?>">
+<body class="<?php echo h(akh_theme_mode_body_class($bodyClass)); ?>">
   <a class="skip-link" href="#main">Skip to content</a>
 
   <header class="wa-topbar">
@@ -390,7 +390,10 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
       <label class="visually-hidden" for="wa-chat-input">Reply to client</label>
       <textarea id="wa-chat-input" name="thread_body" rows="3" maxlength="2000" placeholder="Reply to the client on WhatsApp…" required></textarea>
       <p class="wa-banner wa-banner--err wa-banner--hidden" id="wa-chat-error" role="alert"></p>
-      <button type="submit" class="wa-btn wa-btn--primary" id="wa-chat-send">Send message</button>
+      <div class="wa-chat-drawer__actions">
+        <button type="button" class="wa-btn wa-btn--ghost" id="wa-chat-end">End chat</button>
+        <button type="submit" class="wa-btn wa-btn--primary" id="wa-chat-send">Send message</button>
+      </div>
     </form>
   </aside>
 
@@ -430,6 +433,6 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
     window.WA_DASHBOARD = <?php echo $waDashboardJs; ?>;
   </script>
   <script src="<?php echo h(base_path('assets/js/whatsapp-dashboard.js') . ($waJsVer !== '' ? '?v=' . rawurlencode($waJsVer) : '')); ?>" defer></script>
-  <?php akh_theme_mode_footer_script(); ?>
+  <?php akh_theme_mode_footer_script($bodyClass); ?>
 </body>
 </html>

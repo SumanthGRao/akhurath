@@ -1,10 +1,11 @@
-/* Shared dark theme — activated via html[data-theme="dark"] */
+/* Dashboard dark theme — only on pages with body.akh-theme-enabled */
 
-html[data-theme="dark"] {
+html[data-theme="dark"] body.akh-theme-enabled {
   color-scheme: dark;
 }
 
-html[data-theme="dark"] body {
+/* Portal dashboards (admin, HR, client) */
+html[data-theme="dark"] body.akh-theme-enabled {
   --bg: #121110;
   --bg-dark: #0a0908;
   --bg-muted: #1e1b18;
@@ -14,91 +15,216 @@ html[data-theme="dark"] body {
   --accent: #d4a853;
   --accent-dark: #b8923f;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  background: var(--bg);
+  color: var(--ink);
 }
 
-html[data-theme="dark"] .site-header {
+html[data-theme="dark"] body.akh-theme-enabled .site-header {
   background: rgba(18, 17, 16, 0.92);
   border-bottom-color: var(--line);
 }
 
-html[data-theme="dark"] .portal-card,
-html[data-theme="dark"] .admin-shell,
-html[data-theme="dark"] .portal-form,
-html[data-theme="dark"] .admin-table-wrap {
+html[data-theme="dark"] body.akh-theme-enabled .portal-card,
+html[data-theme="dark"] body.akh-theme-enabled .admin-shell,
+html[data-theme="dark"] body.akh-theme-enabled .portal-form,
+html[data-theme="dark"] body.akh-theme-enabled .admin-table-wrap {
   background: #1a1816;
   border-color: var(--line);
+  color: var(--ink);
 }
 
-html[data-theme="dark"] .admin-table th {
+html[data-theme="dark"] body.akh-theme-enabled .portal-title,
+html[data-theme="dark"] body.akh-theme-enabled .portal-lead,
+html[data-theme="dark"] body.akh-theme-enabled .portal-muted,
+html[data-theme="dark"] body.akh-theme-enabled .admin-head__meta {
+  color: var(--ink);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled .portal-muted,
+html[data-theme="dark"] body.akh-theme-enabled .admin-head__meta {
+  color: var(--muted);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled .admin-table th {
   background: #211e1b;
+  color: var(--ink);
 }
 
-html[data-theme="dark"] .admin-table tr:hover td {
+html[data-theme="dark"] body.akh-theme-enabled .admin-table td {
+  color: var(--ink);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled .admin-table tr:hover td {
   background: rgba(212, 168, 83, 0.06);
 }
 
-html[data-theme="dark"] input,
-html[data-theme="dark"] select,
-html[data-theme="dark"] textarea {
+html[data-theme="dark"] body.akh-theme-enabled input,
+html[data-theme="dark"] body.akh-theme-enabled select,
+html[data-theme="dark"] body.akh-theme-enabled textarea {
   background: #141210;
   color: var(--ink);
   border-color: var(--line);
 }
 
-html[data-theme="dark"] .desk-bell-dropdown,
-html[data-theme="dark"] .akh-meeting-modal__dialog {
-  background: #1a1816;
+html[data-theme="dark"] body.akh-theme-enabled .btn--ghost {
+  color: var(--ink);
   border-color: var(--line);
 }
 
-/* Editor desk */
-html[data-theme="dark"] body.page-editor-desk {
-  --edesk-bg: #121110;
-  --edesk-ink: #f2ebe3;
-  --edesk-muted: #a89f94;
-  --edesk-line: rgba(242, 235, 227, 0.12);
-  --edesk-card: #1a1816;
-  --edesk-accent: #6b9bd1;
+html[data-theme="dark"] body.akh-theme-enabled .desk-bell-dropdown,
+html[data-theme="dark"] body.akh-theme-enabled .akh-meeting-modal__dialog {
+  background: #1a1816;
+  border-color: var(--line);
+  color: var(--ink);
 }
 
-html[data-theme="dark"] .page-editor-desk .edesk-topbar,
-html[data-theme="dark"] .page-editor-desk .edesk-sidebar,
-html[data-theme="dark"] .page-editor-desk .edesk-detail,
-html[data-theme="dark"] .page-editor-desk .edesk-card {
-  background: var(--edesk-card);
+/* Editor desk */
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk {
+  --edesk-bg: #121110;
+  --edesk-surface: #1a1816;
+  --edesk-ink: #f2ebe3;
+  --edesk-muted: rgba(242, 235, 227, 0.62);
+  --edesk-line: rgba(242, 235, 227, 0.12);
+  --edesk-accent: #7eb0e8;
+  background: var(--edesk-bg);
   color: var(--edesk-ink);
 }
 
-html[data-theme="dark"] .page-editor-desk .edesk-list__item {
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-topbar,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-detail {
+  background: var(--edesk-surface);
+  color: var(--edesk-ink);
+  box-shadow: none;
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-sidebar {
   background: #141210;
+  color: var(--edesk-ink);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-topbar__kicker,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-topbar__user,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-sidebar__hint,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-muted,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-empty {
+  color: var(--edesk-muted);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-topbar__title,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-panel__title,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-card__title,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-list__title {
+  color: var(--edesk-ink);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-tab {
+  color: var(--edesk-muted);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-tab:hover {
+  color: var(--edesk-ink);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-tab[aria-selected='true'] {
+  color: var(--edesk-accent);
+  background: rgba(126, 176, 232, 0.14);
+  border-color: rgba(126, 176, 232, 0.28);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-tab__badge {
+  background: rgba(126, 176, 232, 0.2);
+  color: var(--edesk-ink);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-search,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-status-filter {
+  background: #0f0e0d;
+  color: var(--edesk-ink);
   border-color: var(--edesk-line);
 }
 
-html[data-theme="dark"] .page-editor-desk .edesk-list__item.is-active {
-  background: rgba(107, 155, 209, 0.14);
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-list__item {
+  background: #1a1816;
+  border-color: var(--edesk-line);
+  color: var(--edesk-ink);
 }
 
-html[data-theme="dark"] .page-editor-desk .edesk-meetings {
-  background: rgba(107, 155, 209, 0.1);
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-list__item:hover {
+  background: #211e1b;
 }
 
-html[data-theme="dark"] .page-editor-desk .edesk-meetings__chip,
-html[data-theme="dark"] .page-editor-desk .edesk-meetings__card {
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-list__item--active,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-list__item.is-active {
+  background: rgba(126, 176, 232, 0.14);
+  border-color: rgba(126, 176, 232, 0.28);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-list__id,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-list__client,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-list__meta {
+  color: var(--edesk-muted);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-card,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-panel__head {
+  background: var(--edesk-surface);
+  color: var(--edesk-ink);
+  border-color: var(--edesk-line);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-prose,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .field span {
+  color: var(--edesk-ink);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings {
+  background: rgba(126, 176, 232, 0.1);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings__label {
+  color: var(--edesk-accent);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings__card {
   background: #141210;
-  border-color: rgba(107, 155, 209, 0.25);
+  border-color: rgba(126, 176, 232, 0.25);
 }
 
-html[data-theme="dark"] .page-editor-desk .ticket__msg--client {
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings__when {
+  color: var(--edesk-ink);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings__who,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings__requested,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings__end {
+  color: var(--edesk-muted);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings__jump {
+  color: var(--edesk-accent);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .ticket__msg--client {
   background: rgba(212, 168, 83, 0.12);
+  color: var(--edesk-ink);
 }
 
-html[data-theme="dark"] .page-editor-desk .ticket__msg--editor {
-  background: rgba(107, 155, 209, 0.16);
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .ticket__msg--editor {
+  background: rgba(126, 176, 232, 0.16);
+  color: var(--edesk-ink);
 }
 
-/* WhatsApp dashboard — light mode when user picks light */
-html[data-theme="light"] body.page-wa-dashboard,
-html[data-theme="light"] body.page-wa-login {
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .ticket__thread-input,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk select,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk textarea {
+  background: #0f0e0d;
+  color: var(--edesk-ink);
+  border-color: var(--edesk-line);
+}
+
+/* WhatsApp dashboard — light mode override */
+html[data-theme="light"] body.akh-theme-enabled.page-wa-dashboard {
   --wa-bg: #f4f1eb;
   --wa-bg-elevated: #ffffff;
   --wa-bg-card: #ffffff;
@@ -111,11 +237,10 @@ html[data-theme="light"] body.page-wa-login {
   background:
     radial-gradient(ellipse 80% 50% at 50% -20%, rgba(201, 162, 39, 0.1), transparent),
     var(--wa-bg);
+  color: var(--wa-ink);
 }
 
-/* WhatsApp dashboard stays dark by default; explicit dark keeps current palette */
-html[data-theme="dark"] body.page-wa-dashboard,
-html[data-theme="dark"] body.page-wa-login {
+html[data-theme="dark"] body.akh-theme-enabled.page-wa-dashboard {
   color-scheme: dark;
 }
 

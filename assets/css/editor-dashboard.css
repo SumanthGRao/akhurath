@@ -34,6 +34,7 @@
   --edesk-top: 3.25rem;
   --edesk-bg: #f4f1eb;
   --edesk-surface: #fff;
+  --edesk-ink: #1c2028;
   --edesk-line: rgba(28, 32, 40, 0.1);
   --edesk-muted: rgba(28, 32, 40, 0.58);
   --edesk-accent: #3d5f8c;
@@ -45,7 +46,7 @@
   height: 100%;
   min-height: 0;
   background: var(--edesk-bg);
-  color: var(--ink, #1c2028);
+  color: var(--edesk-ink);
 }
 
 .edesk-topbar {
@@ -117,7 +118,7 @@
 }
 
 .edesk-tab:hover {
-  color: var(--ink);
+  color: var(--edesk-ink);
   background: rgba(0, 0, 0, 0.04);
 }
 
@@ -242,13 +243,13 @@
 
 .edesk-meetings__when {
   font-weight: 600;
-  color: #1a1715;
+  color: var(--edesk-ink);
 }
 
 .edesk-meetings__who,
 .edesk-meetings__requested,
 .edesk-meetings__end {
-  color: #5e5852;
+  color: var(--edesk-muted);
 }
 
 .edesk-meetings__actions {
