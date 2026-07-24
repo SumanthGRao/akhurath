@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once AKH_ROOT . '/includes/whatsapp-dashboard-auth.php';
 require_once AKH_ROOT . '/includes/whatsapp-tasks.php';
+require_once AKH_ROOT . '/includes/whatsapp-dashboard-chat.php';
 require_once AKH_ROOT . '/includes/csrf.php';
 
 akh_require_wa_dashboard();
@@ -58,6 +59,24 @@ try {
             'notices' => $notify['notices'] ?? [],
             'meetings' => $notify['meetings'] ?? [],
         ], JSON_THROW_ON_ERROR);
+        exit;
+    }
+
+    if ($action === 'thread_poll') {
+        $taskCode = trim((string) ($_POST['task_code'] ?? ''));
+        echo json_encode(akh_wa_dashboard_thread_poll($taskCode), JSON_THROW_ON_ERROR);
+        exit;
+    }
+
+    if ($action === 'thread_send') {
+        $operator = (string) (akh_wa_dashboard_current() ?? '');
+        $taskCode = trim((string) ($_POST['task_code'] ?? ''));
+        $body = trim((string) ($_POST['thread_body'] ?? ''));
+        $result = akh_wa_dashboard_thread_send($operator, $taskCode, $body);
+        if (($result['ok'] ?? false) !== true) {
+            http_response_code(400);
+        }
+        echo json_encode($result, JSON_THROW_ON_ERROR);
         exit;
     }
 

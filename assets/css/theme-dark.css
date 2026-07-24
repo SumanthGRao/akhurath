@@ -1,0 +1,169 @@
+/* Shared dark theme — activated via html[data-theme="dark"] */
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+html[data-theme="dark"] body {
+  --bg: #121110;
+  --bg-dark: #0a0908;
+  --bg-muted: #1e1b18;
+  --ink: #f2ebe3;
+  --muted: #a89f94;
+  --line: rgba(242, 235, 227, 0.12);
+  --accent: #d4a853;
+  --accent-dark: #b8923f;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme="dark"] .site-header {
+  background: rgba(18, 17, 16, 0.92);
+  border-bottom-color: var(--line);
+}
+
+html[data-theme="dark"] .portal-card,
+html[data-theme="dark"] .admin-shell,
+html[data-theme="dark"] .portal-form,
+html[data-theme="dark"] .admin-table-wrap {
+  background: #1a1816;
+  border-color: var(--line);
+}
+
+html[data-theme="dark"] .admin-table th {
+  background: #211e1b;
+}
+
+html[data-theme="dark"] .admin-table tr:hover td {
+  background: rgba(212, 168, 83, 0.06);
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea {
+  background: #141210;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+html[data-theme="dark"] .desk-bell-dropdown,
+html[data-theme="dark"] .akh-meeting-modal__dialog {
+  background: #1a1816;
+  border-color: var(--line);
+}
+
+/* Editor desk */
+html[data-theme="dark"] body.page-editor-desk {
+  --edesk-bg: #121110;
+  --edesk-ink: #f2ebe3;
+  --edesk-muted: #a89f94;
+  --edesk-line: rgba(242, 235, 227, 0.12);
+  --edesk-card: #1a1816;
+  --edesk-accent: #6b9bd1;
+}
+
+html[data-theme="dark"] .page-editor-desk .edesk-topbar,
+html[data-theme="dark"] .page-editor-desk .edesk-sidebar,
+html[data-theme="dark"] .page-editor-desk .edesk-detail,
+html[data-theme="dark"] .page-editor-desk .edesk-card {
+  background: var(--edesk-card);
+  color: var(--edesk-ink);
+}
+
+html[data-theme="dark"] .page-editor-desk .edesk-list__item {
+  background: #141210;
+  border-color: var(--edesk-line);
+}
+
+html[data-theme="dark"] .page-editor-desk .edesk-list__item.is-active {
+  background: rgba(107, 155, 209, 0.14);
+}
+
+html[data-theme="dark"] .page-editor-desk .edesk-meetings {
+  background: rgba(107, 155, 209, 0.1);
+}
+
+html[data-theme="dark"] .page-editor-desk .edesk-meetings__chip,
+html[data-theme="dark"] .page-editor-desk .edesk-meetings__card {
+  background: #141210;
+  border-color: rgba(107, 155, 209, 0.25);
+}
+
+html[data-theme="dark"] .page-editor-desk .ticket__msg--client {
+  background: rgba(212, 168, 83, 0.12);
+}
+
+html[data-theme="dark"] .page-editor-desk .ticket__msg--editor {
+  background: rgba(107, 155, 209, 0.16);
+}
+
+/* WhatsApp dashboard — light mode when user picks light */
+html[data-theme="light"] body.page-wa-dashboard,
+html[data-theme="light"] body.page-wa-login {
+  --wa-bg: #f4f1eb;
+  --wa-bg-elevated: #ffffff;
+  --wa-bg-card: #ffffff;
+  --wa-ink: #1a1715;
+  --wa-muted: #5e5852;
+  --wa-line: rgba(26, 23, 21, 0.12);
+  --wa-accent: #8a6f18;
+  --wa-accent-soft: rgba(201, 162, 39, 0.15);
+  --wa-shadow: 0 18px 50px rgba(26, 23, 21, 0.08);
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(201, 162, 39, 0.1), transparent),
+    var(--wa-bg);
+}
+
+/* WhatsApp dashboard stays dark by default; explicit dark keeps current palette */
+html[data-theme="dark"] body.page-wa-dashboard,
+html[data-theme="dark"] body.page-wa-login {
+  color-scheme: dark;
+}
+
+/* Theme toggle button */
+.akh-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--line, rgba(26, 23, 21, 0.12));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.akh-theme-toggle:hover,
+.akh-theme-toggle:focus-visible {
+  border-color: var(--accent, #c9a227);
+  outline: none;
+}
+
+.akh-theme-toggle__icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.akh-theme-toggle__icon--moon {
+  display: none;
+}
+
+.akh-theme-toggle.is-dark .akh-theme-toggle__icon--sun {
+  display: none;
+}
+
+.akh-theme-toggle.is-dark .akh-theme-toggle__icon--moon {
+  display: inline;
+}
+
+.wa-topbar__actions .akh-theme-toggle,
+.edesk-topbar__actions .akh-theme-toggle {
+  border-color: var(--wa-line, var(--edesk-line, rgba(26, 23, 21, 0.12)));
+}
+
+.site-nav__theme {
+  margin-right: 0.5rem;
+}

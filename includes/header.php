@@ -68,6 +68,10 @@ $bodyClass = $bodyClass ?? '';
     $akhCssHref = base_path('assets/css/site.css') . ($akhCssVer !== '' ? '?v=' . rawurlencode($akhCssVer) : '');
   ?>
   <link rel="stylesheet" href="<?php echo h($akhCssHref); ?>" />
+  <?php
+    require_once __DIR__ . '/theme-mode.php';
+    akh_theme_mode_head();
+  ?>
 </head>
 <body class="<?php echo h($bodyClass); ?>">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -75,6 +79,7 @@ $bodyClass = $bodyClass ?? '';
     <div class="site-header__inner">
       <a class="site-logo" href="<?php echo h(base_path('index.php')); ?>"><?php echo h(SITE_NAME); ?></a>
       <nav class="site-nav" id="site-nav" aria-label="Primary">
+        <?php akh_theme_mode_toggle('site-nav__theme'); ?>
         <div class="site-menu site-menu--hub" data-site-menu>
           <div class="site-menu__row">
             <nav class="site-menu__slide" aria-label="Site sections">

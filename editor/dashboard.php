@@ -399,6 +399,7 @@ require_once AKH_ROOT . '/includes/header.php';
               <a class="btn btn--ghost btn--sm" href="<?php echo h(base_path('editor/leave.php')); ?>">Leave</a>
             </span>
           <?php endif; ?>
+          <?php require_once AKH_ROOT . '/includes/theme-mode.php'; akh_theme_mode_toggle(); ?>
           <div class="desk-bell-wrap">
             <button
               type="button"
@@ -437,18 +438,35 @@ require_once AKH_ROOT . '/includes/header.php';
           <span class="edesk-meetings__label">Meetings</span>
           <?php foreach ($editorMeetingRows as $mr): ?>
             <?php
-            $mCode = (string) ($mr['task_code'] ?? '');
-            $mPreview = akh_meeting_request_preview_from_row($mr);
-            $mLink = trim((string) ($mr['meet_link'] ?? ''));
+            $desk = akh_meeting_request_desk_payload($mr);
+            $mCode = $desk['task_code'];
+            $mLink = $desk['meet_link'];
             ?>
-            <span class="edesk-meetings__chip">
+            <article class="edesk-meetings__card">
               <button type="button" class="edesk-meetings__jump" data-task-id="<?php echo h($mCode); ?>"><?php echo h($mCode); ?></button>
-              <span><?php echo h($mPreview); ?></span>
-              <?php if ($mLink !== ''): ?>
-                <a class="text-link" href="<?php echo h($mLink); ?>" target="_blank" rel="noopener noreferrer">Join</a>
-              <?php endif; ?>
-              <button type="button" class="btn btn--ghost btn--sm edesk-meeting-read" data-task-id="<?php echo h($mCode); ?>">Mark read</button>
-            </span>
+              <div class="edesk-meetings__meta">
+                <?php if ($desk['when_label'] !== ''): ?>
+                  <p class="edesk-meetings__when"><strong>When:</strong> <?php echo h($desk['when_label']); ?></p>
+                <?php endif; ?>
+                <?php if ($desk['customer_name'] !== '' || $desk['project_name'] !== ''): ?>
+                  <p class="edesk-meetings__who">
+                    <?php echo h(trim($desk['customer_name'] . ($desk['project_name'] !== '' ? ' — ' . $desk['project_name'] : ''))); ?>
+                  </p>
+                <?php endif; ?>
+                <?php if ($desk['requested_time_text'] !== '' && $desk['requested_time_text'] !== $desk['when_label']): ?>
+                  <p class="edesk-meetings__requested"><strong>Requested:</strong> <?php echo h($desk['requested_time_text']); ?></p>
+                <?php endif; ?>
+                <?php if ($desk['end_time'] !== ''): ?>
+                  <p class="edesk-meetings__end"><strong>Ends:</strong> <?php echo h($desk['end_time']); ?></p>
+                <?php endif; ?>
+              </div>
+              <div class="edesk-meetings__actions">
+                <?php if ($mLink !== ''): ?>
+                  <a class="text-link" href="<?php echo h($mLink); ?>" target="_blank" rel="noopener noreferrer">Join</a>
+                <?php endif; ?>
+                <button type="button" class="btn btn--ghost btn--sm edesk-meeting-read" data-task-id="<?php echo h($mCode); ?>">Mark read</button>
+              </div>
+            </article>
           <?php endforeach; ?>
         </div>
       <?php endif; ?>

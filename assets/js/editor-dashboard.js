@@ -1012,16 +1012,27 @@
     bar.hidden = false;
     var html = '<span class="edesk-meetings__label">Meetings</span>';
     meetings.forEach(function (m) {
+      var who = [m.customer_name, m.project_name].filter(Boolean).join(' — ');
+      var when = m.when_label || m.start_time || '';
+      var requested =
+        m.requested_time_text && m.requested_time_text !== when
+          ? '<p class="edesk-meetings__requested"><strong>Requested:</strong> ' + esc(m.requested_time_text) + '</p>'
+          : '';
+      var endTime = m.end_time ? '<p class="edesk-meetings__end"><strong>Ends:</strong> ' + esc(m.end_time) + '</p>' : '';
       html +=
-        '<span class="edesk-meetings__chip">' +
+        '<article class="edesk-meetings__card">' +
         '<button type="button" class="edesk-meetings__jump" data-task-id="' +
         esc(m.task_code) +
         '">' +
         esc(m.task_code) +
         '</button>' +
-        '<span>' +
-        esc(m.preview) +
-        '</span>';
+        '<div class="edesk-meetings__meta">' +
+        (when ? '<p class="edesk-meetings__when"><strong>When:</strong> ' + esc(when) + '</p>' : '') +
+        (who ? '<p class="edesk-meetings__who">' + esc(who) + '</p>' : '') +
+        requested +
+        endTime +
+        '</div>' +
+        '<div class="edesk-meetings__actions">';
       if (m.meet_link) {
         html +=
           '<a class="text-link" href="' +
@@ -1031,7 +1042,7 @@
       html +=
         '<button type="button" class="btn btn--ghost btn--sm edesk-meeting-read" data-task-id="' +
         esc(m.task_code) +
-        '">Mark read</button></span>';
+        '">Mark read</button></div></article>';
     });
     bar.innerHTML = html;
   }
@@ -1135,10 +1146,10 @@
       e.preventDefault();
       var taskId = readBtn.getAttribute('data-task-id') || '';
       markMeetingRead(taskId).then(function () {
-        var chip = readBtn.closest('.edesk-meetings__chip');
+        var chip = readBtn.closest('.edesk-meetings__card');
         if (chip) chip.remove();
         var bar = qs('#edesk-meetings', root);
-        if (bar && !bar.querySelector('.edesk-meetings__chip')) {
+        if (bar && !bar.querySelector('.edesk-meetings__card')) {
           bar.hidden = true;
         }
       });

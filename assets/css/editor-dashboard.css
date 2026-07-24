@@ -216,6 +216,48 @@
   border: 1px solid rgba(47, 95, 156, 0.2);
 }
 
+.edesk-meetings__card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem 0.75rem;
+  align-items: start;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid rgba(47, 95, 156, 0.2);
+  min-width: min(100%, 22rem);
+}
+
+.edesk-meetings__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.edesk-meetings__meta p {
+  margin: 0;
+}
+
+.edesk-meetings__when {
+  font-weight: 600;
+  color: #1a1715;
+}
+
+.edesk-meetings__who,
+.edesk-meetings__requested,
+.edesk-meetings__end {
+  color: #5e5852;
+}
+
+.edesk-meetings__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
 .edesk-meetings__jump {
   border: 0;
   background: transparent;

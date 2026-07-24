@@ -351,11 +351,29 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
                   <?php endif; ?>
                 </div>
                 <div class="edesk-prose"><?php echo nl2br(h((string) ($taskAlert['preview'] ?? ''))); ?></div>
+                <?php if (trim((string) ($taskAlert['when_label'] ?? '')) !== '' || trim((string) ($taskAlert['start_time'] ?? '')) !== ''): ?>
+                  <p class="edesk-muted edesk-muted--sm">
+                    <strong>When:</strong>
+                    <?php echo h(trim((string) (($taskAlert['when_label'] ?? '') !== '' ? $taskAlert['when_label'] : $taskAlert['start_time']))); ?>
+                  </p>
+                <?php endif; ?>
+                <?php if (trim((string) ($taskAlert['customer_name'] ?? '')) !== '' || trim((string) ($taskAlert['project_name'] ?? '')) !== ''): ?>
+                  <p class="edesk-muted edesk-muted--sm">
+                    <?php
+                    $who = trim((string) ($taskAlert['customer_name'] ?? ''));
+                    $proj = trim((string) ($taskAlert['project_name'] ?? ''));
+                    echo h($who . ($proj !== '' ? ' — ' . $proj : ''));
+                    ?>
+                  </p>
+                <?php endif; ?>
+                <?php if (trim((string) ($taskAlert['requested_time_text'] ?? '')) !== ''): ?>
+                  <p class="edesk-muted edesk-muted--sm"><strong>Requested slot:</strong> <?php echo h((string) $taskAlert['requested_time_text']); ?></p>
+                <?php endif; ?>
                 <?php if (trim((string) ($taskAlert['meet_link'] ?? '')) !== ''): ?>
                   <a class="edesk-link" href="<?php echo h((string) $taskAlert['meet_link']); ?>" target="_blank" rel="noopener noreferrer">Join Google Meet</a>
                 <?php endif; ?>
-                <?php if (trim((string) ($taskAlert['start_time'] ?? '')) !== ''): ?>
-                  <p class="edesk-muted edesk-muted--sm"><strong>Starts:</strong> <?php echo h((string) $taskAlert['start_time']); ?></p>
+                <?php if (trim((string) ($taskAlert['end_time'] ?? '')) !== ''): ?>
+                  <p class="edesk-muted edesk-muted--sm"><strong>Ends:</strong> <?php echo h((string) $taskAlert['end_time']); ?></p>
                 <?php endif; ?>
               </article>
             <?php endif; ?>

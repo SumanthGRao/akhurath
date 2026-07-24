@@ -25,6 +25,9 @@
   var searchDebounce = null;
   var loading = false;
   var baseTitle = document.title;
+  var chatTaskCode = '';
+  var chatMsgSig = '';
+  var chatPollTimer = null;
 
   var els = {
     body: document.getElementById('wa-tasks-body'),
@@ -53,6 +56,16 @@
     meetingsBody: document.getElementById('wa-meetings-body'),
     meetingsBadge: document.getElementById('wa-meetings-badge'),
     meetingBanner: document.getElementById('wa-meeting-banner'),
+    chatDrawer: document.getElementById('wa-chat-drawer'),
+    chatBackdrop: document.getElementById('wa-chat-backdrop'),
+    chatClose: document.getElementById('wa-chat-close'),
+    chatScroll: document.getElementById('wa-chat-scroll'),
+    chatForm: document.getElementById('wa-chat-form'),
+    chatInput: document.getElementById('wa-chat-input'),
+    chatError: document.getElementById('wa-chat-error'),
+    chatTitle: document.getElementById('wa-chat-title'),
+    chatMeta: document.getElementById('wa-chat-meta'),
+    chatSend: document.getElementById('wa-chat-send'),
   };
 
   function normalizeTaskCode(code) {
@@ -188,6 +201,13 @@
       var code = escHtml(n.task_code || '');
       var label = escHtml(n.label || 'Update');
       var preview = escHtml(n.preview || '');
+      var when = escHtml(n.when_label || n.start_time || '').trim();
+      var detailBits = [];
+      if (when) detailBits.push('When: ' + when);
+      if (n.customer_name) detailBits.push(escHtml(n.customer_name));
+      if (n.project_name) detailBits.push(escHtml(n.project_name));
+      if (detailBits.length === 0 && preview) detailBits.push(preview);
+      var detailText = detailBits.join(' · ');
       var kind = String(n.kind || '');
       var kindClass = kind.indexOf('meeting_') === 0 ? ' wa-bell-dropdown__item--meeting' : '';
       var linkBtn = n.meet_link
@@ -199,7 +219,7 @@
         '<strong class="wa-bell-dropdown__code">' + code + '</strong>' +
         '<span class="wa-bell-dropdown__label">' + label + '</span>' +
         '</div>' +
-        '<p class="wa-bell-dropdown__preview">' + preview + linkBtn + '</p>' +
+        '<p class="wa-bell-dropdown__preview">' + detailText + linkBtn + '</p>' +
         '<div class="wa-bell-dropdown__item-actions">' +
         '<button type="button" class="wa-btn wa-btn--sm wa-btn--ghost" data-wa-notice-open="' + code + '">Open task</button>' +
         '<button type="button" class="wa-btn wa-btn--sm wa-btn--ghost" data-wa-notice-read="' + escHtml(n.task_code || '') + '">Mark read</button>' +
@@ -396,6 +416,17 @@
       var alertBadge = alert
         ? '<span class="' + pill.className + '" title="' + escHtml(alert.preview || pill.label) + '">' + escHtml(pill.label) + '</span> '
         : '';
+      var showChat =
+        t.can_chat ||
+        (t.unread_messages && t.unread_messages > 0) ||
+        (alert && String(alert.kind || '') === 'whatsapp_message');
+      var chatBtn = showChat
+        ? ' <button type="button" class="wa-btn wa-btn--sm wa-btn--chat" data-wa-chat="' +
+          escHtml(t.task_code) +
+          '">Chat' +
+          (t.unread_messages > 0 ? ' <span class="wa-chat-badge">' + escHtml(String(t.unread_messages)) + '</span>' : '') +
+          '</button>'
+        : '';
       return (
         '<tr class="wa-table__row' + rowClass + '" data-task-id="' + t.id + '">' +
         '<td>' + alertBadge + '<code class="wa-code">' + escHtml(t.task_code) + '</code></td>' +
@@ -405,7 +436,8 @@
         '<td><span class="wa-badge wa-badge--' + escHtml(t.status) + '">' + escHtml(t.status_label) + '</span></td>' +
         '<td>' + editor + '</td>' +
         '<td class="wa-cell-muted">' + escHtml(t.updated_at) + '</td>' +
-        '<td><button type="button" class="wa-btn wa-btn--sm wa-btn--edit" data-wa-edit="' + t.id + '">Edit</button></td>' +
+        '<td class="wa-table__actions">' + chatBtn +
+        '<button type="button" class="wa-btn wa-btn--sm wa-btn--edit" data-wa-edit="' + t.id + '">Edit</button></td>' +
         '</tr>'
       );
     }).join('');
@@ -679,6 +711,111 @@
     return el ? el.value : '';
   }
 
+  function setChatError(msg) {
+    if (!els.chatError) return;
+    if (!msg) {
+      els.chatError.textContent = '';
+      els.chatError.classList.add('wa-banner--hidden');
+      return;
+    }
+    els.chatError.textContent = msg;
+    els.chatError.classList.remove('wa-banner--hidden');
+  }
+
+  function setChatOpen(open) {
+    if (els.chatDrawer) {
+      els.chatDrawer.hidden = !open;
+      els.chatDrawer.setAttribute('aria-hidden', open ? 'false' : 'true');
+    }
+    if (els.chatBackdrop) {
+      els.chatBackdrop.hidden = !open;
+    }
+    if (!open) {
+      chatTaskCode = '';
+      chatMsgSig = '';
+      if (chatPollTimer) {
+        clearInterval(chatPollTimer);
+        chatPollTimer = null;
+      }
+    }
+  }
+
+  function mountChatHtml(html) {
+    if (!els.chatScroll) return;
+    els.chatScroll.innerHTML = html || '<p class="wa-chat-drawer__empty">No messages yet.</p>';
+    els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
+  }
+
+  function pollChatThread() {
+    if (!chatTaskCode) return Promise.resolve();
+    return post('thread_poll', { task_code: chatTaskCode })
+      .then(function (data) {
+        if (!data || !data.ok) return;
+        if (data.msg_sig && data.msg_sig === chatMsgSig) return;
+        chatMsgSig = data.msg_sig || '';
+        if (data.html) mountChatHtml(data.html);
+      })
+      .catch(function () {});
+  }
+
+  function openChat(taskCode) {
+    var code = normalizeTaskCode(taskCode);
+    if (!code) return;
+    chatTaskCode = code;
+    chatMsgSig = '';
+    setChatError('');
+    if (els.chatInput) els.chatInput.value = '';
+    if (els.chatTitle) els.chatTitle.textContent = code;
+    var task = null;
+    Object.keys(tasksById).forEach(function (id) {
+      var t = tasksById[id];
+      if (taskIdsMatch(t.task_code, code)) task = t;
+    });
+    if (els.chatMeta) {
+      var bits = [];
+      if (task && task.customer_name) bits.push(task.customer_name);
+      if (task && task.project_name) bits.push(task.project_name);
+      if (task && task.phone) bits.push(task.phone);
+      els.chatMeta.textContent = bits.join(' · ');
+    }
+    setChatOpen(true);
+    mountChatHtml('<p class="wa-chat-drawer__empty">Loading messages…</p>');
+    pollChatThread().then(function () {
+      if (chatPollTimer) clearInterval(chatPollTimer);
+      chatPollTimer = setInterval(pollChatThread, 5000);
+    });
+    ackNotifications(code).catch(function () {});
+  }
+
+  function closeChat() {
+    setChatOpen(false);
+  }
+
+  function sendChat(ev) {
+    if (ev && ev.preventDefault) ev.preventDefault();
+    if (!chatTaskCode || !els.chatInput) return;
+    var body = String(els.chatInput.value || '').trim();
+    if (!body) return;
+    setChatError('');
+    if (els.chatSend) els.chatSend.disabled = true;
+    post('thread_send', { task_code: chatTaskCode, thread_body: body })
+      .then(function (data) {
+        if (!data || !data.ok) {
+          throw new Error((data && data.error) || 'Could not send message.');
+        }
+        els.chatInput.value = '';
+        chatMsgSig = data.msg_sig || '';
+        if (data.html) mountChatHtml(data.html);
+        loadTasks(true);
+      })
+      .catch(function (err) {
+        setChatError(err.message || 'Could not send message.');
+      })
+      .finally(function () {
+        if (els.chatSend) els.chatSend.disabled = false;
+      });
+  }
+
   function bindEvents() {
     document.querySelectorAll('[data-wa-filter-status]').forEach(function (btn) {
       btn.addEventListener('click', function () {
@@ -727,6 +864,11 @@
 
     if (els.body) {
       els.body.addEventListener('click', function (ev) {
+        var chatBtn = ev.target.closest('[data-wa-chat]');
+        if (chatBtn) {
+          openChat(chatBtn.getAttribute('data-wa-chat'));
+          return;
+        }
         var btn = ev.target.closest('[data-wa-edit]');
         if (!btn) return;
         var id = parseInt(btn.getAttribute('data-wa-edit'), 10);
@@ -801,11 +943,30 @@
           var taskCode = openBtn.getAttribute('data-wa-notice-open');
           setBellOpen(false);
           switchTab('tasks');
+          var notice = (notices || []).find(function (n) {
+            return taskIdsMatch(n.task_code, taskCode);
+          });
+          if (notice && String(notice.kind || '') === 'whatsapp_message') {
+            openChat(taskCode);
+            return;
+          }
           var tid = findTaskIdByCode(taskCode);
           if (tid) openEdit(tid);
+          else openChat(taskCode);
         }
       });
     }
+
+    if (els.chatClose) els.chatClose.addEventListener('click', closeChat);
+    if (els.chatBackdrop) els.chatBackdrop.addEventListener('click', closeChat);
+    if (els.chatForm) els.chatForm.addEventListener('submit', sendChat);
+
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') {
+        if (!els.chatDrawer || els.chatDrawer.hidden) return;
+        closeChat();
+      }
+    });
 
     document.addEventListener('click', function (ev) {
       if (!bellOpen) return;

@@ -982,6 +982,29 @@ function akh_wa_sync_whatsapp_pool_to_studio_board(): int
     }
 }
 
+/** @param array<string, mixed> $row */
+function akh_wa_task_can_chat(array $row): bool
+{
+    require_once __DIR__ . '/tasks.php';
+    require_once __DIR__ . '/whatsapp-messages.php';
+
+    $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+    if ($code === '') {
+        return false;
+    }
+    if (trim((string) ($row['phone'] ?? '')) !== '') {
+        return true;
+    }
+    if (!akh_wa_messages_table_exists()) {
+        return false;
+    }
+    if (akh_wa_message_unread_count_for_task($code) > 0) {
+        return true;
+    }
+
+    return akh_wa_messages_list_for_task($code, 1) !== [];
+}
+
 /** @return array<string, mixed> */
 function akh_wa_task_row_for_json(array $row, array $editors): array
 {
@@ -991,6 +1014,13 @@ function akh_wa_task_row_for_json(array $row, array $editors): array
     $editorName = ($editorId !== null && isset($editors[$editorId])) ? $editors[$editorId] : '';
 
     $status = (string) ($row['status'] ?? 'new');
+    $taskCode = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+    $messageCount = 0;
+    $unreadMessages = 0;
+    if ($taskCode !== '' && akh_wa_messages_table_exists()) {
+        $messageCount = count(akh_wa_messages_list_for_task($taskCode, 300));
+        $unreadMessages = akh_wa_message_unread_count_for_task($taskCode);
+    }
 
     return [
         'id' => (int) ($row['id'] ?? 0),
@@ -1009,6 +1039,9 @@ function akh_wa_task_row_for_json(array $row, array $editors): array
         'assigned_editor_name' => $editorName,
         'customer_name' => (string) ($row['customer_name'] ?? ''),
         'phone' => (string) ($row['phone'] ?? ''),
+        'message_count' => $messageCount,
+        'unread_messages' => $unreadMessages,
+        'can_chat' => akh_wa_task_can_chat($row),
         'created_at' => (string) ($row['created_at'] ?? ''),
         'updated_at' => (string) ($row['updated_at'] ?? ''),
     ];

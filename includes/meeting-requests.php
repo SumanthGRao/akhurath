@@ -435,6 +435,96 @@ function akh_meeting_request_preview_from_row(array $row): string
 }
 
 /**
+ * Structured meeting fields for editor desk bar, alerts, and live poll JSON.
+ *
+ * @param array<string, mixed> $row
+ * @return array{
+ *   task_code: string,
+ *   preview: string,
+ *   meet_link: string,
+ *   customer_name: string,
+ *   project_name: string,
+ *   requested_time_text: string,
+ *   slot_selected: string,
+ *   start_time: string,
+ *   end_time: string,
+ *   when_label: string,
+ *   created_at: string
+ * }
+ */
+function akh_meeting_request_desk_payload(array $row): array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+    $start = akh_meeting_request_effective_start($row);
+    $end = akh_meeting_request_parse_datetime((string) ($row['end_time'] ?? ''));
+    $requested = trim((string) ($row['requested_time_text'] ?? ''));
+    $slot = trim((string) ($row['slot_selected'] ?? ''));
+    $customer = trim((string) ($row['customer_name'] ?? ''));
+    $project = trim((string) ($row['project_name'] ?? ''));
+
+    $startLabel = $start !== null ? $start->format('D, M j, Y · g:i A') : trim((string) ($row['start_time'] ?? ''));
+    $endLabel = $end !== null ? $end->format('g:i A') : trim((string) ($row['end_time'] ?? ''));
+
+    $whenLabel = $startLabel;
+    if ($whenLabel === '') {
+        $whenLabel = $requested !== '' ? $requested : $slot;
+    }
+
+    return [
+        'task_code' => $code,
+        'preview' => akh_meeting_request_preview_from_row($row),
+        'meet_link' => trim((string) ($row['meet_link'] ?? '')),
+        'customer_name' => $customer,
+        'project_name' => $project,
+        'requested_time_text' => $requested,
+        'slot_selected' => $slot,
+        'start_time' => $startLabel,
+        'end_time' => $endLabel,
+        'when_label' => $whenLabel,
+        'created_at' => (string) ($row['created_at'] ?? ''),
+    ];
+}
+
+/**
+ * @param array<string, mixed> $alert
+ */
+function akh_meeting_request_alert_detail(array $alert): string
+{
+    $parts = [];
+    $when = trim((string) ($alert['when_label'] ?? ''));
+    if ($when === '') {
+        $when = trim((string) ($alert['start_time'] ?? ''));
+    }
+    if ($when !== '') {
+        $parts[] = 'When: ' . $when;
+    }
+    $requested = trim((string) ($alert['requested_time_text'] ?? ''));
+    if ($requested !== '' && $requested !== $when) {
+        $parts[] = 'Requested: ' . $requested;
+    }
+    $customer = trim((string) ($alert['customer_name'] ?? ''));
+    if ($customer !== '') {
+        $parts[] = $customer;
+    }
+    $project = trim((string) ($alert['project_name'] ?? ''));
+    if ($project !== '') {
+        $parts[] = $project;
+    }
+    if ($parts === []) {
+        return trim((string) ($alert['preview'] ?? ''));
+    }
+
+    $detail = implode(' · ', $parts);
+    if (mb_strlen($detail) > 220) {
+        $detail = mb_substr($detail, 0, 219) . '…';
+    }
+
+    return $detail;
+}
+
+/**
  * @return list<array<string, mixed>>
  */
 function akh_meeting_request_active_rows(): array
@@ -482,6 +572,7 @@ function akh_meeting_request_pending_alerts_grouped(): array
         $created = (string) ($row['created_at'] ?? '');
         $start = akh_meeting_request_effective_start($row);
         $startLabel = $start !== null ? $start->format('Y-m-d H:i') : (string) ($row['start_time'] ?? '');
+        $desk = akh_meeting_request_desk_payload($row);
         if (!isset($out[$code])) {
             $out[$code] = [
                 'count' => 0,
@@ -492,6 +583,12 @@ function akh_meeting_request_pending_alerts_grouped(): array
                 'created_at' => $created,
                 'meet_link' => trim((string) ($row['meet_link'] ?? '')),
                 'start_time' => $startLabel,
+                'end_time' => $desk['end_time'],
+                'when_label' => $desk['when_label'],
+                'customer_name' => $desk['customer_name'],
+                'project_name' => $desk['project_name'],
+                'requested_time_text' => $desk['requested_time_text'],
+                'slot_selected' => $desk['slot_selected'],
                 'meeting_id' => $id,
             ];
         }
@@ -502,6 +599,12 @@ function akh_meeting_request_pending_alerts_grouped(): array
             $out[$code]['created_at'] = $created;
             $out[$code]['meet_link'] = trim((string) ($row['meet_link'] ?? ''));
             $out[$code]['start_time'] = $startLabel;
+            $out[$code]['end_time'] = $desk['end_time'];
+            $out[$code]['when_label'] = $desk['when_label'];
+            $out[$code]['customer_name'] = $desk['customer_name'];
+            $out[$code]['project_name'] = $desk['project_name'];
+            $out[$code]['requested_time_text'] = $desk['requested_time_text'];
+            $out[$code]['slot_selected'] = $desk['slot_selected'];
             $out[$code]['meeting_id'] = $id;
         }
     }

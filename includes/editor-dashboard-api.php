@@ -199,15 +199,11 @@ function akh_editor_desk_lists_json(string $editorUsername): array
     }
     $meetings = [];
     foreach ($ctx['editorMeetingRows'] as $mr) {
-        $code = (string) ($mr['task_code'] ?? '');
-        if ($code === '') {
+        $desk = akh_meeting_request_desk_payload($mr);
+        if ($desk['task_code'] === '') {
             continue;
         }
-        $meetings[] = [
-            'task_code' => $code,
-            'preview' => akh_meeting_request_preview_from_row($mr),
-            'meet_link' => trim((string) ($mr['meet_link'] ?? '')),
-        ];
+        $meetings[] = $desk;
     }
 
     return ['pool' => $pool, 'mine' => $mine, 'meetings' => $meetings];

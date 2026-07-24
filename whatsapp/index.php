@@ -79,6 +79,10 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&family=Sometype+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="<?php echo h(base_path('assets/css/whatsapp-dashboard.css') . ($waCssVer !== '' ? '?v=' . rawurlencode($waCssVer) : '')); ?>" />
+  <?php
+    require_once AKH_ROOT . '/includes/theme-mode.php';
+    akh_theme_mode_head();
+  ?>
 </head>
 <body class="<?php echo h($bodyClass); ?>">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -86,13 +90,13 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
   <header class="wa-topbar">
     <div class="wa-topbar__inner">
       <div class="wa-topbar__brand">
-        <span class="wa-topbar__glyph" aria-hidden="true">WA</span>
         <div>
           <p class="wa-topbar__kicker">Akhurath Studio</p>
           <h1 class="wa-topbar__title">WhatsApp task board</h1>
         </div>
       </div>
       <div class="wa-topbar__actions">
+        <?php akh_theme_mode_toggle(); ?>
         <div class="wa-bell-wrap">
           <button
             type="button"
@@ -369,6 +373,27 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
     </form>
   </dialog>
 
+  <div class="wa-chat-backdrop" id="wa-chat-backdrop" hidden></div>
+  <aside class="wa-chat-drawer" id="wa-chat-drawer" hidden aria-hidden="true" aria-labelledby="wa-chat-title">
+    <header class="wa-chat-drawer__head">
+      <div>
+        <p class="wa-chat-drawer__kicker">Client conversation</p>
+        <h2 class="wa-chat-drawer__title" id="wa-chat-title">Task chat</h2>
+        <p class="wa-chat-drawer__meta" id="wa-chat-meta"></p>
+      </div>
+      <button type="button" class="wa-modal__close" id="wa-chat-close" aria-label="Close chat">×</button>
+    </header>
+    <div class="wa-chat-drawer__scroll ticket__thread-scroll" id="wa-chat-scroll" aria-live="polite">
+      <p class="wa-chat-drawer__empty">Loading messages…</p>
+    </div>
+    <form class="wa-chat-drawer__form" id="wa-chat-form">
+      <label class="visually-hidden" for="wa-chat-input">Reply to client</label>
+      <textarea id="wa-chat-input" name="thread_body" rows="3" maxlength="2000" placeholder="Reply to the client on WhatsApp…" required></textarea>
+      <p class="wa-banner wa-banner--err wa-banner--hidden" id="wa-chat-error" role="alert"></p>
+      <button type="submit" class="wa-btn wa-btn--primary" id="wa-chat-send">Send message</button>
+    </form>
+  </aside>
+
   <?php require_once AKH_ROOT . '/includes/meeting-join-modal.php'; ?>
 
   <script src="<?php echo h(base_path('assets/js/meeting-alerts.js')); ?>?v=<?php echo h($meetJsVer); ?>"></script>
@@ -405,5 +430,6 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
     window.WA_DASHBOARD = <?php echo $waDashboardJs; ?>;
   </script>
   <script src="<?php echo h(base_path('assets/js/whatsapp-dashboard.js') . ($waJsVer !== '' ? '?v=' . rawurlencode($waJsVer) : '')); ?>" defer></script>
+  <?php akh_theme_mode_footer_script(); ?>
 </body>
 </html>

@@ -538,6 +538,13 @@ function akh_task_editor_notice_rows(string $editorUsername): array
             $title = mb_substr($title, 0, 99) . '…';
         }
         $detail = trim((string) ($alert['preview'] ?? ''));
+        if (($alert['kind'] ?? '') === 'meeting_request') {
+            require_once __DIR__ . '/meeting-requests.php';
+            $rich = akh_meeting_request_alert_detail($alert);
+            if ($rich !== '') {
+                $detail = $rich;
+            }
+        }
         if ($detail === '') {
             $detail = akh_dashboard_alert_kind_label($alert);
         }

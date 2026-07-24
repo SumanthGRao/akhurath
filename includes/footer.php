@@ -24,5 +24,9 @@ $year = (int) date('Y');
     </div>
   </footer>
   <script src="<?php echo h(base_path('assets/js/site.js')); ?>" defer></script>
+  <?php
+    require_once __DIR__ . '/theme-mode.php';
+    akh_theme_mode_footer_script();
+  ?>
 </body>
 </html>
