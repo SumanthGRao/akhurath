@@ -146,6 +146,7 @@ function akh_editor_desk_list_row_json(array $vm): array
             akh_task_status_label((string) $vm['status']),
         ], static fn (string $p): bool => trim($p) !== ''))),
         'client' => (string) ($vm['customer_label'] ?? akh_editor_task_customer_display_name($t)),
+        'customer_tone' => (string) ($vm['customer_tone'] ?? 'unknown'),
         'status' => (string) $vm['status'],
         'status_label' => akh_task_status_label((string) $vm['status']),
         'status_slug' => (string) $vm['status_slug'],

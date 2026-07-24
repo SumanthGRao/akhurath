@@ -385,6 +385,15 @@
       ? '<span class="edesk-list__type">' + esc(row.type_label) + '</span>'
       : '';
     var displayName = row.title || row.type_label || '—';
+    var customerTone = row.customer_tone || (row.from_whatsapp ? 'wa' : 'portal');
+    var customerHtml =
+      row.client && row.client !== '—'
+        ? '<span class="edesk-list__customer edesk-list__customer--' +
+          esc(customerTone) +
+          '"><span class="edesk-list__customer-kicker">Client</span><span class="edesk-list__customer-name">' +
+          esc(row.client) +
+          '</span></span>'
+        : '';
     var searchBlob =
       row.search ||
       normalizeSearch(
@@ -442,12 +451,14 @@
       '">' +
       '<span class="edesk-list__row"><span class="edesk-list__id">' +
       esc(row.id) +
-      '</span><span class="edesk-list__title">' +
+      '</span><span class="edesk-list__body"><span class="edesk-list__title">' +
       dot +
       typeHtml +
       '<span class="edesk-list__name">' +
       esc(displayName) +
-      '</span></span></span>' +
+      '</span></span>' +
+      customerHtml +
+      '</span></span>' +
       '<span class="edesk-list__meta">' +
       newPill +
       waPill +
@@ -455,9 +466,7 @@
       soon +
       msg +
       when +
-      '<span class="edesk-list__client">' +
-      esc(row.client || '—') +
-      '</span></span></button>'
+      '</span></button>'
     );
   }
 
