@@ -456,7 +456,7 @@
       msg +
       when +
       '<span class="edesk-list__client">' +
-      esc(row.client) +
+      esc(row.client || '—') +
       '</span></span></button>'
     );
   }

@@ -538,6 +538,8 @@ function akh_dashboard_wa_row_to_studio_task(array $wa, array $editorIdMap): arr
         'status' => akh_wa_map_status_to_studio((string) ($wa['status'] ?? 'new')),
         'assigned_editor' => $editorUsername !== '' ? $editorUsername : null,
         'client_username' => $client,
+        'customer_name' => trim((string) ($wa['customer_name'] ?? '')),
+        'project_name' => trim((string) ($wa['project_name'] ?? '')),
         'edit_type' => 'studio_admin',
         'description' => trim((string) ($wa['instructions'] ?? '')),
         'reference_link' => trim((string) ($wa['reference_link'] ?? '')),
@@ -553,6 +555,36 @@ function akh_dashboard_wa_row_to_studio_task(array $wa, array $editorIdMap): arr
         'conversation' => [],
         'phone' => trim((string) ($wa['phone'] ?? '')),
     ];
+}
+
+/**
+ * @param array<string, mixed> $task
+ * @param array<string, mixed> $wa
+ * @return array<string, mixed>
+ */
+function akh_dashboard_merge_wa_fields_into_task(array $task, array $wa): array
+{
+    $customerName = trim((string) ($wa['customer_name'] ?? ''));
+    if ($customerName !== '') {
+        $task['customer_name'] = $customerName;
+    }
+
+    $projectName = trim((string) ($wa['project_name'] ?? ''));
+    if ($projectName !== '' && trim((string) ($task['project_name'] ?? '')) === '') {
+        $task['project_name'] = $projectName;
+    }
+
+    $phone = trim((string) ($wa['phone'] ?? ''));
+    if ($phone !== '' && trim((string) ($task['phone'] ?? '')) === '') {
+        $task['phone'] = $phone;
+    }
+
+    $client = strtolower(trim((string) ($task['client_username'] ?? '')));
+    if ($customerName !== '' && ($client === '' || $client === 'whatsapp')) {
+        $task['client_username'] = $customerName;
+    }
+
+    return $task;
 }
 
 /**
@@ -598,7 +630,9 @@ function akh_dashboard_data_tasks_merged_for_board(): array
         }
         if (!isset($byId[$id])) {
             $byId[$id] = $studio;
+            continue;
         }
+        $byId[$id] = akh_dashboard_merge_wa_fields_into_task($byId[$id], $wa);
     }
 
     return array_values($byId);

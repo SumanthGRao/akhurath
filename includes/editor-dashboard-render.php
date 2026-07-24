@@ -45,6 +45,46 @@ function akh_editor_task_list_type_label(array $t): string
 }
 
 /**
+ * Human-readable client label for editor desk (whatsapp_tasks.customer_name preferred).
+ *
+ * @param array<string, mixed> $t
+ */
+function akh_editor_task_customer_display_name(array $t): string
+{
+    require_once __DIR__ . '/tasks.php';
+    require_once __DIR__ . '/whatsapp-tasks.php';
+    require_once __DIR__ . '/whatsapp-messages.php';
+
+    $name = trim((string) ($t['customer_name'] ?? ''));
+    if ($name !== '') {
+        return $name;
+    }
+
+    $code = akh_task_normalize_id((string) ($t['id'] ?? ''));
+    if ($code !== '') {
+        $wa = akh_wa_task_by_code($code);
+        if (is_array($wa)) {
+            $name = trim((string) ($wa['customer_name'] ?? ''));
+            if ($name !== '') {
+                return $name;
+            }
+        }
+
+        $fromMsg = trim(akh_wa_message_customer_name_for_task($code));
+        if ($fromMsg !== '') {
+            return $fromMsg;
+        }
+    }
+
+    $client = trim((string) ($t['client_username'] ?? ''));
+    if ($client !== '' && strtolower($client) !== 'whatsapp') {
+        return $client;
+    }
+
+    return '';
+}
+
+/**
  * @param array<string, mixed> $t
  * @param array<string, array<string, mixed>> $dashboardAlerts
  * @param array<string, bool> $editorReminderCodes
@@ -98,6 +138,7 @@ function akh_editor_task_view_model(
     $typeLabel = akh_editor_task_list_type_label($t);
     $showType = $typeLabel !== '' && mb_strtolower($typeLabel) !== mb_strtolower($headline);
     $listUnread = $notify || $unseenNew || $meetingUnread;
+    $customerLabel = akh_editor_task_customer_display_name($t);
 
     return [
         'task' => $t,
@@ -109,6 +150,7 @@ function akh_editor_task_view_model(
         'headline' => $headline,
         'type_label' => $typeLabel,
         'show_type' => $showType,
+        'customer_label' => $customerLabel,
         'list_unread' => $listUnread,
         'delivery_mode' => (string) ($t['delivery_mode'] ?? ''),
         'task_alert' => $taskAlert,
@@ -143,13 +185,14 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
         ? (string) (($t['created_at'] ?? '') !== '' ? $t['created_at'] : ($t['updated_at'] ?? ''))
         : (string) (($t['updated_at'] ?? '') !== '' ? $t['updated_at'] : ($t['created_at'] ?? ''));
     $typeLabel = (string) ($vm['type_label'] ?? '');
-    $client = (string) ($t['client_username'] ?? '');
+    $customerLabel = (string) ($vm['customer_label'] ?? akh_editor_task_customer_display_name($t));
     $statusLabel = akh_task_status_label($st);
     $searchBlob = strtolower(implode(' ', array_filter([
         $tid,
         $headline,
         $typeLabel,
-        $client,
+        $customerLabel,
+        (string) ($t['client_username'] ?? ''),
         $statusLabel,
     ], static fn (string $p): bool => trim($p) !== '')));
     ?>
@@ -205,7 +248,7 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
         ?>
           <span class="edesk-list__msgs"><?php echo (int) $waUnread; ?> msg</span>
         <?php endif; ?>
-        <span class="edesk-list__client"><?php echo h((string) ($t['client_username'] ?? '')); ?></span>
+        <span class="edesk-list__client"><?php echo h($customerLabel !== '' ? $customerLabel : '—'); ?></span>
       </span>
     </button>
     <?php
@@ -227,6 +270,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
     $dm = (string) $vm['delivery_mode'];
     $headline = (string) $vm['headline'];
     $taskAlert = $vm['task_alert'];
+    $customerLabel = (string) ($vm['customer_label'] ?? akh_editor_task_customer_display_name($t));
     $opts = ['assigned', 'in_progress', 'review', 'preview_sent', 'delivered', 'reverted', 'closed'];
     $pipelineOpts = $section === 'pool' ? ['new', 'assigned'] : $opts;
     ?>
@@ -247,7 +291,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
             <?php else: ?>
               <span class="edesk-panel__chip">Pool</span>
             <?php endif; ?>
-            <span class="edesk-panel__chip"><?php echo h((string) ($t['client_username'] ?? '—')); ?></span>
+            <span class="edesk-panel__chip"><?php echo h($customerLabel !== '' ? $customerLabel : '—'); ?></span>
             <span class="edesk-panel__chip"><?php echo h(akh_task_delivery_mode_label($dm)); ?></span>
             <?php if (akh_task_is_bundle_child($t)): ?>
               <span class="edesk-panel__chip">Part of <?php echo h((string) ($t['parent_task_id'] ?? '')); ?></span>
