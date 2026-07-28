@@ -879,6 +879,14 @@
   margin-left: auto;
 }
 
+.edesk-card--thread .ticket__msg-media {
+  max-width: min(100%, 16rem);
+}
+
+.edesk-card--thread .ticket__msg-media--image {
+  max-height: 14rem;
+}
+
 .page-editor-desk.edesk--mobile-detail .edesk-body {
   grid-template-columns: 1fr;
 }

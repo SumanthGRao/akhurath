@@ -3544,6 +3544,42 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   word-break: break-word;
 }
 
+.ticket__msg-media-link {
+  display: block;
+  margin-bottom: 0.35rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.ticket__msg-media-link--file {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.ticket__msg-media {
+  display: block;
+  max-width: min(100%, 20rem);
+  border-radius: 8px;
+}
+
+.ticket__msg-media--image {
+  width: auto;
+  height: auto;
+  max-height: 16rem;
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.ticket__msg-media--video {
+  width: min(100%, 20rem);
+  max-height: 14rem;
+  background: #000;
+}
+
+.ticket__msg-media--audio {
+  width: min(100%, 18rem);
+}
+
 .ticket__thread-form {
   padding: 0.5rem 0.65rem 0.65rem;
   display: flex;

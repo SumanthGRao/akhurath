@@ -11,7 +11,10 @@ $GLOBALS['akh_wa_message_columns_cache'] = null;
 function akh_wa_messages_column_exists(string $column): bool
 {
     if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
-        return in_array($column, ['id', 'phone', 'task_code', 'direction', 'sender', 'message', 'status', 'created_at', 'customer_name', 'editor_name'], true);
+        return in_array($column, [
+            'id', 'phone', 'task_code', 'direction', 'sender', 'message', 'status', 'created_at',
+            'customer_name', 'editor_name', 'media_url', 'filename', 'media_type',
+        ], true);
     }
 
     if (!akh_wa_messages_table_exists()) {
@@ -54,6 +57,15 @@ function akh_wa_messages_select_columns(): string
     }
     if (akh_wa_messages_column_exists('editor_name')) {
         $cols[] = 'editor_name';
+    }
+    if (akh_wa_messages_column_exists('media_url')) {
+        $cols[] = 'media_url';
+    }
+    if (akh_wa_messages_column_exists('filename')) {
+        $cols[] = 'filename';
+    }
+    if (akh_wa_messages_column_exists('media_type')) {
+        $cols[] = 'media_type';
     }
 
     return implode(', ', $cols);
@@ -1053,8 +1065,68 @@ function akh_whatsapp_message_kind_label(): string
 }
 
 /**
+ * @return array{url: string, filename: string, kind: string}
+ */
+function akh_wa_message_media_meta(array $row): array
+{
+    $filename = trim((string) ($row['filename'] ?? ''));
+    $url = trim((string) ($row['media_url'] ?? $row['mediaUrl'] ?? ''));
+    if ($url === '' && $filename !== '' && preg_match('/^[a-zA-Z0-9._-]+$/', $filename)) {
+        $url = '/chat_media/' . $filename;
+    }
+
+    if ($url !== '' && !preg_match('#^https?://#i', $url)) {
+        if (str_starts_with($url, '/')) {
+            $url = function_exists('akh_absolute_url')
+                ? akh_absolute_url(ltrim($url, '/'))
+                : $url;
+        } else {
+            $url = '';
+        }
+    }
+
+    if ($url !== '' && filter_var($url, FILTER_VALIDATE_URL) === false) {
+        $url = '';
+    }
+
+    $kind = strtolower(trim((string) ($row['media_type'] ?? '')));
+    if ($kind === '') {
+        $kind = akh_wa_message_media_kind_from_name($filename !== '' ? $filename : $url);
+    }
+
+    return [
+        'url' => $url,
+        'filename' => $filename,
+        'kind' => $kind,
+    ];
+}
+
+function akh_wa_message_media_kind_from_name(string $name): string
+{
+    $name = strtolower(trim($name));
+    if ($name === '') {
+        return 'file';
+    }
+    $path = (string) parse_url($name, PHP_URL_PATH);
+    if ($path === '') {
+        $path = $name;
+    }
+    if (preg_match('/\.(jpe?g|png|gif|webp|heic|bmp|svg)$/i', $path)) {
+        return 'image';
+    }
+    if (preg_match('/\.(mp4|webm|mov|m4v|3gp)$/i', $path)) {
+        return 'video';
+    }
+    if (preg_match('/\.(mp3|ogg|m4a|wav|aac|opus)$/i', $path)) {
+        return 'audio';
+    }
+
+    return 'file';
+}
+
+/**
  * @param list<array<string, mixed>> $waRows
- * @return list<array{at: string, role: string, who: string, text: string, source: string}>
+ * @return list<array{at: string, role: string, who: string, text: string, source: string, media_url?: string, media_filename?: string, media_kind?: string}>
  */
 function akh_wa_messages_to_conversation_rows(array $waRows): array
 {
@@ -1078,16 +1150,23 @@ function akh_wa_messages_to_conversation_rows(array $waRows): array
             $who = $customerName !== '' ? $customerName : 'Client';
         }
         $text = trim((string) ($row['message'] ?? ''));
-        if ($text === '') {
+        $media = akh_wa_message_media_meta($row);
+        if ($text === '' && $media['url'] === '') {
             continue;
         }
-        $out[] = [
+        $entry = [
             'at' => (string) ($row['created_at'] ?? ''),
             'role' => $role,
             'who' => $who,
             'text' => $text,
             'source' => 'whatsapp',
         ];
+        if ($media['url'] !== '') {
+            $entry['media_url'] = $media['url'];
+            $entry['media_filename'] = $media['filename'];
+            $entry['media_kind'] = $media['kind'];
+        }
+        $out[] = $entry;
     }
 
     return $out;

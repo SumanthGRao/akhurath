@@ -188,6 +188,18 @@ if (akh_ensure_table_exists($pdo, $schema, 'whatsapp_messages')) {
             'ALTER TABLE whatsapp_messages ADD COLUMN editor_name VARCHAR(255) NULL DEFAULT NULL AFTER customer_name'
         );
     }
+    if (!akh_ensure_column_exists($pdo, $schema, 'whatsapp_messages', 'media_url')) {
+        echo "Adding column whatsapp_messages.media_url ...\n";
+        $pdo->exec(
+            'ALTER TABLE whatsapp_messages ADD COLUMN media_url VARCHAR(512) NULL DEFAULT NULL AFTER message'
+        );
+    }
+    if (!akh_ensure_column_exists($pdo, $schema, 'whatsapp_messages', 'filename')) {
+        echo "Adding column whatsapp_messages.filename ...\n";
+        $pdo->exec(
+            'ALTER TABLE whatsapp_messages ADD COLUMN filename VARCHAR(255) NULL DEFAULT NULL AFTER media_url'
+        );
+    }
     $dirCol = $pdo->query(
         "SELECT COLUMN_TYPE FROM information_schema.COLUMNS
          WHERE TABLE_SCHEMA = " . $pdo->quote($schema) . " AND TABLE_NAME = 'whatsapp_messages' AND COLUMN_NAME = 'direction'"

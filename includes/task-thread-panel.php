@@ -42,7 +42,58 @@ function akh_task_merged_conversation_sig(array $t): string
 }
 
 /**
- * @param list<array{at: string, role: string, who: string, text: string, source?: string}> $conv
+ * @param array{at?: string, role?: string, who?: string, text?: string, source?: string, media_url?: string, media_filename?: string, media_kind?: string} $row
+ */
+function akh_render_task_thread_message_body(array $row): void
+{
+    $text = trim((string) ($row['text'] ?? ''));
+    $mediaUrl = trim((string) ($row['media_url'] ?? ''));
+    $mediaFilename = trim((string) ($row['media_filename'] ?? ''));
+    $mediaKind = strtolower(trim((string) ($row['media_kind'] ?? '')));
+
+    if ($mediaUrl !== '') {
+        if ($mediaKind === 'image') {
+            ?>
+            <a class="ticket__msg-media-link" href="<?php echo h($mediaUrl); ?>" target="_blank" rel="noopener noreferrer">
+              <img
+                class="ticket__msg-media ticket__msg-media--image"
+                src="<?php echo h($mediaUrl); ?>"
+                alt="<?php echo h($mediaFilename !== '' ? $mediaFilename : 'Image from client'); ?>"
+                loading="lazy"
+                decoding="async"
+              />
+            </a>
+            <?php
+        } elseif ($mediaKind === 'video') {
+            ?>
+            <video class="ticket__msg-media ticket__msg-media--video" controls preload="metadata" playsinline>
+              <source src="<?php echo h($mediaUrl); ?>" />
+            </video>
+            <?php
+        } elseif ($mediaKind === 'audio') {
+            ?>
+            <audio class="ticket__msg-media ticket__msg-media--audio" controls preload="metadata">
+              <source src="<?php echo h($mediaUrl); ?>" />
+            </audio>
+            <?php
+        } else {
+            ?>
+            <a class="ticket__msg-media-link ticket__msg-media-link--file" href="<?php echo h($mediaUrl); ?>" target="_blank" rel="noopener noreferrer">
+              <?php echo h($mediaFilename !== '' ? $mediaFilename : 'Open attachment'); ?>
+            </a>
+            <?php
+        }
+    }
+
+    if ($text !== '') {
+        ?>
+        <div class="ticket__msg-body"><?php echo nl2br(h($text)); ?></div>
+        <?php
+    }
+}
+
+/**
+ * @param list<array{at: string, role: string, who: string, text: string, source?: string, media_url?: string, media_filename?: string, media_kind?: string}> $conv
  */
 function akh_render_task_thread_bubbles(array $conv, string $portal): void
 {
@@ -71,7 +122,7 @@ function akh_render_task_thread_bubbles(array $conv, string $portal): void
             <span><?php echo h($whoLabel); ?></span>
             <span class="ticket__msg-time"><?php echo h((string) ($row['at'] ?? '')); ?></span>
           </div>
-          <div class="ticket__msg-body"><?php echo nl2br(h((string) ($row['text'] ?? ''))); ?></div>
+          <?php akh_render_task_thread_message_body($row); ?>
         </div>
         <?php
     }
