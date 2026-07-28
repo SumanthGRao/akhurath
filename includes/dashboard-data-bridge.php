@@ -21,6 +21,7 @@ const AKH_DASHBOARD_DATA_KEYS = [
     'logs',
     'meetings',
     'alerts',
+    'task_notification_events',
     'counters',
 ];
 

@@ -786,6 +786,36 @@
     });
   }
 
+  function itemNeedsNotificationPanel(item) {
+    if (!item) return false;
+    return (
+      item.getAttribute('data-ack-editor') === '1' ||
+      item.getAttribute('data-ack-meeting') === '1' ||
+      item.getAttribute('data-notify') === '1'
+    );
+  }
+
+  function revealSelectedPanel(taskId, section, panel) {
+    qsa('.edesk-panel', root).forEach(function (p) {
+      p.hidden = true;
+    });
+    panel = panel || findPanel(taskId, section);
+    if (panel) {
+      panel.hidden = false;
+      if (emptyEl) emptyEl.hidden = true;
+    }
+    return panel;
+  }
+
+  function finalizeTaskSelection(item, taskId, section, panel, opts) {
+    revealSelectedPanel(taskId, section, panel);
+    ackOpenedItem(item);
+    setMobileDetail(true);
+    if (!opts.skipUrl) updateUrl(taskId);
+    if (panelsHost && !opts.noScroll) panelsHost.scrollTop = 0;
+    syncActiveThreadPoll(taskId);
+  }
+
   function selectTask(taskId, opts) {
     opts = opts || {};
     taskId = normId(taskId);
@@ -830,27 +860,15 @@
     item.classList.add('edesk-list__item--active');
     item.setAttribute('aria-current', 'true');
 
-    if (!panel && !opts.skipFetch) {
-      fetchPanel(taskId, { show: true, noScroll: opts.noScroll });
-      ackOpenedItem(item);
-      setMobileDetail(true);
-      if (!opts.skipUrl) updateUrl(taskId);
+    var mustRefreshForNotify = itemNeedsNotificationPanel(item);
+    if ((mustRefreshForNotify || !panel) && !opts.skipFetch) {
+      fetchPanel(taskId, { noScroll: opts.noScroll }).then(function () {
+        finalizeTaskSelection(item, taskId, section, findPanel(taskId, section), opts);
+      });
       return;
     }
 
-    qsa('.edesk-panel', root).forEach(function (p) {
-      p.hidden = true;
-    });
-    if (panel) {
-      panel.hidden = false;
-      if (emptyEl) emptyEl.hidden = true;
-    }
-
-    ackOpenedItem(item);
-    setMobileDetail(true);
-    if (!opts.skipUrl) updateUrl(taskId);
-    if (panelsHost && !opts.noScroll) panelsHost.scrollTop = 0;
-    syncActiveThreadPoll(taskId);
+    finalizeTaskSelection(item, taskId, section, panel, opts);
   }
 
   function bindStatusForms(scope) {

@@ -13,7 +13,27 @@ function akh_task_notification_columns(): array
     }
 
     $cols = [];
-    if (!akh_task_notification_table_exists()) {
+    if (akh_task_notification_bridge_rows() !== []) {
+        $cols = [
+            'id' => true,
+            'task_id' => true,
+            'task_code' => true,
+            'body' => true,
+            'message' => true,
+            'comment' => true,
+            'notification' => true,
+            'event_kind' => true,
+            'status' => true,
+            'is_read' => true,
+            'read_at' => true,
+            'created_at' => true,
+        ];
+        $GLOBALS['akh_task_notification_columns'] = $cols;
+
+        return $cols;
+    }
+
+    if (!function_exists('akh_db_is_pdo') || !akh_db_is_pdo()) {
         $GLOBALS['akh_task_notification_columns'] = $cols;
 
         return $cols;
@@ -49,7 +69,14 @@ function akh_task_notification_client_kinds(): array
 
 function akh_task_notification_table_exists(): bool
 {
-    if (!function_exists('akh_db')) {
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        require_once __DIR__ . '/dashboard-data-bridge.php';
+        if (akh_dashboard_data_list_section('task_notification_events') !== []) {
+            return true;
+        }
+    }
+
+    if (!function_exists('akh_db') || !function_exists('akh_db_is_pdo') || !akh_db_is_pdo()) {
         return false;
     }
 
@@ -286,6 +313,21 @@ function akh_task_notification_poll_signature(): string
         return 'missing';
     }
 
+    $bridgeRows = akh_task_notification_bridge_rows();
+    if ($bridgeRows !== []) {
+        $pending = akh_task_notification_pending_rows();
+        $max = 0;
+        foreach ($pending as $row) {
+            $max = max($max, (int) ($row['id'] ?? 0));
+        }
+
+        return hash('sha256', (string) count($pending) . '|' . (string) $max);
+    }
+
+    if (!function_exists('akh_db_is_pdo') || !akh_db_is_pdo()) {
+        return 'missing';
+    }
+
     try {
         $pending = akh_task_notification_pending_filter();
         $row = akh_db()->prepare(
@@ -306,11 +348,120 @@ function akh_task_notification_poll_signature(): string
 }
 
 /**
+ * @param array<string, mixed> $row
+ */
+function akh_task_notification_row_body(array $row): string
+{
+    foreach (['body', 'message', 'comment', 'notification'] as $col) {
+        $value = trim((string) ($row[$col] ?? ''));
+        if ($value !== '') {
+            return $value;
+        }
+    }
+
+    return '';
+}
+
+/**
+ * @param array<string, mixed> $row
+ */
+function akh_task_notification_row_task_ref(array $row): string
+{
+    foreach (['task_id', 'task_code'] as $col) {
+        $value = trim((string) ($row[$col] ?? ''));
+        if ($value !== '') {
+            return $value;
+        }
+    }
+
+    return '';
+}
+
+/**
+ * @param array<string, mixed> $row
+ */
+function akh_task_notification_row_is_pending(array $row): bool
+{
+    if (isset($row['status'])) {
+        $status = strtolower(trim((string) $row['status']));
+        if ($status !== '' && in_array($status, akh_task_notification_read_statuses(), true)) {
+            return false;
+        }
+    }
+    if (array_key_exists('is_read', $row) && $row['is_read'] !== null && (int) $row['is_read'] === 1) {
+        return false;
+    }
+    if (array_key_exists('read_at', $row) && trim((string) $row['read_at']) !== '') {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function akh_task_notification_bridge_rows(): array
+{
+    if (!function_exists('akh_dashboard_data_bridge_reads') || !akh_dashboard_data_bridge_reads()) {
+        return [];
+    }
+
+    require_once __DIR__ . '/dashboard-data-bridge.php';
+
+    return akh_dashboard_data_list_section('task_notification_events');
+}
+
+/**
  * @return list<array<string, mixed>>
  */
 function akh_task_notification_pending_rows(?string $taskId = null): array
 {
     if (!akh_task_notification_table_exists()) {
+        return [];
+    }
+
+    $bridgeRows = akh_task_notification_bridge_rows();
+    if ($bridgeRows !== []) {
+        require_once __DIR__ . '/tasks.php';
+        $out = [];
+        foreach ($bridgeRows as $row) {
+            if (!is_array($row) || !akh_task_notification_row_is_pending($row)) {
+                continue;
+            }
+            $ref = akh_task_notification_row_task_ref($row);
+            if ($ref === '') {
+                continue;
+            }
+            if ($taskId !== null && trim($taskId) !== '') {
+                $match = false;
+                foreach (akh_task_id_match_variants($taskId) as $variant) {
+                    if (akh_task_ids_match($ref, $variant)) {
+                        $match = true;
+                        break;
+                    }
+                }
+                if (!$match) {
+                    continue;
+                }
+            }
+            $normalized = $row;
+            $normalized['task_id'] = akh_task_normalize_id($ref);
+            $normalized['body'] = akh_task_notification_row_body($row);
+            if (!isset($normalized['event_kind']) && isset($normalized['kind'])) {
+                $normalized['event_kind'] = $normalized['kind'];
+            }
+            $out[] = $normalized;
+        }
+
+        usort($out, static function (array $a, array $b): int {
+            return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+        });
+
+        return $out;
+    }
+
+    if (!function_exists('akh_db_is_pdo') || !akh_db_is_pdo()) {
         return [];
     }
 
@@ -535,6 +686,64 @@ function akh_task_notification_kind_label(string $kind): string
     ];
 
     return $map[$kind] ?? 'Client update';
+}
+
+/**
+ * Pending client notification rows for the editor detail panel.
+ *
+ * @return list<array{kind: string, label: string, body: string, created_at: string}>
+ */
+function akh_task_notification_panel_updates(string $taskId, ?array $taskAlert = null): array
+{
+    require_once __DIR__ . '/dashboard-alerts.php';
+
+    $items = [];
+    $seen = [];
+    foreach (akh_task_notification_pending_rows($taskId) as $row) {
+        $body = trim(akh_task_notification_row_body($row));
+        if ($body === '') {
+            $body = 'Client update';
+        }
+        $kind = (string) ($row['event_kind'] ?? $row['kind'] ?? 'client_update');
+        $created = (string) ($row['created_at'] ?? '');
+        $key = $kind . '|' . $body . '|' . $created;
+        if (isset($seen[$key])) {
+            continue;
+        }
+        $seen[$key] = true;
+        $items[] = [
+            'kind' => $kind,
+            'label' => akh_task_notification_kind_label($kind),
+            'body' => $body,
+            'created_at' => $created,
+        ];
+    }
+
+    if ($items !== [] || !is_array($taskAlert)) {
+        return $items;
+    }
+
+    $kind = (string) ($taskAlert['kind'] ?? 'client_update');
+    if (str_starts_with($kind, 'meeting_') || $kind === 'whatsapp_message') {
+        return $items;
+    }
+
+    $body = trim((string) ($taskAlert['preview'] ?? ''));
+    if ($body === '') {
+        $body = akh_task_notification_row_body($taskAlert);
+    }
+    if ($body === '') {
+        $body = akh_dashboard_alert_kind_label($taskAlert);
+    }
+
+    $items[] = [
+        'kind' => $kind,
+        'label' => akh_dashboard_alert_kind_label($taskAlert),
+        'body' => $body,
+        'created_at' => (string) ($taskAlert['created_at'] ?? ''),
+    ];
+
+    return $items;
 }
 
 /**

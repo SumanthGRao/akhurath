@@ -47,28 +47,59 @@ function akh_dashboard_merge_alert(?array $base, array $incoming): array
 }
 
 /**
+ * @param array<string, mixed> $alert
+ * @return array<string, mixed>
+ */
+function akh_dashboard_normalize_alert_row(array $alert): array
+{
+    if (!isset($alert['kind']) || trim((string) $alert['kind']) === '') {
+        $kind = trim((string) ($alert['event_kind'] ?? ''));
+        if ($kind !== '') {
+            $alert['kind'] = $kind;
+        }
+    }
+
+    $preview = trim((string) ($alert['preview'] ?? ''));
+    if ($preview === '') {
+        foreach (['body', 'message', 'comment', 'notification'] as $col) {
+            $value = trim((string) ($alert[$col] ?? ''));
+            if ($value !== '') {
+                $preview = $value;
+                break;
+            }
+        }
+        if ($preview !== '') {
+            $alert['preview'] = $preview;
+        }
+    }
+
+    return $alert;
+}
+
+/**
  * Unread client updates + pending meeting requests (no time-based reminders).
  *
  * @return array<string, array<string, mixed>>
  */
 function akh_dashboard_unread_alerts_grouped(): array
 {
-    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
-        $bridge = akh_dashboard_data_alerts();
-        if ($bridge !== []) {
-            foreach ($bridge as $code => $alert) {
-                if (is_array($alert)) {
-                    $bridge[$code]['priority'] = (int) ($alert['priority'] ?? akh_dashboard_alert_priority((string) ($alert['kind'] ?? '')));
-                }
-            }
+    $merged = [];
 
-            return $bridge;
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        foreach (akh_dashboard_data_alerts() as $code => $alert) {
+            if (!is_array($alert)) {
+                continue;
+            }
+            $normalized = akh_dashboard_normalize_alert_row($alert);
+            $normalized['priority'] = (int) ($alert['priority'] ?? akh_dashboard_alert_priority((string) ($normalized['kind'] ?? '')));
+            $merged[$code] = $normalized;
         }
     }
 
-    $merged = akh_task_notification_pending_alerts_grouped();
-    foreach ($merged as $code => $alert) {
-        $merged[$code]['priority'] = akh_dashboard_alert_priority((string) ($alert['kind'] ?? 'client_update'));
+    foreach (akh_task_notification_pending_alerts_grouped() as $code => $alert) {
+        $normalized = akh_dashboard_normalize_alert_row($alert);
+        $normalized['priority'] = akh_dashboard_alert_priority((string) ($normalized['kind'] ?? 'client_update'));
+        $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $normalized);
     }
 
     foreach (akh_meeting_request_pending_alerts_grouped() as $code => $alert) {
@@ -109,7 +140,7 @@ function akh_dashboard_alerts_for_editor(string $editorUsername): array
         if (!akh_meeting_request_editor_owns_code($owned, $taskId)) {
             continue;
         }
-        $out[$taskId] = $alert;
+        $out[$taskId] = akh_dashboard_normalize_alert_row($alert);
     }
 
     foreach (akh_meeting_request_pending_alerts_for_editor($editorUsername) as $taskId => $alert) {

@@ -310,6 +310,10 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
     $taskAlert = $vm['task_alert'];
     $customerLabel = (string) ($vm['customer_label'] ?? akh_editor_task_customer_display_name($t));
     $customerTone = (string) ($vm['customer_tone'] ?? akh_editor_task_customer_badge_tone($t, $vm));
+    $notificationUpdates = akh_task_notification_panel_updates($tid, is_array($taskAlert) ? $taskAlert : null);
+    $meetingAlert = is_array($taskAlert) && str_starts_with((string) ($taskAlert['kind'] ?? ''), 'meeting_')
+        ? $taskAlert
+        : null;
     $opts = ['assigned', 'in_progress', 'review', 'preview_sent', 'delivered', 'reverted', 'closed'];
     $pipelineOpts = $section === 'pool' ? ['new', 'assigned'] : $opts;
     ?>
@@ -427,39 +431,54 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
         <div class="edesk-panel__activity">
           <section class="edesk-card edesk-card--updates" aria-label="Client updates">
             <h3 class="edesk-card__title">Updates</h3>
-            <?php if ($taskAlert !== null): ?>
+            <?php if ($meetingAlert !== null): ?>
               <article class="edesk-update edesk-update--alert<?php echo !empty($vm['meeting_unread']) ? ' edesk-update--meeting' : ''; ?>">
                 <div class="edesk-update__head">
-                  <p class="edesk-update__label"><?php echo h(akh_dashboard_alert_kind_label($taskAlert)); ?></p>
+                  <p class="edesk-update__label"><?php echo h(akh_dashboard_alert_kind_label($meetingAlert)); ?></p>
                   <?php if (!empty($vm['meeting_unread'])): ?>
                     <button type="button" class="btn btn--ghost btn--sm edesk-meeting-read" data-task-id="<?php echo h($tid); ?>">Mark read</button>
                   <?php endif; ?>
                 </div>
-                <div class="edesk-prose"><?php echo nl2br(h((string) ($taskAlert['preview'] ?? ''))); ?></div>
-                <?php if (trim((string) ($taskAlert['when_label'] ?? '')) !== '' || trim((string) ($taskAlert['start_time'] ?? '')) !== ''): ?>
+                <div class="edesk-prose"><?php echo nl2br(h((string) ($meetingAlert['preview'] ?? ''))); ?></div>
+                <?php if (trim((string) ($meetingAlert['when_label'] ?? '')) !== '' || trim((string) ($meetingAlert['start_time'] ?? '')) !== ''): ?>
                   <p class="edesk-muted edesk-muted--sm">
                     <strong>When:</strong>
-                    <?php echo h(trim((string) (($taskAlert['when_label'] ?? '') !== '' ? $taskAlert['when_label'] : $taskAlert['start_time']))); ?>
+                    <?php echo h(trim((string) (($meetingAlert['when_label'] ?? '') !== '' ? $meetingAlert['when_label'] : $meetingAlert['start_time']))); ?>
                   </p>
                 <?php endif; ?>
-                <?php if (trim((string) ($taskAlert['customer_name'] ?? '')) !== '' || trim((string) ($taskAlert['project_name'] ?? '')) !== ''): ?>
+                <?php if (trim((string) ($meetingAlert['customer_name'] ?? '')) !== '' || trim((string) ($meetingAlert['project_name'] ?? '')) !== ''): ?>
                   <p class="edesk-muted edesk-muted--sm">
                     <?php
-                    $who = trim((string) ($taskAlert['customer_name'] ?? ''));
-                    $proj = trim((string) ($taskAlert['project_name'] ?? ''));
+                    $who = trim((string) ($meetingAlert['customer_name'] ?? ''));
+                    $proj = trim((string) ($meetingAlert['project_name'] ?? ''));
                     echo h($who . ($proj !== '' ? ' — ' . $proj : ''));
                     ?>
                   </p>
                 <?php endif; ?>
-                <?php if (trim((string) ($taskAlert['requested_time_text'] ?? '')) !== ''): ?>
-                  <p class="edesk-muted edesk-muted--sm"><strong>Requested slot:</strong> <?php echo h((string) $taskAlert['requested_time_text']); ?></p>
+                <?php if (trim((string) ($meetingAlert['requested_time_text'] ?? '')) !== ''): ?>
+                  <p class="edesk-muted edesk-muted--sm"><strong>Requested slot:</strong> <?php echo h((string) $meetingAlert['requested_time_text']); ?></p>
                 <?php endif; ?>
-                <?php if (trim((string) ($taskAlert['meet_link'] ?? '')) !== ''): ?>
-                  <a class="edesk-link" href="<?php echo h((string) $taskAlert['meet_link']); ?>" target="_blank" rel="noopener noreferrer">Join Google Meet</a>
+                <?php if (trim((string) ($meetingAlert['meet_link'] ?? '')) !== ''): ?>
+                  <a class="edesk-link" href="<?php echo h((string) $meetingAlert['meet_link']); ?>" target="_blank" rel="noopener noreferrer">Join Google Meet</a>
                 <?php endif; ?>
-                <?php if (trim((string) ($taskAlert['end_time'] ?? '')) !== ''): ?>
-                  <p class="edesk-muted edesk-muted--sm"><strong>Ends:</strong> <?php echo h((string) $taskAlert['end_time']); ?></p>
+                <?php if (trim((string) ($meetingAlert['end_time'] ?? '')) !== ''): ?>
+                  <p class="edesk-muted edesk-muted--sm"><strong>Ends:</strong> <?php echo h((string) $meetingAlert['end_time']); ?></p>
                 <?php endif; ?>
+              </article>
+            <?php endif; ?>
+            <?php foreach ($notificationUpdates as $update): ?>
+              <article class="edesk-update edesk-update--alert edesk-update--notification">
+                <p class="edesk-update__label"><?php echo h((string) ($update['label'] ?? 'Client update')); ?></p>
+                <div class="edesk-prose"><?php echo nl2br(h((string) ($update['body'] ?? ''))); ?></div>
+                <?php if (trim((string) ($update['created_at'] ?? '')) !== ''): ?>
+                  <p class="edesk-muted edesk-muted--sm"><?php echo h((string) $update['created_at']); ?></p>
+                <?php endif; ?>
+              </article>
+            <?php endforeach; ?>
+            <?php if (is_array($taskAlert) && ($taskAlert['kind'] ?? '') === 'whatsapp_message' && $notificationUpdates === []): ?>
+              <article class="edesk-update edesk-update--alert">
+                <p class="edesk-update__label"><?php echo h(akh_dashboard_alert_kind_label($taskAlert)); ?></p>
+                <div class="edesk-prose"><?php echo nl2br(h((string) ($taskAlert['preview'] ?? ''))); ?></div>
               </article>
             <?php endif; ?>
             <?php if (trim((string) ($t['client_feedback'] ?? '')) !== '' || trim((string) ($t['client_meeting_date'] ?? '')) !== ''): ?>
@@ -485,7 +504,9 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
               </article>
             <?php endif; ?>
             <?php if (
-                $taskAlert === null
+                $meetingAlert === null
+                && $notificationUpdates === []
+                && (!is_array($taskAlert) || ($taskAlert['kind'] ?? '') !== 'whatsapp_message')
                 && trim((string) ($t['client_feedback'] ?? '')) === ''
                 && trim((string) ($t['client_meeting_date'] ?? '')) === ''
                 && trim((string) ($t['deliverable_output'] ?? '')) === ''
