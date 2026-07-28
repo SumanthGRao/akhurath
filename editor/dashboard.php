@@ -126,6 +126,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim((string) ($_POST['ajax_action'
         $deliverable = trim((string) ($_POST['deliverable_output'] ?? ''));
         $statusComment = trim((string) ($_POST['status_comment'] ?? ''));
         $existing = akh_task_by_id($taskId);
+        if ($deliverable === '' && is_array($existing)) {
+            $deliverable = trim((string) ($existing['deliverable_output'] ?? ''));
+        }
         $t = akh_task_set_status($taskId, $editor, $status, $deliverable, $statusComment);
         if ($t === null) {
             $waErr = akh_whatsapp_task_sync_last_error();
@@ -564,6 +567,7 @@ require_once AKH_ROOT . '/includes/header.php';
       bell: <?php echo (int) $editorBellCount; ?>,
       pool: <?php echo (int) count($newTasks); ?>,
       sig: <?php echo json_encode($editorBoardSig, JSON_THROW_ON_ERROR); ?>,
+      notify_sig: <?php echo json_encode(akh_dashboard_alerts_poll_signature(), JSON_THROW_ON_ERROR); ?>,
       notices: <?php echo json_encode($editorBellNotices, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES); ?>,
       reminders: <?php echo json_encode($editorReminders, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES); ?>
     };

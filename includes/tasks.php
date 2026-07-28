@@ -608,6 +608,7 @@ function akh_task_ajax_poll_editor(string $editorUsername): array
         'bell' => akh_task_editor_board_bell_count($editorUsername),
         'pool' => akh_task_editor_pool_count(),
         'sig' => akh_task_poll_signature_all(),
+        'notify_sig' => akh_dashboard_alerts_poll_signature(),
         'notices' => akh_task_editor_notice_rows($editorUsername),
         'reminders' => akh_meeting_request_upcoming_reminders(),
         'desk' => akh_editor_desk_poll_bundle($editorUsername),

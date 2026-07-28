@@ -11,6 +11,11 @@
   var BellKey = 'akh_editor_bell_last';
   var rowCache = {};
   var lastDeskBell = parseInt(root.getAttribute('data-bell') || '0', 10);
+  var lastNotifySig =
+    typeof window._akhPortalPush !== 'undefined' && window._akhPortalPush.notify_sig
+      ? String(window._akhPortalPush.notify_sig)
+      : '';
+  var deskAlertReady = false;
   var lastThreadSigByTask = {};
   var threadPollInterval = null;
   var deskPollInterval = null;
@@ -85,23 +90,141 @@
   }
 
   function playNotifyPing() {
+    playLoudAlert(1);
+  }
+
+  function playLoudAlert(times) {
+    var count = typeof times === 'number' ? times : 2;
     try {
       var Ctx = window.AudioContext || window.webkitAudioContext;
       if (!Ctx) return;
       var ctx = new Ctx();
-      var o = ctx.createOscillator();
-      var g = ctx.createGain();
-      o.type = 'sine';
-      o.frequency.value = 784;
-      g.gain.setValueAtTime(0.0001, ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.07, ctx.currentTime + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
-      o.connect(g);
-      g.connect(ctx.destination);
-      o.start(ctx.currentTime);
-      o.stop(ctx.currentTime + 0.2);
-      setTimeout(function () { ctx.close(); }, 300);
+      var freqs = [880, 1175, 988, 1318];
+      for (var i = 0; i < count; i += 1) {
+        (function (idx) {
+          var o = ctx.createOscillator();
+          var g = ctx.createGain();
+          o.type = 'square';
+          o.frequency.value = freqs[idx % freqs.length];
+          var t0 = ctx.currentTime + idx * 0.24;
+          g.gain.setValueAtTime(0.0001, t0);
+          g.gain.exponentialRampToValueAtTime(0.32, t0 + 0.03);
+          g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+          o.connect(g);
+          g.connect(ctx.destination);
+          o.start(t0);
+          o.stop(t0 + 0.24);
+        })(i);
+      }
+      setTimeout(function () {
+        ctx.close();
+      }, 1200);
     } catch (e) {}
+  }
+
+  function showDeskAlert(opts) {
+    opts = opts || {};
+    var host = qs('#edesk-toasts', root);
+    if (!host) return;
+    var taskId = normId(opts.taskId || '');
+    var title = String(opts.title || opts.taskId || 'Update').trim();
+    var body = String(opts.body || 'New activity on your board.').trim();
+    var label = String(opts.label || 'Notification').trim();
+    var el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'edesk-chat-alert';
+    el.innerHTML =
+      '<span class="edesk-chat-alert__icon" aria-hidden="true">' +
+      esc(opts.icon || '💬') +
+      '</span>' +
+      '<span class="edesk-chat-alert__content">' +
+      '<span class="edesk-chat-alert__label">' +
+      esc(label) +
+      '</span>' +
+      '<strong class="edesk-chat-alert__title">' +
+      esc(title) +
+      '</strong>' +
+      '<span class="edesk-chat-alert__body">' +
+      esc(body) +
+      '</span>' +
+      '</span>' +
+      '<span class="edesk-chat-alert__close" aria-hidden="true">×</span>';
+    el.addEventListener('click', function () {
+      if (taskId) selectTask(taskId);
+      el.classList.remove('edesk-chat-alert--in');
+      setTimeout(function () {
+        el.remove();
+      }, 220);
+    });
+    host.appendChild(el);
+    requestAnimationFrame(function () {
+      el.classList.add('edesk-chat-alert--in');
+    });
+    setTimeout(function () {
+      if (!el.parentNode) return;
+      el.classList.remove('edesk-chat-alert--in');
+      setTimeout(function () {
+        el.remove();
+      }, 280);
+    }, 12000);
+  }
+
+  function noticeFromPoll(data) {
+    if (!data || !Array.isArray(data.notices) || data.notices.length === 0) return null;
+    return data.notices[0];
+  }
+
+  function maybeAlertFromPoll(data) {
+    if (!data || !data.ok) return;
+    var notifySig = typeof data.notify_sig === 'string' ? data.notify_sig : '';
+    var bellUp = typeof data.bell === 'number' && data.bell > lastDeskBell;
+    var notifyChanged = deskAlertReady && notifySig !== '' && notifySig !== lastNotifySig;
+    var poolUp = typeof data.pool === 'number' && data.pool > (window._akhPortalPush && window._akhPortalPush.pool ? window._akhPortalPush.pool : 0);
+
+    if (deskAlertReady && (bellUp || notifyChanged)) {
+      var n = noticeFromPoll(data);
+      playLoudAlert(bellUp ? 2 : 1);
+      showDeskAlert({
+        taskId: n ? n.task_id || n.anchor_id : '',
+        title: n ? n.title || n.task_id : 'Editor desk',
+        label: n ? n.label || 'Update' : 'Update',
+        body: n ? n.detail || n.label || 'New activity on your task board.' : 'New activity on your task board.',
+        icon: n && String(n.label || '').toLowerCase().indexOf('message') !== -1 ? '💬' : '🔔',
+      });
+    } else if (deskAlertReady && poolUp) {
+      playLoudAlert(1);
+      showDeskAlert({
+        label: 'Pool',
+        title: 'New task',
+        body: 'A new task is available in the pool.',
+        icon: '📥',
+      });
+    }
+
+    if (notifySig !== '') lastNotifySig = notifySig;
+    deskAlertReady = true;
+  }
+
+  function scanDeskMessageAlerts(desk) {
+    if (!desk || !deskAlertReady) return;
+    var rows = (desk.mine || []).concat(desk.pool || []);
+    rows.forEach(function (row) {
+      var id = normId(row.id);
+      if (!id) return;
+      var prev = rowCache[id];
+      var unread = typeof row.unread_msg_count === 'number' ? row.unread_msg_count : 0;
+      var prevUnread = prev && typeof prev.unread_msg_count === 'number' ? prev.unread_msg_count : 0;
+      if (unread > prevUnread && unread > 0) {
+        playLoudAlert(2);
+        showDeskAlert({
+          taskId: id,
+          title: row.title || id,
+          label: 'New message',
+          body: unread === 1 ? '1 unread WhatsApp message' : unread + ' unread WhatsApp messages',
+          icon: '💬',
+        });
+      }
+    });
   }
 
   function setDeskBell(n) {
@@ -982,7 +1105,6 @@
         postAjax('status_save', {
           task_id: taskId,
           status: (form.querySelector('[name="status"]') || {}).value || '',
-          deliverable_output: (form.querySelector('[name="deliverable_output"]') || {}).value || '',
           status_comment: (form.querySelector('[name="status_comment"]') || {}).value || '',
         })
           .then(function (data) {
@@ -1096,12 +1218,16 @@
     if (!data || !data.ok) return false;
 
     if (data.desk) {
+      scanDeskMessageAlerts(data.desk);
       applyDeskLists(data.desk, true);
     }
+    maybeAlertFromPoll(data);
     if (typeof data.bell === 'number') {
-      if (data.bell > lastDeskBell) playNotifyPing();
       lastDeskBell = data.bell;
       setDeskBell(data.bell);
+    }
+    if (typeof data.pool === 'number' && window._akhPortalPush) {
+      window._akhPortalPush.pool = data.pool;
     }
 
     markSyncSuccess(false);
@@ -1267,6 +1393,8 @@
     setDeskBell: setDeskBell,
     handlePoll: handlePoll,
     showToast: showToast,
+    showDeskAlert: showDeskAlert,
+    playLoudAlert: playLoudAlert,
     setLiveSyncing: function (on) {
       if (on) {
         setLiveStatus('Syncing…', true);

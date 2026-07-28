@@ -37,7 +37,14 @@ declare(strict_types=1);
  *
  * define('AKH_CHAT_API_URL', 'https://n8n.akhurathstudio.com/webhook/YOUR_WEBHOOK_ID');
  *
- * On TrueNAS / n8n-only hosts: do NOT define AKH_DB_* below — remove Hostinger MySQL lines.
+ * Notifications (task_notification_events) still live in Hostinger MySQL — add a sidecar
+ * connection so the editor desk can read pending client updates while tasks come from n8n:
+ *
+ * define('AKH_NOTIFY_DB_DSN', 'mysql:host=localhost;dbname=u113439427_akhurath;charset=utf8mb4');
+ * define('AKH_NOTIFY_DB_USER', 'u113439427_akhurath');
+ * define('AKH_NOTIFY_DB_PASS', 'YOUR_PASSWORD_HERE');
+ *
+ * Or keep AKH_DB_* defined alongside n8n — notifications will use that MySQL automatically.
  * The editor desk reads tasks and attendance from the grouped webhook JSON.
  *
  * n8n must return grouped JSON — see includes/n8n-dashboard-payload.example.json

@@ -416,12 +416,8 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
                     <span>Status note <strong>(required when status changes)</strong></span>
                     <textarea name="status_comment" rows="2" maxlength="2000" placeholder="e.g. Sent preview for review…"></textarea>
                   </label>
-                  <label class="field edesk-field--wide">
-                    <span>Deliverable link or path</span>
-                    <textarea name="deliverable_output" rows="3" maxlength="4000" placeholder="Drive, Vimeo, WeTransfer, or server path…"><?php echo h((string) ($t['deliverable_output'] ?? '')); ?></textarea>
-                  </label>
                 </div>
-                <p class="edesk-muted edesk-muted--sm">Status changes sync to WhatsApp history. Deliverable is shown to the client when marked <strong>Delivered</strong>.</p>
+                <p class="edesk-muted edesk-muted--sm">Status changes sync to WhatsApp history.</p>
                 <button type="submit" class="btn btn--primary btn--sm">Save changes</button>
               </form>
             </section>
@@ -497,19 +493,12 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
                 <?php endif; ?>
               </article>
             <?php endif; ?>
-            <?php if (trim((string) ($t['deliverable_output'] ?? '')) !== '' && $section === 'mine'): ?>
-              <article class="edesk-update">
-                <p class="edesk-update__label">Current deliverable</p>
-                <div class="edesk-prose"><?php echo nl2br(h((string) $t['deliverable_output'])); ?></div>
-              </article>
-            <?php endif; ?>
             <?php if (
                 $meetingAlert === null
                 && $notificationUpdates === []
                 && (!is_array($taskAlert) || ($taskAlert['kind'] ?? '') !== 'whatsapp_message')
                 && trim((string) ($t['client_feedback'] ?? '')) === ''
                 && trim((string) ($t['client_meeting_date'] ?? '')) === ''
-                && trim((string) ($t['deliverable_output'] ?? '')) === ''
             ): ?>
               <p class="edesk-muted">No client updates yet for this task.</p>
             <?php endif; ?>

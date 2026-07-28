@@ -41,7 +41,8 @@ if (is_file($dbLocal)) {
 }
 
 $akhLoadDb = function_exists('getAkhurathChatData')
-    || (defined('AKH_DB_DSN') && defined('AKH_DB_USER') && defined('AKH_DB_PASS'));
+    || (defined('AKH_DB_DSN') && defined('AKH_DB_USER') && defined('AKH_DB_PASS'))
+    || (defined('AKH_NOTIFY_DB_DSN') && defined('AKH_NOTIFY_DB_USER') && defined('AKH_NOTIFY_DB_PASS'));
 if ($akhLoadDb) {
     require_once __DIR__ . '/db.php';
 }

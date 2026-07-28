@@ -235,9 +235,6 @@
         } else if (b > lastBell) {
           var edOs = osNoticeFromPoll(data, 'Update on your task board.');
           tryNotify(edOs.title, edOs.body, 'akh-editor-bell');
-          if (window.AkhMeetingAlerts) {
-            AkhMeetingAlerts.playChime(1);
-          }
         }
       } else if (cfg.mode === 'client' && b > lastBell) {
         var clOs = osNoticeFromPoll(data, 'Your editor posted an update.');

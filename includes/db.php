@@ -77,6 +77,77 @@ function akh_db_is_pdo(): bool
     return $handle instanceof PDO;
 }
 
+/**
+ * PDO for task_notification_events (and related notify tables).
+ * When tasks load from n8n JSON, use AKH_NOTIFY_DB_* or AKH_DB_* for MySQL.
+ *
+ * @return ?PDO
+ */
+function akh_notify_db(): ?PDO
+{
+    static $pdo = null;
+    static $unavailable = false;
+
+    if ($unavailable) {
+        return null;
+    }
+    if ($pdo instanceof PDO) {
+        return $pdo;
+    }
+
+    if (akh_db_is_pdo()) {
+        $main = akh_db();
+        if ($main instanceof PDO) {
+            $pdo = $main;
+
+            return $pdo;
+        }
+    }
+
+    $dsn = null;
+    $user = null;
+    $pass = null;
+    if (defined('AKH_NOTIFY_DB_DSN') && defined('AKH_NOTIFY_DB_USER') && defined('AKH_NOTIFY_DB_PASS')) {
+        $dsn = AKH_NOTIFY_DB_DSN;
+        $user = AKH_NOTIFY_DB_USER;
+        $pass = AKH_NOTIFY_DB_PASS;
+    } elseif (defined('AKH_DB_DSN') && defined('AKH_DB_USER') && defined('AKH_DB_PASS')) {
+        $dsn = AKH_DB_DSN;
+        $user = AKH_DB_USER;
+        $pass = AKH_DB_PASS;
+    }
+
+    if ($dsn === null || $user === null || $pass === null) {
+        $unavailable = true;
+
+        return null;
+    }
+
+    try {
+        $pdo = new PDO(
+            (string) $dsn,
+            (string) $user,
+            (string) $pass,
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            ]
+        );
+
+        return $pdo;
+    } catch (Throwable $e) {
+        error_log('akh_notify_db: ' . $e->getMessage());
+        $unavailable = true;
+
+        return null;
+    }
+}
+
+function akh_notify_db_is_available(): bool
+{
+    return akh_notify_db() instanceof PDO;
+}
+
 /** Normalized grouped dashboard payload from the n8n bridge. */
 function akh_db_data(): array
 {

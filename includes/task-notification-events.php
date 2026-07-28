@@ -5,6 +5,17 @@ declare(strict_types=1);
 /** @var array<string, bool>|null */
 $GLOBALS['akh_task_notification_columns'] = null;
 
+function akh_task_notification_pdo(): ?PDO
+{
+    if (!function_exists('akh_notify_db')) {
+        require_once __DIR__ . '/db.php';
+    }
+
+    $pdo = akh_notify_db();
+
+    return $pdo instanceof PDO ? $pdo : null;
+}
+
 /** @return array<string, bool> */
 function akh_task_notification_columns(): array
 {
@@ -33,14 +44,14 @@ function akh_task_notification_columns(): array
         return $cols;
     }
 
-    if (!function_exists('akh_db_is_pdo') || !akh_db_is_pdo()) {
+    if (!akh_task_notification_pdo()) {
         $GLOBALS['akh_task_notification_columns'] = $cols;
 
         return $cols;
     }
 
     try {
-        $st = akh_db()->query('SHOW COLUMNS FROM task_notification_events');
+        $st = akh_task_notification_pdo()->query('SHOW COLUMNS FROM task_notification_events');
         while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
             $name = strtolower((string) ($row['Field'] ?? ''));
             if ($name !== '') {
@@ -76,17 +87,17 @@ function akh_task_notification_table_exists(): bool
         }
     }
 
-    if (!function_exists('akh_db') || !function_exists('akh_db_is_pdo') || !akh_db_is_pdo()) {
-        return false;
+    if (akh_task_notification_pdo()) {
+        try {
+            $st = akh_task_notification_pdo()->query("SHOW TABLES LIKE 'task_notification_events'");
+
+            return $st !== false && $st->fetch(PDO::FETCH_NUM) !== false;
+        } catch (Throwable) {
+            return false;
+        }
     }
 
-    try {
-        $st = akh_db()->query("SHOW TABLES LIKE 'task_notification_events'");
-
-        return $st !== false && $st->fetch(PDO::FETCH_NUM) !== false;
-    } catch (Throwable) {
-        return false;
-    }
+    return false;
 }
 
 function akh_task_notification_body_column(): string
@@ -286,7 +297,7 @@ function akh_task_notification_insert(string $eventKind, string $taskId, string 
     try {
         $placeholders = implode(',', array_fill(0, count($cols), '?'));
         $sql = 'INSERT INTO task_notification_events (' . implode(', ', $cols) . ') VALUES (' . $placeholders . ')';
-        akh_db()->prepare($sql)->execute($vals);
+        akh_task_notification_pdo()?->prepare($sql)->execute($vals);
     } catch (Throwable) {
         // best-effort
     }
@@ -299,7 +310,7 @@ function akh_task_notification_latest_id(): int
     }
 
     try {
-        $n = akh_db()->query('SELECT COALESCE(MAX(id), 0) FROM task_notification_events')->fetchColumn();
+        $n = akh_task_notification_pdo()?->query('SELECT COALESCE(MAX(id), 0) FROM task_notification_events')->fetchColumn();
 
         return (int) $n;
     } catch (Throwable) {
@@ -324,13 +335,13 @@ function akh_task_notification_poll_signature(): string
         return hash('sha256', (string) count($pending) . '|' . (string) $max);
     }
 
-    if (!function_exists('akh_db_is_pdo') || !akh_db_is_pdo()) {
+    if (!akh_task_notification_pdo()) {
         return 'missing';
     }
 
     try {
         $pending = akh_task_notification_pending_filter();
-        $row = akh_db()->prepare(
+        $row = akh_task_notification_pdo()->prepare(
             'SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS m FROM task_notification_events WHERE ' . $pending['sql']
         );
         $row->execute($pending['params']);
@@ -461,7 +472,7 @@ function akh_task_notification_pending_rows(?string $taskId = null): array
         return $out;
     }
 
-    if (!function_exists('akh_db_is_pdo') || !akh_db_is_pdo()) {
+    if (!akh_task_notification_pdo()) {
         return [];
     }
 
@@ -493,7 +504,7 @@ function akh_task_notification_pending_rows(?string $taskId = null): array
     $sql = "SELECT {$select} FROM task_notification_events WHERE " . implode(' AND ', $where) . ' ORDER BY id ASC';
 
     try {
-        $st = akh_db()->prepare($sql);
+        $st = akh_task_notification_pdo()->prepare($sql);
         $st->execute($params);
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
 
@@ -532,7 +543,7 @@ function akh_task_notification_mark_task_read(string $taskId): void
 
     try {
         $sql = "UPDATE task_notification_events SET {$setSql} WHERE {$match['sql']} AND ({$pending['sql']})";
-        $st = akh_db()->prepare($sql);
+        $st = akh_task_notification_pdo()->prepare($sql);
         $st->execute(array_merge($match['params'], $pending['params']));
     } catch (Throwable $e) {
         error_log('akh_task_notification_mark_task_read: ' . $e->getMessage());
@@ -555,7 +566,7 @@ function akh_task_notification_mark_all_read(): void
 
     try {
         $sql = "UPDATE task_notification_events SET {$setSql} WHERE {$pending['sql']}";
-        $st = akh_db()->prepare($sql);
+        $st = akh_task_notification_pdo()->prepare($sql);
         $st->execute($pending['params']);
     } catch (Throwable $e) {
         error_log('akh_task_notification_mark_all_read: ' . $e->getMessage());
@@ -631,11 +642,11 @@ function akh_task_notification_pending_alerts_for_editor(string $editorUsername)
         }
     }
 
-    if (function_exists('akh_db')) {
+    if (akh_task_notification_pdo()) {
         try {
-            $st = akh_db()->query("SHOW TABLES LIKE 'whatsapp_tasks'");
+            $st = akh_task_notification_pdo()->query("SHOW TABLES LIKE 'whatsapp_tasks'");
             if ($st !== false && $st->fetch(PDO::FETCH_NUM) !== false) {
-                $waSt = akh_db()->prepare(
+                $waSt = akh_task_notification_pdo()->prepare(
                     "SELECT wt.task_code, u.username
                      FROM whatsapp_tasks wt
                      INNER JOIN users u ON u.id = wt.assigned_editor AND u.role = 'editor'
