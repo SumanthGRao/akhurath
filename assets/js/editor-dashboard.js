@@ -169,35 +169,50 @@
     }, 12000);
   }
 
+  function notifyActivity(opts) {
+    if (window.AkhPortalPush && typeof window.AkhPortalPush.notify === 'function') {
+      window.AkhPortalPush.notify(opts);
+      return;
+    }
+    playLoudAlert(typeof opts.beep === 'number' ? opts.beep : 2);
+    showDeskAlert(opts);
+  }
+
   function noticeFromPoll(data) {
     if (!data || !Array.isArray(data.notices) || data.notices.length === 0) return null;
     return data.notices[0];
   }
 
-  function maybeAlertFromPoll(data) {
+  function maybeAlertFromPoll(data, meta) {
     if (!data || !data.ok) return;
+    meta = meta || {};
     var notifySig = typeof data.notify_sig === 'string' ? data.notify_sig : '';
-    var bellUp = typeof data.bell === 'number' && data.bell > lastDeskBell;
-    var notifyChanged = deskAlertReady && notifySig !== '' && notifySig !== lastNotifySig;
-    var poolUp = typeof data.pool === 'number' && data.pool > (window._akhPortalPush && window._akhPortalPush.pool ? window._akhPortalPush.pool : 0);
+    var bellUp = meta.bellUp === true || (typeof data.bell === 'number' && data.bell > lastDeskBell);
+    var notifyChanged = meta.notifyChanged === true || (deskAlertReady && notifySig !== '' && notifySig !== lastNotifySig);
+    var poolUp =
+      meta.poolUp === true ||
+      (typeof data.pool === 'number' && data.pool > (window._akhPortalPush && window._akhPortalPush.pool ? window._akhPortalPush.pool : 0));
+    var ready = meta.pollReady === true || deskAlertReady;
 
-    if (deskAlertReady && (bellUp || notifyChanged)) {
+    if (ready && (bellUp || notifyChanged)) {
       var n = noticeFromPoll(data);
-      playLoudAlert(bellUp ? 2 : 1);
-      showDeskAlert({
+      notifyActivity({
         taskId: n ? n.task_id || n.anchor_id : '',
         title: n ? n.title || n.task_id : 'Editor desk',
         label: n ? n.label || 'Update' : 'Update',
         body: n ? n.detail || n.label || 'New activity on your task board.' : 'New activity on your task board.',
         icon: n && String(n.label || '').toLowerCase().indexOf('message') !== -1 ? '💬' : '🔔',
+        beep: bellUp ? 2 : 1,
+        tag: 'akh-editor-update',
       });
-    } else if (deskAlertReady && poolUp) {
-      playLoudAlert(1);
-      showDeskAlert({
+    } else if (ready && poolUp) {
+      notifyActivity({
         label: 'Pool',
         title: 'New task',
         body: 'A new task is available in the pool.',
         icon: '📥',
+        beep: 1,
+        tag: 'akh-editor-pool',
       });
     }
 
@@ -205,8 +220,9 @@
     deskAlertReady = true;
   }
 
-  function scanDeskMessageAlerts(desk) {
-    if (!desk || !deskAlertReady) return;
+  function scanDeskMessageAlerts(desk, meta) {
+    meta = meta || {};
+    if (!desk || !(meta.pollReady === true || deskAlertReady)) return;
     var rows = (desk.mine || []).concat(desk.pool || []);
     rows.forEach(function (row) {
       var id = normId(row.id);
@@ -215,13 +231,14 @@
       var unread = typeof row.unread_msg_count === 'number' ? row.unread_msg_count : 0;
       var prevUnread = prev && typeof prev.unread_msg_count === 'number' ? prev.unread_msg_count : 0;
       if (unread > prevUnread && unread > 0) {
-        playLoudAlert(2);
-        showDeskAlert({
+        notifyActivity({
           taskId: id,
           title: row.title || id,
           label: 'New message',
           body: unread === 1 ? '1 unread WhatsApp message' : unread + ' unread WhatsApp messages',
           icon: '💬',
+          beep: 2,
+          tag: 'akh-editor-msg-' + id,
         });
       }
     });
@@ -825,9 +842,11 @@
   }
 
   function startDeskPoll() {
+    if (window._akhPortalPush && window._akhPortalPush.mode) {
+      return;
+    }
     if (deskPollInterval) return;
     deskPollInterval = setInterval(function () {
-      if (document.hidden) return;
       setLiveStatus('Syncing…', true);
       postAjax('poll', {})
         .then(function (data) {
@@ -1214,14 +1233,14 @@
     fetchPanel(activeTaskId, { noScroll: true });
   }
 
-  function handlePoll(data) {
+  function handlePoll(data, meta) {
     if (!data || !data.ok) return false;
 
     if (data.desk) {
-      scanDeskMessageAlerts(data.desk);
+      scanDeskMessageAlerts(data.desk, meta);
       applyDeskLists(data.desk, true);
     }
-    maybeAlertFromPoll(data);
+    maybeAlertFromPoll(data, meta);
     if (typeof data.bell === 'number') {
       lastDeskBell = data.bell;
       setDeskBell(data.bell);
@@ -1378,7 +1397,9 @@
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) return;
     if (activeTaskId) pollThread(activeTaskId, false);
-    postAjax('poll', {}).then(handlePoll).catch(function () {});
+    if (!window._akhPortalPush || !window._akhPortalPush.mode) {
+      postAjax('poll', {}).then(handlePoll).catch(function () {});
+    }
   });
 
   setInterval(refreshRelativeTimes, 45000);
