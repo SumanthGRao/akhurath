@@ -139,7 +139,7 @@ function akh_render_task_thread_bubbles(array $conv, string $portal): void
         <div class="<?php echo h($bubbleClass); ?>">
           <div class="ticket__msg-meta">
             <span><?php echo h($whoLabel); ?></span>
-            <span class="ticket__msg-time"><?php echo h((string) ($row['at'] ?? '')); ?></span>
+            <span class="ticket__msg-time"><?php echo h(akh_format_datetime_site_short((string) ($row['at'] ?? ''))); ?></span>
           </div>
           <?php akh_render_task_thread_message_body($row); ?>
         </div>

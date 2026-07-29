@@ -8,6 +8,7 @@
   if (!root) return;
 
   var csrf = root.getAttribute('data-csrf') || '';
+  var siteTimezone = root.getAttribute('data-timezone') || 'Asia/Kolkata';
   var BellKey = 'akh_editor_bell_last';
   var rowCache = {};
   var lastDeskBell = parseInt(root.getAttribute('data-bell') || '0', 10);
@@ -331,6 +332,24 @@
     if (!liveClockInterval) return;
     clearInterval(liveClockInterval);
     liveClockInterval = null;
+  }
+
+  function formatSiteDateTime(iso) {
+    if (!iso) return '';
+    var t = parseTs(iso);
+    if (isNaN(t)) return String(iso);
+    try {
+      return new Intl.DateTimeFormat('en-IN', {
+        timeZone: siteTimezone,
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      }).format(new Date(t));
+    } catch (e) {
+      return String(iso);
+    }
   }
 
   function parseTs(iso) {

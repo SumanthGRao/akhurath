@@ -344,8 +344,8 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
           </div>
         </div>
         <dl class="edesk-panel__facts">
-          <div><dt>Created</dt><dd><?php echo h((string) ($t['created_at'] ?? '—')); ?></dd></div>
-          <div><dt>Updated</dt><dd><?php echo h((string) ($t['updated_at'] ?? '—')); ?></dd></div>
+          <div><dt>Created</dt><dd><?php echo h(akh_format_datetime_site((string) ($t['created_at'] ?? '')) ?: '—'); ?></dd></div>
+          <div><dt>Updated</dt><dd><?php echo h(akh_format_datetime_site((string) ($t['updated_at'] ?? '')) ?: '—'); ?></dd></div>
         </dl>
       </header>
 
@@ -467,7 +467,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
                 <p class="edesk-update__label"><?php echo h((string) ($update['label'] ?? 'Client update')); ?></p>
                 <div class="edesk-prose"><?php echo nl2br(h((string) ($update['body'] ?? ''))); ?></div>
                 <?php if (trim((string) ($update['created_at'] ?? '')) !== ''): ?>
-                  <p class="edesk-muted edesk-muted--sm"><?php echo h((string) $update['created_at']); ?></p>
+                  <p class="edesk-muted edesk-muted--sm"><?php echo h(akh_format_datetime_site_short((string) $update['created_at'])); ?></p>
                 <?php endif; ?>
               </article>
             <?php endforeach; ?>

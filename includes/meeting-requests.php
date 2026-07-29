@@ -366,25 +366,9 @@ function akh_meeting_request_normalize_row(array $row): array
 
 function akh_meeting_request_parse_datetime(string $raw): ?DateTimeImmutable
 {
-    $raw = trim($raw);
-    if ($raw === '') {
-        return null;
-    }
+    require_once __DIR__ . '/site-datetime.php';
 
-    $tz = akh_meeting_request_site_timezone();
-    $formats = ['Y-m-d H:i:s', 'Y-m-d H:i', 'd-m-Y H:i:s', 'd-m-Y H:i', DateTimeInterface::ATOM, 'Y-m-d\TH:i:sP'];
-    foreach ($formats as $fmt) {
-        $dt = DateTimeImmutable::createFromFormat($fmt, $raw, $tz);
-        if ($dt instanceof DateTimeImmutable) {
-            return $dt;
-        }
-    }
-
-    try {
-        return new DateTimeImmutable($raw, $tz);
-    } catch (Throwable) {
-        return null;
-    }
+    return akh_parse_datetime_to_site($raw);
 }
 
 /** @param array<string, mixed> $row */
@@ -464,8 +448,12 @@ function akh_meeting_request_desk_payload(array $row): array
     $customer = trim((string) ($row['customer_name'] ?? ''));
     $project = trim((string) ($row['project_name'] ?? ''));
 
-    $startLabel = $start !== null ? $start->format('D, M j, Y · g:i A') : trim((string) ($row['start_time'] ?? ''));
-    $endLabel = $end !== null ? $end->format('g:i A') : trim((string) ($row['end_time'] ?? ''));
+    $startLabel = $start !== null
+        ? $start->format('D, M j, Y · g:i A')
+        : akh_format_datetime_site(trim((string) ($row['start_time'] ?? '')));
+    $endLabel = $end !== null
+        ? $end->format('g:i A')
+        : akh_format_datetime_site(trim((string) ($row['end_time'] ?? '')), 'g:i A');
 
     $whenLabel = $startLabel;
     if ($whenLabel === '') {
@@ -483,7 +471,7 @@ function akh_meeting_request_desk_payload(array $row): array
         'start_time' => $startLabel,
         'end_time' => $endLabel,
         'when_label' => $whenLabel,
-        'created_at' => (string) ($row['created_at'] ?? ''),
+        'created_at' => akh_format_datetime_site_short((string) ($row['created_at'] ?? '')),
     ];
 }
 

@@ -726,7 +726,7 @@ function akh_task_notification_panel_updates(string $taskId, ?array $taskAlert =
             'kind' => $kind,
             'label' => akh_task_notification_kind_label($kind),
             'body' => $body,
-            'created_at' => $created,
+            'created_at' => akh_format_datetime_site_short($created),
         ];
     }
 
@@ -751,7 +751,7 @@ function akh_task_notification_panel_updates(string $taskId, ?array $taskAlert =
         'kind' => $kind,
         'label' => akh_dashboard_alert_kind_label($taskAlert),
         'body' => $body,
-        'created_at' => (string) ($taskAlert['created_at'] ?? ''),
+        'created_at' => akh_format_datetime_site_short((string) ($taskAlert['created_at'] ?? '')),
     ];
 
     return $items;

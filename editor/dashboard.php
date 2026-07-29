@@ -326,7 +326,6 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
 
 $attendanceOn = AKH_EDITOR_ATTENDANCE_ENABLED && akh_editor_attendance_is_clocked_in($editor);
 $attendanceSinceTs = AKH_EDITOR_ATTENDANCE_ENABLED ? akh_editor_attendance_open_shift_started_at_for($editor) : null;
-$attendanceSinceLabel = $attendanceSinceTs !== null ? date('M j, g:i A', $attendanceSinceTs) : '';
 $leavePendingCount = AKH_EDITOR_ATTENDANCE_ENABLED ? akh_editor_leave_pending_for_editor($editor) : 0;
 
 require_once AKH_ROOT . '/includes/editor-dashboard-render.php';
@@ -356,12 +355,13 @@ require_once AKH_ROOT . '/includes/header.php';
       data-csrf="<?php echo h($pageCsrf); ?>"
       data-bell="<?php echo (int) $editorBellCount; ?>"
       data-default-tab="<?php echo h($defaultDeskTab); ?>"
+      data-timezone="<?php echo h(AKH_SITE_TIMEZONE); ?>"
     >
       <header class="edesk-topbar">
         <div class="edesk-topbar__brand">
           <p class="edesk-topbar__kicker"><?php echo h(SITE_NAME); ?></p>
           <h1 class="edesk-topbar__title">Editor desk</h1>
-          <p class="edesk-topbar__user"><?php echo h($editor); ?><?php if (AKH_EDITOR_ATTENDANCE_ENABLED): ?> · <?php echo $attendanceOn ? 'On shift since ' . h($attendanceSinceLabel) : 'Not clocked in'; ?><?php endif; ?></p>
+          <p class="edesk-topbar__user"><?php echo h($editor); ?><?php if (AKH_EDITOR_ATTENDANCE_ENABLED): ?> · <?php echo $attendanceOn ? 'On shift since ' . h(akh_format_datetime_site_short((string) $attendanceSinceTs)) : 'Not clocked in'; ?><?php endif; ?> · <?php echo h(AKH_SITE_TIMEZONE === 'Asia/Kolkata' ? 'IST' : AKH_SITE_TIMEZONE); ?></p>
         </div>
         <nav class="edesk-topbar__tabs" aria-label="Task lists">
           <button type="button" class="edesk-tab" data-section="pool" aria-selected="<?php echo $defaultDeskTab === 'pool' ? 'true' : 'false'; ?>">

@@ -57,6 +57,8 @@ if (defined('AKH_DB_DSN') && defined('AKH_DB_USER') && defined('AKH_DB_PASS')
 
 @date_default_timezone_set(AKH_SITE_TIMEZONE);
 
+require_once __DIR__ . '/site-datetime.php';
+
 $life = max(60, (int) AKH_SESSION_LIFETIME_SECONDS);
 @ini_set('session.gc_maxlifetime', (string) $life);
 
