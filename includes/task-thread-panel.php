@@ -46,10 +46,20 @@ function akh_task_merged_conversation_sig(array $t): string
  */
 function akh_render_task_thread_message_body(array $row): void
 {
+    require_once __DIR__ . '/whatsapp-messages.php';
+
     $text = trim((string) ($row['text'] ?? ''));
     $mediaUrl = trim((string) ($row['media_url'] ?? ''));
     $mediaFilename = trim((string) ($row['media_filename'] ?? ''));
     $mediaKind = strtolower(trim((string) ($row['media_kind'] ?? '')));
+    $mediaMime = trim((string) ($row['media_mime'] ?? ''));
+
+    if ($mediaUrl !== '') {
+        $mediaKind = akh_wa_message_normalize_media_kind($mediaKind, $mediaFilename, $mediaUrl);
+    }
+    if ($mediaMime === '' && $mediaUrl !== '') {
+        $mediaMime = akh_wa_message_media_mime_type($mediaKind, $mediaFilename, $mediaUrl);
+    }
 
     if ($mediaUrl !== '') {
         if ($mediaKind === 'image') {
@@ -66,26 +76,35 @@ function akh_render_task_thread_message_body(array $row): void
             <?php
         } elseif ($mediaKind === 'video') {
             ?>
-            <video class="ticket__msg-media ticket__msg-media--video" controls preload="metadata" playsinline>
-              <source src="<?php echo h($mediaUrl); ?>" />
+            <video class="ticket__msg-media ticket__msg-media--video" controls preload="metadata" playsinline src="<?php echo h($mediaUrl); ?>">
+              <source src="<?php echo h($mediaUrl); ?>" type="<?php echo h($mediaMime); ?>" />
             </video>
             <?php
         } elseif ($mediaKind === 'audio') {
+            $audioLabel = $mediaFilename !== '' ? $mediaFilename : 'Voice message';
             ?>
-            <audio class="ticket__msg-media ticket__msg-media--audio" controls preload="metadata">
-              <source src="<?php echo h($mediaUrl); ?>" />
-            </audio>
+            <div class="ticket__msg-attachment ticket__msg-attachment--audio">
+              <span class="ticket__msg-attachment__icon" aria-hidden="true">🎙</span>
+              <div class="ticket__msg-attachment__body">
+                <p class="ticket__msg-attachment__label"><?php echo h($audioLabel); ?></p>
+                <audio class="ticket__msg-media ticket__msg-media--audio" controls preload="metadata" src="<?php echo h($mediaUrl); ?>">
+                  <source src="<?php echo h($mediaUrl); ?>" type="<?php echo h($mediaMime); ?>" />
+                </audio>
+              </div>
+            </div>
             <?php
         } else {
+            $fileLabel = $mediaFilename !== '' ? $mediaFilename : 'Download attachment';
             ?>
-            <a class="ticket__msg-media-link ticket__msg-media-link--file" href="<?php echo h($mediaUrl); ?>" target="_blank" rel="noopener noreferrer">
-              <?php echo h($mediaFilename !== '' ? $mediaFilename : 'Open attachment'); ?>
+            <a class="ticket__msg-attachment ticket__msg-attachment--file" href="<?php echo h($mediaUrl); ?>" target="_blank" rel="noopener noreferrer" download>
+              <span class="ticket__msg-attachment__icon" aria-hidden="true">📎</span>
+              <span class="ticket__msg-attachment__label"><?php echo h($fileLabel); ?></span>
             </a>
             <?php
         }
     }
 
-    if ($text !== '') {
+    if ($text !== '' && $text !== $mediaUrl && !($mediaUrl !== '' && str_contains($text, $mediaUrl))) {
         ?>
         <div class="ticket__msg-body"><?php echo nl2br(h($text)); ?></div>
         <?php

@@ -13,7 +13,8 @@ function akh_wa_messages_column_exists(string $column): bool
     if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
         return in_array($column, [
             'id', 'phone', 'task_code', 'direction', 'sender', 'message', 'status', 'created_at',
-            'customer_name', 'editor_name', 'media_url', 'filename', 'media_type',
+            'customer_name', 'editor_name', 'media_url', 'filename', 'media_type', 'mediaType',
+            'type', 'mimetype', 'mime_type', 'url', 'file_path', 'path', 'file_name', 'fileName',
         ], true);
     }
 
@@ -1065,12 +1066,155 @@ function akh_whatsapp_message_kind_label(): string
 }
 
 /**
- * @return array{url: string, filename: string, kind: string}
+ * @param array<string, mixed> $row
+ */
+function akh_wa_message_row_string(array $row, array $keys): string
+{
+    foreach ($keys as $key) {
+        $value = trim((string) ($row[$key] ?? ''));
+        if ($value !== '') {
+            return $value;
+        }
+    }
+
+    return '';
+}
+
+function akh_wa_message_extract_url_from_text(string $text): string
+{
+    if (preg_match('#https?://[^\s<>"\']+#i', $text, $matches) === 1) {
+        return rtrim((string) ($matches[0] ?? ''), '.,);]');
+    }
+
+    return '';
+}
+
+function akh_wa_message_normalize_media_kind(string $raw, string $filename, string $url): string
+{
+    $raw = strtolower(trim($raw));
+    if ($raw !== '') {
+        if (
+            str_contains($raw, 'image')
+            || str_contains($raw, 'photo')
+            || in_array($raw, ['sticker', 'picture', 'img'], true)
+        ) {
+            return 'image';
+        }
+        if (str_contains($raw, 'video') || in_array($raw, ['gif', 'animation'], true)) {
+            return 'video';
+        }
+        if (
+            str_contains($raw, 'audio')
+            || str_contains($raw, 'voice')
+            || in_array($raw, ['ptt', 'voice_note', 'opus', 'ogg', 'sound'], true)
+        ) {
+            return 'audio';
+        }
+        if (
+            in_array($raw, ['document', 'file', 'application', 'pdf', 'attachment'], true)
+            || str_contains($raw, 'pdf')
+            || str_contains($raw, 'document')
+        ) {
+            return 'file';
+        }
+    }
+
+    return akh_wa_message_media_kind_from_name($filename !== '' ? $filename : $url);
+}
+
+function akh_wa_message_media_kind_from_name(string $name): string
+{
+    $name = strtolower(trim($name));
+    if ($name === '') {
+        return 'file';
+    }
+    $path = (string) parse_url($name, PHP_URL_PATH);
+    if ($path === '') {
+        $path = $name;
+    }
+    if (preg_match('/\.(jpe?g|png|gif|webp|heic|bmp|svg|sticker)$/i', $path)) {
+        return 'image';
+    }
+    if (preg_match('/\.(mp4|webm|mov|m4v|3gp|mkv|avi)$/i', $path)) {
+        return 'video';
+    }
+    if (preg_match('/\.(mp3|ogg|oga|opus|m4a|wav|aac|amr|caf|mpeg|mpga)$/i', $path)) {
+        return 'audio';
+    }
+    if (preg_match('/(?:^|\/)(ptt|audio|voice)[-_]/i', $path)) {
+        return 'audio';
+    }
+
+    return 'file';
+}
+
+function akh_wa_message_media_mime_type(string $kind, string $filename, string $url): string
+{
+    $probe = strtolower($filename !== '' ? $filename : (string) parse_url($url, PHP_URL_PATH));
+    if (preg_match('/\.jpe?g$/i', $probe)) {
+        return 'image/jpeg';
+    }
+    if (preg_match('/\.png$/i', $probe)) {
+        return 'image/png';
+    }
+    if (preg_match('/\.gif$/i', $probe)) {
+        return 'image/gif';
+    }
+    if (preg_match('/\.webp$/i', $probe)) {
+        return 'image/webp';
+    }
+    if (preg_match('/\.mp4$/i', $probe)) {
+        return 'video/mp4';
+    }
+    if (preg_match('/\.webm$/i', $probe)) {
+        return 'video/webm';
+    }
+    if (preg_match('/\.mov$/i', $probe)) {
+        return 'video/quicktime';
+    }
+    if (preg_match('/\.(ogg|oga|opus)$/i', $probe)) {
+        return 'audio/ogg';
+    }
+    if (preg_match('/\.mp3$/i', $probe)) {
+        return 'audio/mpeg';
+    }
+    if (preg_match('/\.m4a$/i', $probe)) {
+        return 'audio/mp4';
+    }
+    if (preg_match('/\.wav$/i', $probe)) {
+        return 'audio/wav';
+    }
+    if (preg_match('/\.aac$/i', $probe)) {
+        return 'audio/aac';
+    }
+    if (preg_match('/\.amr$/i', $probe)) {
+        return 'audio/amr';
+    }
+    if (preg_match('/\.pdf$/i', $probe)) {
+        return 'application/pdf';
+    }
+
+    return match ($kind) {
+        'image' => 'image/jpeg',
+        'video' => 'video/mp4',
+        'audio' => 'audio/ogg',
+        default => 'application/octet-stream',
+    };
+}
+
+/**
+ * @return array{url: string, filename: string, kind: string, mime: string}
  */
 function akh_wa_message_media_meta(array $row): array
 {
-    $filename = trim((string) ($row['filename'] ?? ''));
-    $url = trim((string) ($row['media_url'] ?? $row['mediaUrl'] ?? ''));
+    $filename = akh_wa_message_row_string($row, ['filename', 'file_name', 'fileName']);
+    $url = akh_wa_message_row_string($row, ['media_url', 'mediaUrl', 'url', 'file_path', 'path']);
+    $message = trim((string) ($row['message'] ?? ''));
+
+    if ($url === '' && $message !== '') {
+        $url = akh_wa_message_extract_url_from_text($message);
+    }
+
     if ($url === '' && $filename !== '' && preg_match('/^[a-zA-Z0-9._-]+$/', $filename)) {
         $url = '/chat_media/' . $filename;
     }
@@ -1089,39 +1233,18 @@ function akh_wa_message_media_meta(array $row): array
         $url = '';
     }
 
-    $kind = strtolower(trim((string) ($row['media_type'] ?? '')));
-    if ($kind === '') {
-        $kind = akh_wa_message_media_kind_from_name($filename !== '' ? $filename : $url);
+    $rawType = akh_wa_message_row_string($row, ['media_type', 'mediaType', 'type', 'mimetype', 'mime_type']);
+    $kind = akh_wa_message_normalize_media_kind($rawType, $filename, $url);
+    if ($kind === 'file' && $url !== '' && $filename === '') {
+        $filename = basename((string) parse_url($url, PHP_URL_PATH));
     }
 
     return [
         'url' => $url,
         'filename' => $filename,
         'kind' => $kind,
+        'mime' => akh_wa_message_media_mime_type($kind, $filename, $url),
     ];
-}
-
-function akh_wa_message_media_kind_from_name(string $name): string
-{
-    $name = strtolower(trim($name));
-    if ($name === '') {
-        return 'file';
-    }
-    $path = (string) parse_url($name, PHP_URL_PATH);
-    if ($path === '') {
-        $path = $name;
-    }
-    if (preg_match('/\.(jpe?g|png|gif|webp|heic|bmp|svg)$/i', $path)) {
-        return 'image';
-    }
-    if (preg_match('/\.(mp4|webm|mov|m4v|3gp)$/i', $path)) {
-        return 'video';
-    }
-    if (preg_match('/\.(mp3|ogg|m4a|wav|aac|opus)$/i', $path)) {
-        return 'audio';
-    }
-
-    return 'file';
 }
 
 /**
@@ -1165,6 +1288,7 @@ function akh_wa_messages_to_conversation_rows(array $waRows): array
             $entry['media_url'] = $media['url'];
             $entry['media_filename'] = $media['filename'];
             $entry['media_kind'] = $media['kind'];
+            $entry['media_mime'] = $media['mime'];
         }
         $out[] = $entry;
     }

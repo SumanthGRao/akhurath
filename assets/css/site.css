@@ -3580,6 +3580,45 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   width: min(100%, 18rem);
 }
 
+.ticket__msg-attachment {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-bottom: 0.35rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.04);
+  text-decoration: none;
+  color: inherit;
+}
+
+.ticket__msg-attachment--file:hover {
+  background: rgba(0, 0, 0, 0.07);
+}
+
+.ticket__msg-attachment--audio {
+  flex-direction: row;
+}
+
+.ticket__msg-attachment__icon {
+  flex-shrink: 0;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.ticket__msg-attachment__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.ticket__msg-attachment__label {
+  margin: 0 0 0.35rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--muted);
+  word-break: break-all;
+}
+
 .ticket__thread-form {
   padding: 0.5rem 0.65rem 0.65rem;
   display: flex;
