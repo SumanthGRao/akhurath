@@ -6,11 +6,14 @@
 
   var audioCtx = null;
   var silentLoop = null;
+  var chimeAudio = null;
+  var chimePrimed = false;
   var unlocked = false;
   var swRegistration = null;
   var notifyIcon = '';
   var notifySwUrl = '';
   var notifySwScope = '/sw/';
+  var chimeUrl = '';
   var popupSeq = 0;
   var MAX_POPUPS = 6;
 
@@ -36,6 +39,9 @@
     }
     if (typeof cfg.swScope === 'string' && cfg.swScope !== '') {
       notifySwScope = cfg.swScope;
+    }
+    if (typeof cfg.chimeUrl === 'string' && cfg.chimeUrl !== '') {
+      chimeUrl = cfg.chimeUrl;
     }
   }
 
@@ -74,23 +80,87 @@
   }
 
   function unlockAudio() {
-    if (unlocked && audioCtx && audioCtx.state === 'running') {
-      return;
-    }
     unlocked = true;
+    readBootConfig();
     try {
       var Ctx = global.AudioContext || global.webkitAudioContext;
       if (Ctx && !audioCtx) {
         audioCtx = new Ctx();
       }
-      if (audioCtx && audioCtx.state === 'suspended') {
-        audioCtx.resume();
+      if (audioCtx && audioCtx.state === 'suspended' && typeof audioCtx.resume === 'function') {
+        audioCtx.resume().catch(function () {});
       }
     } catch (e) {
       /* ignore */
     }
+    primeChimeAudio();
     startKeepalive();
     initServiceWorker();
+  }
+
+  function getChimeAudio() {
+    if (!chimeUrl) {
+      return null;
+    }
+    if (!chimeAudio) {
+      chimeAudio = new Audio(chimeUrl);
+      chimeAudio.preload = 'auto';
+      chimeAudio.volume = 0.62;
+      chimeAudio.setAttribute('playsinline', '');
+    }
+    return chimeAudio;
+  }
+
+  function primeChimeAudio() {
+    var audio = getChimeAudio();
+    if (!audio || chimePrimed) {
+      return;
+    }
+    chimePrimed = true;
+    try {
+      var prev = audio.volume;
+      audio.volume = 0.001;
+      var p = audio.play();
+      if (p && typeof p.then === 'function') {
+        p.then(function () {
+          audio.pause();
+          audio.currentTime = 0;
+          audio.volume = prev;
+        }).catch(function () {
+          chimePrimed = false;
+          audio.volume = prev;
+        });
+      }
+    } catch (e) {
+      chimePrimed = false;
+    }
+  }
+
+  function playElementChime(times) {
+    var audio = getChimeAudio();
+    if (!audio) {
+      return false;
+    }
+    var repeats = typeof times === 'number' && times > 1 ? Math.min(times, 2) : 1;
+    var i = 0;
+    function ping() {
+      try {
+        audio.currentTime = 0;
+        audio.volume = i > 0 ? 0.5 : 0.62;
+        var p = audio.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(function () {});
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      i += 1;
+      if (i < repeats) {
+        setTimeout(ping, 420);
+      }
+    }
+    ping();
+    return true;
   }
 
   function startKeepalive() {
@@ -113,17 +183,18 @@
 
   function ensureAudioReady() {
     unlockAudio();
+    var audioReady = !!getChimeAudio();
     if (!audioCtx) {
-      return Promise.resolve(false);
+      return Promise.resolve(audioReady);
     }
     if (audioCtx.state === 'suspended') {
       return audioCtx.resume().then(function () {
-        return audioCtx.state === 'running';
+        return audioCtx.state === 'running' || audioReady;
       }).catch(function () {
-        return false;
+        return audioReady;
       });
     }
-    return Promise.resolve(audioCtx.state === 'running');
+    return Promise.resolve(audioCtx.state === 'running' || audioReady);
   }
 
   /**
@@ -131,17 +202,21 @@
    * @param {number} times 1 = single chime, 2+ = gentle repeat for urgent alerts
    */
   function playChatChime(times) {
-    var repeats = typeof times === 'number' && times > 1 ? Math.min(times, 2) : 1;
+    unlockAudio();
+    if (playElementChime(times)) {
+      return;
+    }
     ensureAudioReady().then(function (ready) {
       if (!ready || !audioCtx) {
         return;
       }
+      var repeats = typeof times === 'number' && times > 1 ? Math.min(times, 2) : 1;
       for (var r = 0; r < repeats; r += 1) {
         (function (repeatIdx) {
           var base = audioCtx.currentTime + repeatIdx * 0.42;
           var notes = [
-            { freq: 523.25, start: 0, peak: 0.13, duration: 0.2 },
-            { freq: 659.25, start: 0.1, peak: 0.11, duration: 0.26 },
+            { freq: 523.25, start: 0, peak: 0.11, duration: 0.2 },
+            { freq: 659.25, start: 0.1, peak: 0.09, duration: 0.26 },
           ];
           var master = audioCtx.createGain();
           master.gain.value = repeatIdx > 0 ? 0.82 : 1;

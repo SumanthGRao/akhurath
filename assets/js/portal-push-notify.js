@@ -89,9 +89,15 @@
   function unlockDeskAudio() {
     unlockHiddenBeep();
     startPollKeepalive();
+    if (window.DeskAlert && typeof window.DeskAlert.unlock === 'function') {
+      window.DeskAlert.unlock();
+    }
   }
 
   function playHiddenBeep(times) {
+    if (window.DeskAlert && typeof window.DeskAlert.unlock === 'function') {
+      window.DeskAlert.unlock();
+    }
     if (window.DeskAlert && typeof window.DeskAlert.play === 'function') {
       window.DeskAlert.play(typeof times === 'number' ? times : 1);
       return;
