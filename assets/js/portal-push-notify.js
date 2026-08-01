@@ -68,9 +68,10 @@
     }
   }
 
-  /** Loop silent audio so Chrome keeps editor desk timers + fetch polling active while minimized. */
+  /** Loop silent audio so Chrome keeps desk timers + fetch polling active while minimized. */
   function startPollKeepalive() {
-    if (cfg.mode !== 'editor' || keepaliveAudio) return;
+    if (cfg.mode !== 'editor' && cfg.mode !== 'whatsapp') return;
+    if (keepaliveAudio) return;
     try {
       keepaliveAudio = new Audio(SILENT_WAV);
       keepaliveAudio.loop = true;
@@ -109,6 +110,22 @@
   function tryOsNotify(title, body, taskId, tag) {
     if (!('Notification' in window) || Notification.permission !== 'granted') {
       return false;
+    }
+    if (window.DeskAlert && typeof window.DeskAlert.osNotify === 'function') {
+      return window.DeskAlert.osNotify(
+        title,
+        body,
+        tag || 'akh-portal',
+        function () {
+          if (taskId && window.AkhEditorDesk && typeof window.AkhEditorDesk.selectTask === 'function') {
+            window.AkhEditorDesk.selectTask(taskId);
+          } else if (taskId) {
+            window.location.href = buildTicketHref(taskId);
+          }
+        },
+        taskId,
+        taskId ? buildTicketHref(taskId) : window.location.href
+      );
     }
     try {
       var n = new Notification(title, {
@@ -161,6 +178,7 @@
         icon: opts.icon || '🔔',
         beep: typeof opts.beep === 'number' ? opts.beep : 2,
         tag: tag,
+        url: taskId ? buildTicketHref(taskId) : window.location.href,
         onClick: opts.onClick,
       });
       return;
@@ -295,50 +313,81 @@
 
   function mountPermissionPrompt() {
     if (cfg.mode === 'admin_overview') return;
-    if (!('Notification' in window) || Notification.permission !== 'default') return;
+    if (!('Notification' in window)) return;
+
+    var perm = Notification.permission;
+    if (perm === 'granted') {
+      if (window.DeskAlert && typeof window.DeskAlert.initServiceWorker === 'function') {
+        window.DeskAlert.initServiceWorker();
+      }
+      return;
+    }
+
     var host =
       cfg.mode === 'whatsapp'
         ? document.querySelector('.wa-main') || document.querySelector('.wa-topbar')
         : document.getElementById('editor-desk') || document.querySelector('.portal-card--ticketboard') || document.querySelector('.portal-card');
     if (!host) return;
+    if (host.querySelector('.portal-push-prompt')) return;
+
     var wrap = document.createElement('div');
     wrap.className = 'portal-push-prompt';
     wrap.setAttribute('role', 'region');
     wrap.setAttribute('aria-label', 'Desktop alerts');
+
+    var text =
+      perm === 'denied'
+        ? '<strong>Browser notifications are blocked.</strong> To get alerts when this tab is in the background, open your browser site settings for <em>' +
+          esc(window.location.hostname) +
+          '</em> and allow notifications, then reload this page.'
+        : '<strong>Turn on browser notifications</strong> to get system alerts for new messages, pool tasks, and meetings — even when this tab is minimized or you are in another app.';
+
     wrap.innerHTML =
-      '<p class="portal-push-prompt__text"><strong>Enable desktop alerts</strong> so you never miss client messages, pool tasks, or meetings — even when this tab is minimized or another window is on top.</p>' +
-      '<button type="button" class="btn btn--primary btn--sm portal-push-prompt__btn">Enable alerts</button>';
+      '<p class="portal-push-prompt__text">' +
+      text +
+      '</p>' +
+      (perm === 'default'
+        ? '<button type="button" class="btn btn--primary btn--sm portal-push-prompt__btn">Allow browser notifications</button>'
+        : '<button type="button" class="btn btn--ghost btn--sm portal-push-prompt__btn">Reload page</button>');
+
     var btn = wrap.querySelector('button');
     if (cfg.mode === 'whatsapp') {
-      btn.className = 'wa-btn wa-btn--primary wa-btn--sm portal-push-prompt__btn';
+      btn.className =
+        perm === 'default'
+          ? 'wa-btn wa-btn--primary wa-btn--sm portal-push-prompt__btn'
+          : 'wa-btn wa-btn--ghost wa-btn--sm portal-push-prompt__btn';
     }
+
     btn.addEventListener('click', function () {
+      if (perm === 'denied') {
+        window.location.reload();
+        return;
+      }
       unlockDeskAudio();
       if (window.DeskAlert && typeof window.DeskAlert.requestPermission === 'function') {
-        window.DeskAlert.requestPermission(function (perm) {
-          if (perm === 'granted') {
-            tryOsNotify(site, 'Desk alerts are on — you will be notified even when this tab is minimized.', '', 'akh-portal-on');
+        window.DeskAlert.requestPermission(function (nextPerm) {
+          if (nextPerm === 'granted') {
+            tryOsNotify(
+              site,
+              'Browser notifications are on. You will be alerted even when this tab is in the background.',
+              '',
+              'akh-portal-on'
+            );
             wrap.remove();
-          } else if (perm === 'denied') {
-            wrap.querySelector('.portal-push-prompt__text').innerHTML =
-              '<strong>Desktop alerts are blocked.</strong> Allow notifications for this site in your browser settings to get alerts while the tab is minimized.';
-            btn.textContent = 'Keep polling active';
-            btn.classList.remove('btn--primary');
-            btn.classList.add('btn--ghost');
+          } else if (nextPerm === 'denied') {
+            mountPermissionPrompt();
+            wrap.remove();
           }
         });
         return;
       }
-      Notification.requestPermission().then(function (perm) {
-        if (perm === 'granted') {
-          tryOsNotify(site, 'Editor desk alerts are on. You will be notified even when this tab is in the background.', '', 'akh-portal-on');
+      Notification.requestPermission().then(function (nextPerm) {
+        if (nextPerm === 'granted') {
+          tryOsNotify(site, 'Browser notifications are on.', '', 'akh-portal-on');
           wrap.remove();
-        } else if (perm === 'denied') {
-          wrap.querySelector('.portal-push-prompt__text').innerHTML =
-            '<strong>Desktop alerts are blocked.</strong> Allow notifications for this site in your browser settings to get alerts while the tab is minimized.';
-          btn.textContent = 'Keep polling active';
-          btn.classList.remove('btn--primary');
-          btn.classList.add('btn--ghost');
+        } else {
+          mountPermissionPrompt();
+          wrap.remove();
         }
       });
     });
@@ -496,6 +545,12 @@
     document.addEventListener('keydown', unlockDeskAudio, { once: true, capture: true });
     if ((cfg.mode === 'editor' || cfg.mode === 'whatsapp') && Notification.permission === 'granted') {
       unlockDeskAudio();
+      if (window.DeskAlert && typeof window.DeskAlert.initServiceWorker === 'function') {
+        window.DeskAlert.initServiceWorker();
+      }
+    }
+    if (document.hidden && (cfg.mode === 'editor' || cfg.mode === 'whatsapp')) {
+      startPollKeepalive();
     }
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) {

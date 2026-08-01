@@ -191,6 +191,14 @@
     };
 
     if (window.DeskAlert && typeof window.DeskAlert.notify === 'function') {
+      var ticketUrl = taskId
+        ? window.location.pathname +
+          (window.location.pathname.indexOf('?') === -1 ? '?' : '&') +
+          'ticket=' +
+          encodeURIComponent(taskId) +
+          '#ticket-' +
+          taskId
+        : window.location.href;
       window.DeskAlert.notify({
         host: qs('#edesk-toasts', root),
         taskId: taskId,
@@ -200,6 +208,7 @@
         icon: opts.icon || '🔔',
         beep: typeof opts.beep === 'number' ? opts.beep : 2,
         tag: tag,
+        url: ticketUrl,
         onClick: onClick,
       });
       return;

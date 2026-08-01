@@ -405,6 +405,13 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
 
   <div id="wa-desk-alerts" class="desk-alert-host wa-desk-alerts" aria-live="polite" aria-atomic="true"></div>
 
+  <script>
+    window._akhDeskNotify = {
+      swUrl: <?php echo json_encode(base_path('sw/desk-notify.js'), JSON_THROW_ON_ERROR); ?>,
+      swScope: <?php echo json_encode(base_path('sw/'), JSON_THROW_ON_ERROR); ?>,
+      icon: <?php echo json_encode(akh_absolute_url('assets/images/brand/akhurath-favicon-192.png'), JSON_THROW_ON_ERROR); ?>
+    };
+  </script>
   <script src="<?php echo h(base_path('assets/js/desk-alert.js')); ?>?v=<?php echo h($deskAlertVer); ?>"></script>
   <script src="<?php echo h(base_path('assets/js/meeting-alerts.js')); ?>?v=<?php echo h($meetJsVer); ?>"></script>
   <script>

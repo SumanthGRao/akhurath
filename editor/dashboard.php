@@ -562,6 +562,11 @@ require_once AKH_ROOT . '/includes/header.php';
   $deskAlertVer = is_file($deskAlertJs) ? (string) filemtime($deskAlertJs) : '1';
   ?>
   <script>
+    window._akhDeskNotify = {
+      swUrl: <?php echo json_encode(base_path('sw/desk-notify.js'), JSON_THROW_ON_ERROR); ?>,
+      swScope: <?php echo json_encode(base_path('sw/'), JSON_THROW_ON_ERROR); ?>,
+      icon: <?php echo json_encode(akh_absolute_url('assets/images/brand/akhurath-favicon-192.png'), JSON_THROW_ON_ERROR); ?>
+    };
     window._akhPortalPush = {
       mode: 'editor',
       siteName: <?php echo json_encode(SITE_NAME, JSON_THROW_ON_ERROR); ?>,

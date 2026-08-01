@@ -1,5 +1,5 @@
 /**
- * Shared desk alerts: unlocked audio, popup toasts, OS notifications.
+ * Shared desk alerts: unlocked audio, popup toasts, browser/OS notifications.
  */
 (function (global) {
   'use strict';
@@ -7,8 +7,25 @@
   var audioCtx = null;
   var silentLoop = null;
   var unlocked = false;
+  var swRegistration = null;
+  var notifyIcon = '';
+  var notifySwUrl = '';
+  var notifySwScope = '/sw/';
   var SILENT_WAV =
     'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+
+  function readBootConfig() {
+    var cfg = global._akhDeskNotify || {};
+    if (typeof cfg.icon === 'string') {
+      notifyIcon = cfg.icon;
+    }
+    if (typeof cfg.swUrl === 'string') {
+      notifySwUrl = cfg.swUrl;
+    }
+    if (typeof cfg.swScope === 'string' && cfg.swScope !== '') {
+      notifySwScope = cfg.swScope;
+    }
+  }
 
   function esc(s) {
     return String(s || '')
@@ -16,6 +33,32 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  function permissionState() {
+    if (!('Notification' in global)) {
+      return 'unsupported';
+    }
+    return Notification.permission;
+  }
+
+  function initServiceWorker() {
+    readBootConfig();
+    if (!notifySwUrl || !('serviceWorker' in navigator)) {
+      return Promise.resolve(null);
+    }
+    if (swRegistration) {
+      return Promise.resolve(swRegistration);
+    }
+    return navigator.serviceWorker
+      .register(notifySwUrl, { scope: notifySwScope })
+      .then(function (reg) {
+        swRegistration = reg;
+        return reg;
+      })
+      .catch(function () {
+        return null;
+      });
   }
 
   function unlockAudio() {
@@ -35,6 +78,7 @@
       /* ignore */
     }
     startKeepalive();
+    initServiceWorker();
   }
 
   function startKeepalive() {
@@ -84,23 +128,67 @@
     }
   }
 
-  function tryOsNotify(title, body, tag, onClick) {
+  function postSwNotify(title, body, tag, url, taskId) {
+    if (!('serviceWorker' in navigator)) {
+      return false;
+    }
+    var payload = {
+      type: 'notify',
+      title: title,
+      body: body,
+      tag: tag,
+      url: url || global.location.href,
+      taskId: taskId || '',
+      icon: notifyIcon || undefined,
+    };
+    try {
+      if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage(payload);
+        return true;
+      }
+      if (swRegistration && swRegistration.active) {
+        swRegistration.active.postMessage(payload);
+        return true;
+      }
+    } catch (e) {
+      /* ignore */
+    }
+    return false;
+  }
+
+  function tryOsNotify(title, body, tag, onClick, taskId, url) {
     if (!('Notification' in global) || Notification.permission !== 'granted') {
       return false;
     }
+    var safeTitle = String(title || 'Update');
+    var safeBody = String(body || '');
+    var safeTag = String(tag || 'akh-desk-alert');
+    var targetUrl = String(url || global.location.href);
+
+    if (postSwNotify(safeTitle, safeBody, safeTag, targetUrl, taskId)) {
+      return true;
+    }
+
     try {
-      var n = new Notification(String(title || 'Update'), {
-        body: String(body || ''),
-        tag: String(tag || 'akh-desk-alert'),
+      var options = {
+        body: safeBody,
+        tag: safeTag,
         silent: false,
         renotify: true,
-      });
+      };
+      if (notifyIcon) {
+        options.icon = notifyIcon;
+        options.badge = notifyIcon;
+      }
+      var n = new Notification(safeTitle, options);
       n.onclick = function () {
         try {
           global.focus();
         } catch (e) {}
         if (typeof onClick === 'function') {
           onClick();
+        } else if (targetUrl) {
+          global.location.href = targetUrl;
         }
         n.close();
       };
@@ -163,7 +251,7 @@
   }
 
   /**
-   * @param {{host?: HTMLElement, title?: string, body?: string, label?: string, icon?: string, beep?: number, tag?: string, taskId?: string, onClick?: function, forceOs?: boolean}} opts
+   * @param {{host?: HTMLElement, title?: string, body?: string, label?: string, icon?: string, beep?: number, tag?: string, taskId?: string, url?: string, onClick?: function}} opts
    */
   function notify(opts) {
     opts = opts || {};
@@ -171,14 +259,21 @@
     var body = String(opts.body || 'New activity on your board.').trim();
     var label = String(opts.label || 'Update').trim();
     var tag = String(opts.tag || 'akh-desk-' + (opts.taskId || label));
+    var hidden = !!global.document.hidden;
+
     playAlert(typeof opts.beep === 'number' ? opts.beep : 2);
-    showPopup(opts.host || document.querySelector('.desk-alert-host'), opts);
-    if (document.hidden || opts.forceOs) {
-      tryOsNotify(title, body, tag, opts.onClick);
+
+    if (!hidden) {
+      showPopup(opts.host || document.querySelector('.desk-alert-host'), opts);
+    }
+
+    if (permissionState() === 'granted') {
+      tryOsNotify(title, body, tag, opts.onClick, opts.taskId, opts.url);
     }
   }
 
   function requestPermission(onDone) {
+    unlockAudio();
     if (!('Notification' in global)) {
       if (typeof onDone === 'function') {
         onDone('unsupported');
@@ -186,17 +281,28 @@
       return;
     }
     if (Notification.permission !== 'default') {
-      if (typeof onDone === 'function') {
-        onDone(Notification.permission);
-      }
+      initServiceWorker().finally(function () {
+        if (typeof onDone === 'function') {
+          onDone(Notification.permission);
+        }
+      });
       return;
     }
-    Notification.requestPermission().then(function (perm) {
-      if (typeof onDone === 'function') {
-        onDone(perm);
-      }
-    });
+    Notification.requestPermission()
+      .then(function (perm) {
+        return initServiceWorker().then(function () {
+          return perm;
+        });
+      })
+      .then(function (perm) {
+        if (typeof onDone === 'function') {
+          onDone(perm);
+        }
+      });
   }
+
+  readBootConfig();
+  initServiceWorker();
 
   global.DeskAlert = {
     unlock: unlockAudio,
@@ -206,6 +312,8 @@
     osNotify: tryOsNotify,
     notify: notify,
     requestPermission: requestPermission,
+    permissionState: permissionState,
+    initServiceWorker: initServiceWorker,
   };
 
   document.addEventListener('pointerdown', unlockAudio, { once: true, capture: true });

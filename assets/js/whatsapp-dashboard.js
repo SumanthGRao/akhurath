@@ -388,6 +388,7 @@
         icon: opts.icon || '🔔',
         beep: typeof opts.beep === 'number' ? opts.beep : 2,
         tag: opts.tag || 'wa-alert-' + taskCode,
+        url: window.location.href,
         onClick: onClick,
       });
       return;
