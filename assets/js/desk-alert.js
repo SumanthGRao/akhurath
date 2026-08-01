@@ -74,6 +74,9 @@
   }
 
   function unlockAudio() {
+    if (unlocked && audioCtx && audioCtx.state === 'running') {
+      return;
+    }
     unlocked = true;
     try {
       var Ctx = global.AudioContext || global.webkitAudioContext;
@@ -108,21 +111,6 @@
     }
   }
 
-  function ensureAudioReady() {
-    unlockAudio();
-    if (!audioCtx) {
-      return Promise.resolve(false);
-    }
-    if (audioCtx.state === 'suspended') {
-      return audioCtx.resume().then(function () {
-        return audioCtx.state === 'running';
-      }).catch(function () {
-        return false;
-      });
-    }
-    return Promise.resolve(audioCtx.state === 'running');
-  }
-
   /** Desk alert tone from build c50747b (audible square-wave ping). */
   function playDeskPing(times) {
     var count = typeof times === 'number' ? times : 2;
@@ -147,16 +135,15 @@
 
   function playAlert(times) {
     unlockAudio();
-    ensureAudioReady().then(function (ready) {
-      if (!ready || !audioCtx) {
+    var count = typeof times === 'number' ? times : 2;
+    try {
+      if (!audioCtx) {
         return;
       }
-      try {
-        playDeskPing(times);
-      } catch (e) {
-        /* ignore */
-      }
-    });
+      playDeskPing(count);
+    } catch (e) {
+      /* ignore */
+    }
   }
 
   function postSwNotify(title, body, tag, url, taskId) {
