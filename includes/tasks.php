@@ -498,22 +498,18 @@ function akh_task_customer_display_name(array $t): string
 }
 
 /**
- * Popup / OS notification headline: customer name when known, else task title.
+ * Popup / OS notification headline: task id/code, then project title.
  *
  * @param array<string, mixed> $t
  */
 function akh_task_notice_popup_title(array $t, string $fallbackId = ''): string
 {
-    $name = akh_task_customer_display_name($t);
-    if ($name !== '') {
-        if (mb_strlen($name) > 100) {
-            return mb_substr($name, 0, 99) . '…';
-        }
-
-        return $name;
+    $taskId = akh_task_normalize_id((string) ($t['id'] ?? ''));
+    if ($taskId !== '') {
+        return $taskId;
     }
 
-    $title = trim((string) ($t['title'] ?? ''));
+    $title = trim((string) ($t['title'] ?? $t['project_name'] ?? ''));
     if ($title !== '') {
         if (mb_strlen($title) > 100) {
             return mb_substr($title, 0, 99) . '…';
@@ -523,6 +519,49 @@ function akh_task_notice_popup_title(array $t, string $fallbackId = ''): string
     }
 
     return $fallbackId;
+}
+
+/**
+ * Project / job title for notification body context.
+ *
+ * @param array<string, mixed> $t
+ */
+function akh_task_project_display_name(array $t): string
+{
+    $name = trim((string) ($t['title'] ?? $t['project_name'] ?? ''));
+    if (mb_strlen($name) > 120) {
+        return mb_substr($name, 0, 119) . '…';
+    }
+
+    return $name;
+}
+
+/**
+ * Prefix alert detail with customer name when helpful.
+ */
+function akh_task_notice_detail_line(string $detail, string $customerName = '', string $taskName = ''): string
+{
+    $detail = trim($detail);
+    $customerName = trim($customerName);
+    $taskName = trim($taskName);
+
+    $prefix = '';
+    if ($customerName !== '' && $taskName !== '' && mb_strtolower($customerName) !== mb_strtolower($taskName)) {
+        $prefix = $customerName . ' · ' . $taskName;
+    } elseif ($customerName !== '') {
+        $prefix = $customerName;
+    } elseif ($taskName !== '') {
+        $prefix = $taskName;
+    }
+
+    if ($prefix === '') {
+        return $detail;
+    }
+    if ($detail === '') {
+        return $prefix;
+    }
+
+    return $prefix . ' — ' . $detail;
 }
 
 /**
@@ -556,9 +595,14 @@ function akh_task_editor_notice_rows(string $editorUsername): array
                 'task_id' => $tid,
                 'anchor_id' => $tid,
                 'title' => $title,
+                'task_name' => akh_task_project_display_name($t),
                 'customer_name' => akh_task_customer_display_name($t),
                 'label' => 'Client / feedback',
-                'detail' => $detail,
+                'detail' => akh_task_notice_detail_line(
+                    $detail,
+                    akh_task_customer_display_name($t),
+                    akh_task_project_display_name($t)
+                ),
                 'created_at' => (string) ($t['updated_at'] ?? $t['created_at'] ?? ''),
                 'priority' => 50,
             ];
@@ -576,9 +620,14 @@ function akh_task_editor_notice_rows(string $editorUsername): array
                 'task_id' => $tid,
                 'anchor_id' => $tid,
                 'title' => $title,
+                'task_name' => akh_task_project_display_name($t),
                 'customer_name' => akh_task_customer_display_name($t),
                 'label' => 'New in pool',
-                'detail' => 'Open the board to claim this task.',
+                'detail' => akh_task_notice_detail_line(
+                    'Open the board to claim this task.',
+                    akh_task_customer_display_name($t),
+                    akh_task_project_display_name($t)
+                ),
                 'created_at' => (string) ($t['created_at'] ?? $t['updated_at'] ?? ''),
                 'priority' => 40,
             ];
@@ -593,15 +642,15 @@ function akh_task_editor_notice_rows(string $editorUsername): array
         }
         $t = akh_task_by_id($taskId);
         $customerName = trim((string) ($alert['customer_name'] ?? ''));
+        $taskName = trim((string) ($alert['project_name'] ?? ''));
         if ($customerName === '' && is_array($t)) {
             $customerName = akh_task_customer_display_name($t);
         }
-        if ($customerName !== '') {
-            $title = $customerName;
-            if (mb_strlen($title) > 100) {
-                $title = mb_substr($title, 0, 99) . '…';
-            }
-        } else {
+        if ($taskName === '' && is_array($t)) {
+            $taskName = akh_task_project_display_name($t);
+        }
+        $title = akh_task_normalize_id($taskId);
+        if ($title === '') {
             $title = is_array($t) ? akh_task_notice_popup_title($t, $taskId) : $taskId;
         }
         $detail = trim((string) ($alert['preview'] ?? ''));
@@ -618,10 +667,15 @@ function akh_task_editor_notice_rows(string $editorUsername): array
         if (mb_strlen($detail) > 220) {
             $detail = mb_substr($detail, 0, 219) . '…';
         }
+        $detail = akh_task_notice_detail_line($detail, $customerName, $taskName);
+        if (mb_strlen($detail) > 220) {
+            $detail = mb_substr($detail, 0, 219) . '…';
+        }
         $out[] = [
             'task_id' => $taskId,
             'anchor_id' => $taskId,
             'title' => $title,
+            'task_name' => $taskName,
             'customer_name' => $customerName,
             'label' => akh_dashboard_alert_kind_label($alert),
             'detail' => $detail,

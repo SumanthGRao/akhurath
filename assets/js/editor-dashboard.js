@@ -158,11 +158,28 @@
 
   function noticePopupTitle(notice, fallback) {
     return String(
-      (notice && (notice.customer_name || notice.client)) ||
+      (notice && (notice.task_code || notice.task_id || notice.anchor_id)) ||
+        (notice && notice.task_name) ||
         (notice && notice.title) ||
         fallback ||
         'Update'
     ).trim();
+  }
+
+  function noticePopupBody(notice, fallback) {
+    var detail = String((notice && (notice.detail || notice.preview || notice.label)) || fallback || '').trim();
+    var customer = String((notice && notice.customer_name) || '').trim();
+    var taskName = String((notice && notice.task_name) || '').trim();
+    if (customer !== '' && detail !== '' && detail.indexOf(customer) !== 0) {
+      return customer + ' — ' + detail;
+    }
+    if (customer !== '' && detail === '') {
+      return customer;
+    }
+    if (taskName !== '' && detail !== '' && detail.indexOf(taskName) === -1) {
+      return taskName + ' — ' + detail;
+    }
+    return detail || fallback || 'New activity on your board.';
   }
 
   function notifyActivity(opts) {
@@ -237,7 +254,7 @@
         taskId: taskId,
         title: noticePopupTitle(n, taskId || 'Editor desk'),
         label: n.label || 'Update',
-        body: n.detail || n.preview || n.label || 'New activity on your task board.',
+        body: noticePopupBody(n, n.label || 'New activity on your task board.'),
         icon: String(n.label || '').toLowerCase().indexOf('message') !== -1 ? '💬' : '🔔',
         beep: 1,
         tag: 'akh-editor-notice-' + fp,
@@ -278,9 +295,10 @@
       if (unread > prevUnread && unread > 0) {
         notifyActivity({
           taskId: id,
-          title: row.client || row.customer_name || row.title || id,
+          title: id,
           label: 'New message',
-          body: unread === 1 ? '1 unread WhatsApp message' : unread + ' unread WhatsApp messages',
+          body: (row.client || row.customer_name ? (row.client || row.customer_name) + ' — ' : '') +
+            (unread === 1 ? '1 unread WhatsApp message' : unread + ' unread WhatsApp messages'),
           icon: '💬',
           beep: 1,
           tag: 'akh-editor-msg-' + id + '-' + unread,

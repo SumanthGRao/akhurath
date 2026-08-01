@@ -360,11 +360,27 @@
 
   function waNoticeTitle(notice, fallback) {
     return String(
-      (notice && notice.customer_name) ||
-        (notice && notice.title) ||
+      (notice && notice.task_code) ||
+        (notice && (notice.task_id || notice.anchor_id)) ||
         fallback ||
         'Task update'
     ).trim();
+  }
+
+  function waNoticeBody(notice, fallback) {
+    var detail = String((notice && (notice.preview || notice.detail || notice.label)) || fallback || '').trim();
+    var customer = String((notice && notice.customer_name) || '').trim();
+    var taskName = String((notice && (notice.task_name || notice.project_name)) || '').trim();
+    if (customer !== '' && detail !== '') {
+      return customer + ' — ' + detail;
+    }
+    if (customer !== '') {
+      return customer;
+    }
+    if (taskName !== '' && detail !== '') {
+      return taskName + ' — ' + detail;
+    }
+    return detail || fallback || 'New activity on the WhatsApp board.';
   }
 
   function notifyWaActivity(opts) {
@@ -417,7 +433,7 @@
         taskCode: code,
         title: waNoticeTitle(n, code || 'Task update'),
         label: n.label || 'Update',
-        body: n.preview || n.label || 'New update on the WhatsApp board.',
+        body: waNoticeBody(n, n.label || 'New update on the WhatsApp board.'),
         icon: kind === 'whatsapp_message' ? '💬' : kind.indexOf('meeting_') === 0 ? '📅' : '🔔',
         beep: 1,
         tag: 'wa-notice-' + fp,

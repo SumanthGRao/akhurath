@@ -852,6 +852,7 @@ function akh_wa_messages_unread_rows(): array
 function akh_wa_messages_pending_alerts_grouped(): array
 {
     require_once __DIR__ . '/tasks.php';
+    require_once __DIR__ . '/whatsapp-tasks.php';
 
     $out = [];
     foreach (akh_wa_messages_unread_rows() as $row) {
@@ -870,6 +871,11 @@ function akh_wa_messages_pending_alerts_grouped(): array
         if ($customerName === '') {
             $customerName = trim(akh_wa_message_customer_name_for_task($code));
         }
+        $projectName = '';
+        $waTask = akh_wa_task_by_code($code);
+        if (is_array($waTask)) {
+            $projectName = trim((string) ($waTask['project_name'] ?? ''));
+        }
         if (!isset($out[$code])) {
             $out[$code] = [
                 'count' => 0,
@@ -879,6 +885,7 @@ function akh_wa_messages_pending_alerts_grouped(): array
                 'priority' => 60,
                 'created_at' => $created,
                 'customer_name' => $customerName,
+                'project_name' => $projectName,
             ];
         }
         $out[$code]['count']++;
@@ -888,6 +895,9 @@ function akh_wa_messages_pending_alerts_grouped(): array
             $out[$code]['created_at'] = $created;
             if ($customerName !== '') {
                 $out[$code]['customer_name'] = $customerName;
+            }
+            if ($projectName !== '') {
+                $out[$code]['project_name'] = $projectName;
             }
         }
     }

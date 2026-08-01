@@ -162,7 +162,7 @@
   function notifyDeskActivity(opts) {
     opts = opts || {};
     var taskId = String(opts.taskId || '').trim();
-    var title = String(opts.title || taskId || site).trim();
+    var title = String(opts.title || taskId || 'Task update').trim();
     var body = String(opts.body || 'New activity on your board.').trim();
     var label = String(opts.label || 'Update').trim();
     var tag = String(opts.tag || 'akh-desk-' + (taskId || label || 'general'));
@@ -413,27 +413,41 @@
 
   function noticePopupTitle(notice, fallback) {
     return String(
-      (notice && (notice.customer_name || notice.client)) ||
+      (notice && (notice.task_code || notice.task_id || notice.anchor_id)) ||
+        (notice && notice.task_name) ||
         (notice && notice.title) ||
         fallback ||
         ''
     ).trim();
   }
 
+  function noticePopupBody(notice, fallback) {
+    var detail = String((notice && (notice.detail || notice.preview || notice.label)) || fallback || '').trim();
+    var customer = String((notice && notice.customer_name) || '').trim();
+    if (customer !== '' && detail !== '' && detail.indexOf(customer) !== 0) {
+      return customer + ' — ' + detail;
+    }
+    if (customer !== '') {
+      return customer;
+    }
+    return detail || fallback || 'New activity on your board.';
+  }
+
   function noticePayload(data, fallbackBody) {
     if (data && Array.isArray(data.notices) && data.notices.length > 0) {
       var n = data.notices[0];
+      var taskRef = String(n.task_id || n.anchor_id || n.task_code || '').trim();
       return {
-        taskId: String(n.task_id || n.anchor_id || n.task_code || ''),
-        title: noticePopupTitle(n, n.task_id || n.anchor_id || n.task_code || site) || site,
+        taskId: taskRef,
+        title: noticePopupTitle(n, taskRef) || taskRef || 'Task update',
         label: String(n.label || 'Update').trim(),
-        body: String(n.detail || n.label || fallbackBody).trim() || fallbackBody,
+        body: noticePopupBody(n, String(n.detail || n.label || fallbackBody).trim()) || fallbackBody,
         icon: String(n.label || '').toLowerCase().indexOf('message') !== -1 ? '💬' : '🔔',
       };
     }
     return {
       taskId: '',
-      title: site,
+      title: 'Task update',
       label: 'Update',
       body: fallbackBody,
       icon: '🔔',

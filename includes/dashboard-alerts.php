@@ -192,6 +192,7 @@ function akh_dashboard_notice_rows(array $alerts): array
     foreach ($alerts as $code => $alert) {
         $out[] = [
             'task_code' => (string) $code,
+            'title' => (string) $code,
             'kind' => (string) ($alert['kind'] ?? 'client_update'),
             'label' => akh_dashboard_alert_kind_label($alert),
             'preview' => (string) ($alert['preview'] ?? ''),
@@ -200,6 +201,7 @@ function akh_dashboard_notice_rows(array $alerts): array
             'when_label' => (string) ($alert['when_label'] ?? ''),
             'customer_name' => (string) ($alert['customer_name'] ?? ''),
             'project_name' => (string) ($alert['project_name'] ?? ''),
+            'task_name' => (string) ($alert['project_name'] ?? $alert['task_name'] ?? ''),
             'requested_time_text' => (string) ($alert['requested_time_text'] ?? ''),
             'priority' => (int) ($alert['priority'] ?? akh_dashboard_alert_priority((string) ($alert['kind'] ?? ''))),
             'created_at' => (string) ($alert['created_at'] ?? ''),
