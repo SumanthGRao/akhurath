@@ -41,6 +41,10 @@ $refreshSec = akh_wa_dashboard_refresh_seconds();
 $apiUrl = base_path('whatsapp/api.php');
 $waCssVer = is_file(AKH_ROOT . '/assets/css/whatsapp-dashboard.css') ? (string) filemtime(AKH_ROOT . '/assets/css/whatsapp-dashboard.css') : '';
 $waJsVer = is_file(AKH_ROOT . '/assets/js/whatsapp-dashboard.js') ? (string) filemtime(AKH_ROOT . '/assets/js/whatsapp-dashboard.js') : '';
+$deskAlertJs = AKH_ROOT . '/assets/js/desk-alert.js';
+$deskAlertVer = is_file($deskAlertJs) ? (string) filemtime($deskAlertJs) : '1';
+$akhPushJs = AKH_ROOT . '/assets/js/portal-push-notify.js';
+$akhPushVer = is_file($akhPushJs) ? (string) filemtime($akhPushJs) : '1';
 
 $tasksJson = [];
 foreach ($initialTasks as $row) {
@@ -399,6 +403,9 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
 
   <?php require_once AKH_ROOT . '/includes/meeting-join-modal.php'; ?>
 
+  <div id="wa-desk-alerts" class="desk-alert-host wa-desk-alerts" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="<?php echo h(base_path('assets/js/desk-alert.js')); ?>?v=<?php echo h($deskAlertVer); ?>"></script>
   <script src="<?php echo h(base_path('assets/js/meeting-alerts.js')); ?>?v=<?php echo h($meetJsVer); ?>"></script>
   <script>
     <?php
@@ -432,7 +439,20 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
     ?>
     window.WA_DASHBOARD = <?php echo $waDashboardJs; ?>;
   </script>
-  <script src="<?php echo h(base_path('assets/js/whatsapp-dashboard.js') . ($waJsVer !== '' ? '?v=' . rawurlencode($waJsVer) : '')); ?>" defer></script>
+  <script defer src="<?php echo h(base_path('assets/js/whatsapp-dashboard.js') . ($waJsVer !== '' ? '?v=' . rawurlencode($waJsVer) : '')); ?>"></script>
+  <script>
+    window._akhPortalPush = {
+      mode: 'whatsapp',
+      siteName: <?php echo json_encode(SITE_NAME, JSON_THROW_ON_ERROR); ?>,
+      csrf: <?php echo json_encode($csrf, JSON_THROW_ON_ERROR); ?>,
+      pollUrl: <?php echo json_encode($apiUrl, JSON_THROW_ON_ERROR); ?>,
+      bell: <?php echo (int) ($waNotify['count'] ?? 0); ?>,
+      notify_sig: <?php echo json_encode((string) ($waNotify['notify_sig'] ?? ''), JSON_THROW_ON_ERROR); ?>,
+      notices: <?php echo json_encode($waNotify['notices'] ?? [], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES); ?>,
+      reminders: <?php echo json_encode($meetingReminders, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES); ?>
+    };
+  </script>
+  <script defer src="<?php echo h(base_path('assets/js/portal-push-notify.js')); ?>?v=<?php echo h($akhPushVer); ?>"></script>
   <?php akh_theme_mode_footer_script($bodyClass); ?>
 </body>
 </html>

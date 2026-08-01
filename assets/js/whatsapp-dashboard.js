@@ -22,6 +22,11 @@
   var countdown = refreshSeconds;
   var countdownTimer = null;
   var refreshTimer = null;
+  var fastPollTimer = null;
+  var alertsReady = false;
+  var seenNoticeKeys = {};
+  var seenTaskSigs = {};
+  var lastTaskRowCount = Array.isArray(cfg.tasks) ? cfg.tasks.length : 0;
   var searchDebounce = null;
   var loading = false;
   var baseTitle = document.title;
@@ -333,6 +338,103 @@
     });
   }
 
+  function waNoticeFingerprint(n) {
+    if (!n) return '';
+    return [
+      n.task_code || '',
+      n.kind || '',
+      n.label || '',
+      n.preview || '',
+      n.created_at || '',
+    ].join('|');
+  }
+
+  function seedWaNoticeBaseline(list) {
+    (list || []).forEach(function (n) {
+      var fp = waNoticeFingerprint(n);
+      if (fp) seenNoticeKeys[fp] = true;
+    });
+    alertsReady = true;
+  }
+
+  function notifyWaActivity(opts) {
+    opts = opts || {};
+    var taskCode = String(opts.taskCode || opts.taskId || '').trim();
+    var onClick =
+      typeof opts.onClick === 'function'
+        ? opts.onClick
+        : function () {
+            if (!taskCode) return;
+            switchTab('tasks');
+            var notice = (notices || []).find(function (n) {
+              return taskIdsMatch(n.task_code, taskCode);
+            });
+            if (notice && String(notice.kind || '') === 'whatsapp_message') {
+              openChat(taskCode);
+              return;
+            }
+            var tid = findTaskIdByCode(taskCode);
+            if (tid) openEdit(tid);
+            else openChat(taskCode);
+          };
+
+    if (window.DeskAlert && typeof window.DeskAlert.notify === 'function') {
+      window.DeskAlert.notify({
+        host: document.getElementById('wa-desk-alerts'),
+        taskId: taskCode,
+        title: opts.title || taskCode || 'WhatsApp board',
+        label: opts.label || 'Update',
+        body: opts.body || 'New activity on the WhatsApp board.',
+        icon: opts.icon || '🔔',
+        beep: typeof opts.beep === 'number' ? opts.beep : 2,
+        tag: opts.tag || 'wa-alert-' + taskCode,
+        onClick: onClick,
+      });
+      return;
+    }
+  }
+
+  function alertFreshWaNotices(list) {
+    if (!alertsReady) return;
+    (list || []).forEach(function (n) {
+      var fp = waNoticeFingerprint(n);
+      if (!fp || seenNoticeKeys[fp]) return;
+      seenNoticeKeys[fp] = true;
+      var code = String(n.task_code || '');
+      var kind = String(n.kind || '');
+      notifyWaActivity({
+        taskCode: code,
+        title: code || 'Task update',
+        label: n.label || 'Update',
+        body: n.preview || n.label || 'New update on the WhatsApp board.',
+        icon: kind === 'whatsapp_message' ? '💬' : kind.indexOf('meeting_') === 0 ? '📅' : '🔔',
+        beep: 2,
+        tag: 'wa-notice-' + fp,
+      });
+    });
+  }
+
+  function handlePoll(data, meta) {
+    if (!data || !data.ok) return false;
+    meta = meta || {};
+
+    if (Array.isArray(data.notices)) {
+      alertFreshWaNotices(data.notices);
+    }
+
+    applyNotifyPayload(data);
+
+    if (meta.sigChanged || meta.notifyChanged || meta.resumed) {
+      return loadTasks(true);
+    }
+
+    if (data.reminders) {
+      applyFiltersLocally();
+    }
+
+    return true;
+  }
+
   function escHtml(s) {
     return String(s || '')
       .replace(/&/g, '&amp;')
@@ -550,6 +652,18 @@
       q: filterQ,
     })
       .then(function (data) {
+        var newCount = (data.tasks || []).length;
+        if (alertsReady && newCount > lastTaskRowCount) {
+          notifyWaActivity({
+            title: 'New WhatsApp task',
+            label: 'Tasks',
+            body: 'A new task appeared on the board.',
+            icon: '📥',
+            beep: 2,
+            tag: 'wa-new-task',
+          });
+        }
+        lastTaskRowCount = newCount;
         indexTasks(data.tasks || []);
         updateCounts(data.counts || {});
         if (data.sig) currentSig = data.sig;
@@ -570,25 +684,15 @@
   function pollChanges() {
     return post('poll', {})
       .then(function (data) {
-        var needsReload = data.sig && data.sig !== currentSig;
-        var needsNotify = data.notify_sig && data.notify_sig !== currentNotifySig;
-        if (needsNotify) {
-          applyNotifyPayload(data);
-          applyFiltersLocally();
+        var sigChanged = !!(data.sig && data.sig !== currentSig);
+        var notifyChanged = !!(data.notify_sig && data.notify_sig !== currentNotifySig);
+        if (sigChanged && data.sig) {
+          currentSig = data.sig;
         }
-        if (data.reminders) {
-          reminderList = data.reminders;
-          cfg.reminders = data.reminders;
-          rebuildReminderTasks(data.reminders);
-          updateMeetingBanner();
-          if (window.AkhMeetingAlerts) {
-            AkhMeetingAlerts.processReminders(data.reminders);
-          }
-          applyFiltersLocally();
-        }
-        if (needsReload || needsNotify) {
-          return loadTasks(true);
-        }
+        handlePoll(data, {
+          sigChanged: sigChanged,
+          notifyChanged: notifyChanged,
+        });
       })
       .catch(function () { /* ignore poll errors */ });
   }
@@ -1013,6 +1117,9 @@
       reminders: cfg.reminders || [],
     });
   }
+  seedWaNoticeBaseline(cfg.notices || []);
+  window.AkhWaDashboard = window.AkhWaDashboard || {};
+  window.AkhWaDashboard.handlePoll = handlePoll;
   if (cfg.reminders) {
     reminderList = cfg.reminders;
   }
@@ -1036,7 +1143,10 @@
   setChatOpen(false);
   resetCountdown();
   countdownTimer = setInterval(tickCountdown, 1000);
-  refreshTimer = setInterval(function () {
-    pollChanges();
-  }, 30000);
+  if (!window._akhPortalPush || !window._akhPortalPush.mode) {
+    refreshTimer = setInterval(function () {
+      pollChanges();
+    }, 2500);
+    fastPollTimer = refreshTimer;
+  }
 })();

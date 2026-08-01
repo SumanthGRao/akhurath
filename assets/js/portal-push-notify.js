@@ -9,8 +9,8 @@
     return;
   }
 
-  var POLL_MS = cfg.mode === 'editor' ? 5000 : 14000;
-  var FIRST_POLL_MS = cfg.mode === 'editor' ? 800 : 2200;
+  var POLL_MS = cfg.mode === 'editor' || cfg.mode === 'whatsapp' ? 2500 : 14000;
+  var FIRST_POLL_MS = cfg.mode === 'editor' || cfg.mode === 'whatsapp' ? 400 : 2200;
   var site = typeof cfg.siteName === 'string' && cfg.siteName !== '' ? cfg.siteName : 'Studio';
   var pollUrl = typeof cfg.pollUrl === 'string' && cfg.pollUrl !== '' ? cfg.pollUrl : window.location.pathname;
   var ticketExtra =
@@ -146,6 +146,26 @@
     var body = String(opts.body || 'New activity on your board.').trim();
     var label = String(opts.label || 'Update').trim();
     var tag = String(opts.tag || 'akh-desk-' + (taskId || label || 'general'));
+    var host =
+      cfg.mode === 'whatsapp'
+        ? document.getElementById('wa-desk-alerts')
+        : document.getElementById('edesk-toasts');
+
+    if (window.DeskAlert && typeof window.DeskAlert.notify === 'function') {
+      window.DeskAlert.notify({
+        host: host,
+        taskId: taskId,
+        title: title,
+        label: label,
+        body: body,
+        icon: opts.icon || '🔔',
+        beep: typeof opts.beep === 'number' ? opts.beep : 2,
+        tag: tag,
+        onClick: opts.onClick,
+      });
+      return;
+    }
+
     var inactive = deskTabInactive();
     var osSent = tryOsNotify(title, body, taskId, tag);
 
@@ -276,7 +296,10 @@
   function mountPermissionPrompt() {
     if (cfg.mode === 'admin_overview') return;
     if (!('Notification' in window) || Notification.permission !== 'default') return;
-    var host = document.getElementById('editor-desk') || document.querySelector('.portal-card--ticketboard') || document.querySelector('.portal-card');
+    var host =
+      cfg.mode === 'whatsapp'
+        ? document.querySelector('.wa-main') || document.querySelector('.wa-topbar')
+        : document.getElementById('editor-desk') || document.querySelector('.portal-card--ticketboard') || document.querySelector('.portal-card');
     if (!host) return;
     var wrap = document.createElement('div');
     wrap.className = 'portal-push-prompt';
@@ -286,8 +309,26 @@
       '<p class="portal-push-prompt__text"><strong>Enable desktop alerts</strong> so you never miss client messages, pool tasks, or meetings — even when this tab is minimized or another window is on top.</p>' +
       '<button type="button" class="btn btn--primary btn--sm portal-push-prompt__btn">Enable alerts</button>';
     var btn = wrap.querySelector('button');
+    if (cfg.mode === 'whatsapp') {
+      btn.className = 'wa-btn wa-btn--primary wa-btn--sm portal-push-prompt__btn';
+    }
     btn.addEventListener('click', function () {
       unlockDeskAudio();
+      if (window.DeskAlert && typeof window.DeskAlert.requestPermission === 'function') {
+        window.DeskAlert.requestPermission(function (perm) {
+          if (perm === 'granted') {
+            tryOsNotify(site, 'Desk alerts are on — you will be notified even when this tab is minimized.', '', 'akh-portal-on');
+            wrap.remove();
+          } else if (perm === 'denied') {
+            wrap.querySelector('.portal-push-prompt__text').innerHTML =
+              '<strong>Desktop alerts are blocked.</strong> Allow notifications for this site in your browser settings to get alerts while the tab is minimized.';
+            btn.textContent = 'Keep polling active';
+            btn.classList.remove('btn--primary');
+            btn.classList.add('btn--ghost');
+          }
+        });
+        return;
+      }
       Notification.requestPermission().then(function (perm) {
         if (perm === 'granted') {
           tryOsNotify(site, 'Editor desk alerts are on. You will be notified even when this tab is in the background.', '', 'akh-portal-on');
@@ -348,7 +389,12 @@
       return;
     }
 
-    var b = typeof data.bell === 'number' ? data.bell : lastBell;
+    var b =
+      cfg.mode === 'whatsapp' && typeof data.notify_count === 'number'
+        ? data.notify_count
+        : typeof data.bell === 'number'
+          ? data.bell
+          : lastBell;
     var p = typeof data.pool === 'number' ? data.pool : lastPool;
     var pollGap = lastPollAt > 0 ? Date.now() - lastPollAt : 0;
     var resumed = pollGap > 15000;
@@ -376,6 +422,13 @@
         pollReady: pollReady,
         bellUp: b > lastBell,
         poolUp: p > lastPool,
+        notifyChanged: notifyChanged || (resumed && notifySig !== '' && notifySig !== lastNotifySig),
+        resumed: resumed,
+      });
+    } else if (cfg.mode === 'whatsapp' && typeof window.AkhWaDashboard !== 'undefined' && typeof window.AkhWaDashboard.handlePoll === 'function') {
+      window.AkhWaDashboard.handlePoll(data, {
+        pollReady: pollReady,
+        sigChanged: sigChanged,
         notifyChanged: notifyChanged || (resumed && notifySig !== '' && notifySig !== lastNotifySig),
         resumed: resumed,
       });
@@ -436,9 +489,12 @@
   function boot() {
     mountPermissionPrompt();
     setTabBellBadge(lastBell);
-    document.addEventListener('pointerdown', unlockDeskAudio, { once: true });
-    document.addEventListener('keydown', unlockDeskAudio, { once: true });
-    if (cfg.mode === 'editor' && Notification.permission === 'granted') {
+    if (cfg.mode === 'editor' || cfg.mode === 'whatsapp') {
+      unlockDeskAudio();
+    }
+    document.addEventListener('pointerdown', unlockDeskAudio, { once: true, capture: true });
+    document.addEventListener('keydown', unlockDeskAudio, { once: true, capture: true });
+    if ((cfg.mode === 'editor' || cfg.mode === 'whatsapp') && Notification.permission === 'granted') {
       unlockDeskAudio();
     }
     document.addEventListener('visibilitychange', function () {

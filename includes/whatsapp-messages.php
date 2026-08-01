@@ -901,10 +901,15 @@ function akh_wa_messages_alerts_for_editor(string $editorUsername): array
     $owned = akh_meeting_request_assigned_task_codes_for_editor($editorUsername);
     $out = [];
     foreach (akh_wa_messages_pending_alerts_grouped() as $taskId => $alert) {
-        if (!akh_meeting_request_editor_owns_code($owned, $taskId)) {
+        if (akh_meeting_request_editor_owns_code($owned, $taskId)) {
+            $out[$taskId] = $alert;
             continue;
         }
-        $out[$taskId] = $alert;
+        require_once __DIR__ . '/tasks.php';
+        $task = akh_task_by_id($taskId);
+        if (is_array($task) && akh_task_editor_pool_eligible($task)) {
+            $out[$taskId] = $alert;
+        }
     }
 
     return $out;

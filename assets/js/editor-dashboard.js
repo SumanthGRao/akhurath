@@ -17,13 +17,18 @@
       ? String(window._akhPortalPush.notify_sig)
       : '';
   var deskAlertReady = false;
+  var seenNoticeKeys = {};
+  var lastPoolCount =
+    typeof window._akhPortalPush !== 'undefined' && typeof window._akhPortalPush.pool === 'number'
+      ? window._akhPortalPush.pool
+      : 0;
   var lastThreadSigByTask = {};
   var threadPollInterval = null;
   var deskPollInterval = null;
   var liveClockInterval = null;
   var lastSyncAt = Date.now();
-  var THREAD_POLL_MS = 1500;
-  var DESK_POLL_MS = 4000;
+  var THREAD_POLL_MS = 1200;
+  var DESK_POLL_MS = 2500;
   var activeTaskId = '';
   var activeSection = 'mine';
   var activeStatusFilter = 'all';
@@ -95,6 +100,10 @@
   }
 
   function playLoudAlert(times) {
+    if (window.DeskAlert && typeof window.DeskAlert.play === 'function') {
+      window.DeskAlert.play(times);
+      return;
+    }
     var count = typeof times === 'number' ? times : 2;
     try {
       var Ctx = window.AudioContext || window.webkitAudioContext;
@@ -171,12 +180,73 @@
   }
 
   function notifyActivity(opts) {
-    if (window.AkhPortalPush && typeof window.AkhPortalPush.notify === 'function') {
-      window.AkhPortalPush.notify(opts);
+    opts = opts || {};
+    var taskId = normId(opts.taskId || '');
+    var title = String(opts.title || opts.taskId || 'Update').trim();
+    var body = String(opts.body || 'New activity on your board.').trim();
+    var label = String(opts.label || 'Notification').trim();
+    var tag = String(opts.tag || 'akh-editor-' + (taskId || label));
+    var onClick = function () {
+      if (taskId) selectTask(taskId);
+    };
+
+    if (window.DeskAlert && typeof window.DeskAlert.notify === 'function') {
+      window.DeskAlert.notify({
+        host: qs('#edesk-toasts', root),
+        taskId: taskId,
+        title: title,
+        label: label,
+        body: body,
+        icon: opts.icon || '🔔',
+        beep: typeof opts.beep === 'number' ? opts.beep : 2,
+        tag: tag,
+        onClick: onClick,
+      });
       return;
     }
+
     playLoudAlert(typeof opts.beep === 'number' ? opts.beep : 2);
     showDeskAlert(opts);
+    if (document.hidden && window.AkhPortalPush && typeof window.AkhPortalPush.tryOsNotify === 'function') {
+      window.AkhPortalPush.tryOsNotify(title, body, taskId, tag);
+    }
+  }
+
+  function noticeFingerprint(n) {
+    if (!n) return '';
+    return [
+      n.task_id || n.anchor_id || '',
+      n.label || '',
+      n.detail || n.preview || '',
+      n.kind || '',
+    ].join('|');
+  }
+
+  function seedNoticeBaseline(notices) {
+    (notices || []).forEach(function (n) {
+      var fp = noticeFingerprint(n);
+      if (fp) seenNoticeKeys[fp] = true;
+    });
+    deskAlertReady = true;
+  }
+
+  function alertFreshNotices(notices) {
+    if (!deskAlertReady) return;
+    (notices || []).forEach(function (n) {
+      var fp = noticeFingerprint(n);
+      if (!fp || seenNoticeKeys[fp]) return;
+      seenNoticeKeys[fp] = true;
+      var taskId = normId(n.task_id || n.anchor_id || '');
+      notifyActivity({
+        taskId: taskId,
+        title: n.title || taskId || 'Editor desk',
+        label: n.label || 'Update',
+        body: n.detail || n.preview || n.label || 'New activity on your task board.',
+        icon: String(n.label || '').toLowerCase().indexOf('message') !== -1 ? '💬' : '🔔',
+        beep: 2,
+        tag: 'akh-editor-notice-' + fp,
+      });
+    });
   }
 
   function noticeFromPoll(data) {
@@ -187,43 +257,21 @@
   function maybeAlertFromPoll(data, meta) {
     if (!data || !data.ok) return;
     meta = meta || {};
-    var notifySig = typeof data.notify_sig === 'string' ? data.notify_sig : '';
-    var bellUp = meta.bellUp === true || (typeof data.bell === 'number' && data.bell > lastDeskBell);
-    var notifyChanged = meta.notifyChanged === true || (deskAlertReady && notifySig !== '' && notifySig !== lastNotifySig);
-    var poolUp =
-      meta.poolUp === true ||
-      (typeof data.pool === 'number' && data.pool > (window._akhPortalPush && window._akhPortalPush.pool ? window._akhPortalPush.pool : 0));
-    var ready = meta.pollReady === true || deskAlertReady;
 
-    if (ready && (bellUp || notifyChanged || (meta.resumed === true && poolUp))) {
-      var n = noticeFromPoll(data);
-      notifyActivity({
-        taskId: n ? n.task_id || n.anchor_id : '',
-        title: n ? n.title || n.task_id : 'Editor desk',
-        label: n ? n.label || 'Update' : 'Update',
-        body: n ? n.detail || n.label || 'New activity on your task board.' : 'New activity on your task board.',
-        icon: n && String(n.label || '').toLowerCase().indexOf('message') !== -1 ? '💬' : '🔔',
-        beep: bellUp ? 2 : 1,
-        tag: 'akh-editor-update',
-      });
-    } else if (ready && poolUp) {
-      notifyActivity({
-        label: 'Pool',
-        title: 'New task',
-        body: 'A new task is available in the pool.',
-        icon: '📥',
-        beep: 1,
-        tag: 'akh-editor-pool',
-      });
+    alertFreshNotices(data.notices || []);
+
+    var poolCount = typeof data.pool === 'number' ? data.pool : lastPoolCount;
+    if (typeof poolCount === 'number') {
+      lastPoolCount = poolCount;
     }
 
+    var notifySig = typeof data.notify_sig === 'string' ? data.notify_sig : '';
     if (notifySig !== '') lastNotifySig = notifySig;
-    deskAlertReady = true;
   }
 
   function scanDeskMessageAlerts(desk, meta) {
     meta = meta || {};
-    if (!desk || !(meta.pollReady === true || deskAlertReady)) return;
+    if (!desk || !deskAlertReady) return;
     var rows = (desk.mine || []).concat(desk.pool || []);
     rows.forEach(function (row) {
       var id = normId(row.id);
@@ -1431,6 +1479,11 @@
   });
 
   setInterval(refreshRelativeTimes, 45000);
+
+  seedNoticeBaseline((window._akhPortalPush && window._akhPortalPush.notices) || []);
+  root.addEventListener('pointerdown', function () {
+    if (window.DeskAlert) window.DeskAlert.unlock();
+  }, { once: true, capture: true });
 
   var startBell = parseInt(root.getAttribute('data-bell') || '0', 10);
   var lastBell = parseInt(sessionStorage.getItem(BellKey) || '-1', 10);

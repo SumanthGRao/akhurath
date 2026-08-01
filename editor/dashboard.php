@@ -558,6 +558,8 @@ require_once AKH_ROOT . '/includes/header.php';
   <?php
   $akhPushJs = AKH_ROOT . '/assets/js/portal-push-notify.js';
   $akhPushVer = is_file($akhPushJs) ? (string) filemtime($akhPushJs) : '1';
+  $deskAlertJs = AKH_ROOT . '/assets/js/desk-alert.js';
+  $deskAlertVer = is_file($deskAlertJs) ? (string) filemtime($deskAlertJs) : '1';
   ?>
   <script>
     window._akhPortalPush = {
@@ -572,9 +574,10 @@ require_once AKH_ROOT . '/includes/header.php';
       reminders: <?php echo json_encode($editorReminders, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES); ?>
     };
   </script>
+  <script src="<?php echo h(base_path('assets/js/desk-alert.js')); ?>?v=<?php echo h($deskAlertVer); ?>"></script>
   <script src="<?php echo h(base_path('assets/js/meeting-alerts.js')); ?>?v=<?php echo h($meetJsVer); ?>"></script>
-  <script defer src="<?php echo h(base_path('assets/js/portal-push-notify.js')); ?>?v=<?php echo h($akhPushVer); ?>"></script>
   <script defer src="<?php echo h(base_path('assets/js/editor-dashboard.js')); ?>?v=<?php echo h($edeskJsVer); ?>"></script>
+  <script defer src="<?php echo h(base_path('assets/js/portal-push-notify.js')); ?>?v=<?php echo h($akhPushVer); ?>"></script>
   <script>
     if (window.AkhMeetingAlerts && window._akhPortalPush) {
       AkhMeetingAlerts.init({ notifySig: '', reminders: window._akhPortalPush.reminders || [] });

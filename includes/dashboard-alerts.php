@@ -137,10 +137,14 @@ function akh_dashboard_alerts_for_editor(string $editorUsername): array
     $out = [];
 
     foreach (akh_dashboard_unread_alerts_grouped() as $taskId => $alert) {
-        if (!akh_meeting_request_editor_owns_code($owned, $taskId)) {
+        if (akh_meeting_request_editor_owns_code($owned, $taskId)) {
+            $out[$taskId] = akh_dashboard_normalize_alert_row($alert);
             continue;
         }
-        $out[$taskId] = akh_dashboard_normalize_alert_row($alert);
+        $task = akh_task_by_id($taskId);
+        if (is_array($task) && akh_task_editor_pool_eligible($task)) {
+            $out[$taskId] = akh_dashboard_normalize_alert_row($alert);
+        }
     }
 
     foreach (akh_meeting_request_pending_alerts_for_editor($editorUsername) as $taskId => $alert) {
