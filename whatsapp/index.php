@@ -410,6 +410,7 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
   <?php require_once AKH_ROOT . '/includes/meeting-join-modal.php'; ?>
 
   <div id="wa-desk-alerts" class="desk-alert-host wa-desk-alerts" aria-live="polite" aria-atomic="true"></div>
+  <audio id="akh-desk-notify-chime" preload="auto" src="<?php echo h($deskChimeUrl); ?>" hidden playsinline></audio>
 
   <script>
     window._akhDeskNotify = {
