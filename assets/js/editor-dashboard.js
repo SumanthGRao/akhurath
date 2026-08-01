@@ -209,7 +209,7 @@
         label: label,
         body: body,
         icon: opts.icon || '🔔',
-        beep: typeof opts.beep === 'number' ? opts.beep : 1,
+        beep: typeof opts.beep === 'number' ? opts.beep : 2,
         tag: tag,
         url: ticketUrl,
         onClick: onClick,

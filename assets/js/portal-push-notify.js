@@ -99,7 +99,7 @@
       window.DeskAlert.unlock();
     }
     if (window.DeskAlert && typeof window.DeskAlert.play === 'function') {
-      window.DeskAlert.play(typeof times === 'number' ? times : 1);
+      window.DeskAlert.play(typeof times === 'number' ? times : 2);
       return;
     }
     if (!hiddenBeepAudio) return;
@@ -185,7 +185,7 @@
         label: label,
         body: body,
         icon: opts.icon || '🔔',
-        beep: typeof opts.beep === 'number' ? opts.beep : 1,
+        beep: typeof opts.beep === 'number' ? opts.beep : 2,
         tag: tag,
         url: taskId ? buildTicketHref(taskId) : window.location.href,
         onClick: opts.onClick,
@@ -198,7 +198,7 @@
 
     if (!inactive && window.AkhEditorDesk) {
       if (typeof window.AkhEditorDesk.playLoudAlert === 'function') {
-        window.AkhEditorDesk.playLoudAlert(typeof opts.beep === 'number' ? opts.beep : 1);
+        window.AkhEditorDesk.playLoudAlert(typeof opts.beep === 'number' ? opts.beep : 2);
       }
       if (typeof window.AkhEditorDesk.showDeskAlert === 'function') {
         window.AkhEditorDesk.showDeskAlert({
@@ -210,7 +210,7 @@
         });
       }
     } else if (!osSent) {
-      playHiddenBeep(typeof opts.beep === 'number' ? opts.beep : 1);
+      playHiddenBeep(typeof opts.beep === 'number' ? opts.beep : 2);
     }
   }
 
@@ -377,7 +377,7 @@
         window.DeskAlert.requestPermission(function (nextPerm) {
           if (nextPerm === 'granted') {
             if (window.DeskAlert && typeof window.DeskAlert.play === 'function') {
-              window.DeskAlert.play(1);
+              window.DeskAlert.play(2);
             }
             tryOsNotify(
               site,
@@ -396,7 +396,7 @@
       Notification.requestPermission().then(function (nextPerm) {
         if (nextPerm === 'granted') {
           if (window.DeskAlert && typeof window.DeskAlert.play === 'function') {
-            window.DeskAlert.play(1);
+            window.DeskAlert.play(2);
           }
           tryOsNotify(site, 'Browser notifications are on.', '', 'akh-portal-on');
           wrap.remove();

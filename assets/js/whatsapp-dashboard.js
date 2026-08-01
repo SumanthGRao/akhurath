@@ -412,7 +412,7 @@
         label: opts.label || 'Update',
         body: opts.body || 'New activity on the WhatsApp board.',
         icon: opts.icon || '🔔',
-        beep: typeof opts.beep === 'number' ? opts.beep : 1,
+        beep: typeof opts.beep === 'number' ? opts.beep : 2,
         tag: opts.tag || 'wa-alert-' + taskCode,
         url: window.location.href,
         onClick: onClick,
