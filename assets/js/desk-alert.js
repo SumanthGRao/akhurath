@@ -7,6 +7,8 @@
   var audioCtx = null;
   var silentLoop = null;
   var unlocked = false;
+  var clipPrimed = false;
+  var chimeUrl = '';
   var swRegistration = null;
   var notifyIcon = '';
   var notifySwUrl = '';
@@ -36,6 +38,9 @@
     }
     if (typeof cfg.swScope === 'string' && cfg.swScope !== '') {
       notifySwScope = cfg.swScope;
+    }
+    if (typeof cfg.chimeUrl === 'string' && cfg.chimeUrl !== '') {
+      chimeUrl = cfg.chimeUrl;
     }
   }
 
@@ -74,23 +79,78 @@
   }
 
   function unlockAudio() {
-    if (unlocked && audioCtx && audioCtx.state === 'running') {
-      return;
-    }
+    readBootConfig();
     unlocked = true;
     try {
       var Ctx = global.AudioContext || global.webkitAudioContext;
       if (Ctx && !audioCtx) {
         audioCtx = new Ctx();
       }
-      if (audioCtx && audioCtx.state === 'suspended') {
-        audioCtx.resume();
+      if (audioCtx && audioCtx.state === 'suspended' && typeof audioCtx.resume === 'function') {
+        audioCtx.resume().catch(function () {});
       }
     } catch (e) {
       /* ignore */
     }
+    primeNotifyClip();
     startKeepalive();
     initServiceWorker();
+  }
+
+  function primeNotifyClip() {
+    if (!chimeUrl || clipPrimed) {
+      return;
+    }
+    try {
+      var probe = new Audio(chimeUrl);
+      probe.preload = 'auto';
+      probe.volume = 0.001;
+      probe.setAttribute('playsinline', '');
+      var p = probe.play();
+      if (!p || typeof p.then !== 'function') {
+        clipPrimed = true;
+        return;
+      }
+      p.then(function () {
+        probe.pause();
+        probe.currentTime = 0;
+        clipPrimed = true;
+      }).catch(function () {
+        clipPrimed = false;
+      });
+    } catch (e) {
+      clipPrimed = false;
+    }
+  }
+
+  function playNotifyClip(times) {
+    if (!chimeUrl) {
+      return false;
+    }
+    var count = typeof times === 'number' && times > 1 ? Math.min(times, 2) : 1;
+    var ok = false;
+    for (var i = 0; i < count; i += 1) {
+      (function (idx) {
+        setTimeout(function () {
+          try {
+            var clip = new Audio(chimeUrl);
+            clip.preload = 'auto';
+            clip.volume = idx > 0 ? 0.42 : 0.5;
+            clip.setAttribute('playsinline', '');
+            var p = clip.play();
+            if (p && typeof p.catch === 'function') {
+              p.catch(function () {
+                playSynthChime(1);
+              });
+            }
+          } catch (e) {
+            playSynthChime(1);
+          }
+        }, idx * 360);
+      })(i);
+      ok = true;
+    }
+    return ok;
   }
 
   function startKeepalive() {
@@ -114,23 +174,20 @@
   function ensureAudioReady() {
     unlockAudio();
     if (!audioCtx) {
-      return Promise.resolve(false);
+      return Promise.resolve(!!chimeUrl);
     }
     if (audioCtx.state === 'suspended') {
       return audioCtx.resume().then(function () {
-        return audioCtx.state === 'running';
+        return audioCtx.state === 'running' || !!chimeUrl;
       }).catch(function () {
-        return false;
+        return !!chimeUrl;
       });
     }
-    return Promise.resolve(audioCtx.state === 'running');
+    return Promise.resolve(true);
   }
 
-  /**
-   * Soft two-note chime (chat-style): subtle sine tones with a warm low-pass.
-   * @param {number} times 1 = single chime, 2+ = gentle repeat for urgent alerts
-   */
-  function playChatChime(times) {
+  /** Web Audio fallback — soft three-note shimmer when the clip cannot play. */
+  function playSynthChime(times) {
     var repeats = typeof times === 'number' && times > 1 ? Math.min(times, 2) : 1;
     ensureAudioReady().then(function (ready) {
       if (!ready || !audioCtx) {
@@ -138,19 +195,20 @@
       }
       for (var r = 0; r < repeats; r += 1) {
         (function (repeatIdx) {
-          var base = audioCtx.currentTime + repeatIdx * 0.42;
+          var base = audioCtx.currentTime + repeatIdx * 0.4;
           var notes = [
-            { freq: 523.25, start: 0, peak: 0.13, duration: 0.2 },
-            { freq: 659.25, start: 0.1, peak: 0.11, duration: 0.26 },
+            { freq: 622.25, start: 0, peak: 0.1, duration: 0.14 },
+            { freq: 783.99, start: 0.065, peak: 0.085, duration: 0.2 },
+            { freq: 932.33, start: 0.11, peak: 0.045, duration: 0.16 },
           ];
           var master = audioCtx.createGain();
-          master.gain.value = repeatIdx > 0 ? 0.82 : 1;
+          master.gain.value = repeatIdx > 0 ? 0.78 : 1;
           master.connect(audioCtx.destination);
 
           var filter = audioCtx.createBiquadFilter();
           filter.type = 'lowpass';
-          filter.frequency.value = 2200;
-          filter.Q.value = 0.55;
+          filter.frequency.value = 2600;
+          filter.Q.value = 0.45;
           filter.connect(master);
 
           notes.forEach(function (note) {
@@ -164,10 +222,10 @@
             osc.frequency.value = note.freq;
             harmonic.type = 'triangle';
             harmonic.frequency.value = note.freq * 2;
-            shimmer.gain.value = 0.07;
+            shimmer.gain.value = 0.06;
 
             tone.gain.setValueAtTime(0.0001, t0);
-            tone.gain.exponentialRampToValueAtTime(note.peak, t0 + 0.02);
+            tone.gain.exponentialRampToValueAtTime(note.peak, t0 + 0.012);
             tone.gain.exponentialRampToValueAtTime(0.0001, t0 + note.duration);
 
             osc.connect(tone);
@@ -177,8 +235,8 @@
 
             osc.start(t0);
             harmonic.start(t0);
-            osc.stop(t0 + note.duration + 0.04);
-            harmonic.stop(t0 + note.duration + 0.04);
+            osc.stop(t0 + note.duration + 0.05);
+            harmonic.stop(t0 + note.duration + 0.05);
           });
         })(r);
       }
@@ -186,7 +244,10 @@
   }
 
   function playAlert(times) {
-    playChatChime(times);
+    unlockAudio();
+    if (!playNotifyClip(times)) {
+      playSynthChime(times);
+    }
   }
 
   function postSwNotify(title, body, tag, url, taskId) {
@@ -388,6 +449,7 @@
 
   document.addEventListener('pointerdown', unlockAudio, { capture: true });
   document.addEventListener('keydown', unlockAudio, { capture: true });
+  document.addEventListener('touchstart', unlockAudio, { capture: true, passive: true });
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) {
       unlockAudio();

@@ -579,8 +579,8 @@
     if (cfg.mode === 'editor' || cfg.mode === 'whatsapp') {
       unlockDeskAudio();
     }
-    document.addEventListener('pointerdown', unlockDeskAudio, { once: true, capture: true });
-    document.addEventListener('keydown', unlockDeskAudio, { once: true, capture: true });
+    document.addEventListener('pointerdown', unlockDeskAudio, { capture: true });
+    document.addEventListener('keydown', unlockDeskAudio, { capture: true });
     if ((cfg.mode === 'editor' || cfg.mode === 'whatsapp') && Notification.permission === 'granted') {
       unlockDeskAudio();
       if (window.DeskAlert && typeof window.DeskAlert.initServiceWorker === 'function') {
