@@ -565,8 +565,7 @@ require_once AKH_ROOT . '/includes/header.php';
     window._akhDeskNotify = {
       swUrl: <?php echo json_encode(base_path('sw/desk-notify.js'), JSON_THROW_ON_ERROR); ?>,
       swScope: <?php echo json_encode(base_path('sw/'), JSON_THROW_ON_ERROR); ?>,
-      icon: <?php echo json_encode(akh_absolute_url('assets/images/brand/akhurath-favicon-192.png'), JSON_THROW_ON_ERROR); ?>,
-      chimeUrl: <?php echo json_encode(akh_absolute_url('assets/audio/desk-chime.wav'), JSON_THROW_ON_ERROR); ?>
+      icon: <?php echo json_encode(akh_absolute_url('assets/images/brand/akhurath-favicon-192.png'), JSON_THROW_ON_ERROR); ?>
     };
     window._akhPortalPush = {
       mode: 'editor',
