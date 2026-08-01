@@ -43,10 +43,11 @@ $waCssVer = is_file(AKH_ROOT . '/assets/css/whatsapp-dashboard.css') ? (string) 
 $waJsVer = is_file(AKH_ROOT . '/assets/js/whatsapp-dashboard.js') ? (string) filemtime(AKH_ROOT . '/assets/js/whatsapp-dashboard.js') : '';
 $deskAlertJs = AKH_ROOT . '/assets/js/desk-alert.js';
 $deskAlertVer = is_file($deskAlertJs) ? (string) filemtime($deskAlertJs) : '1';
-$deskChimeWav = AKH_ROOT . '/assets/audio/desk-notify.wav';
-$deskChimeUrl = akh_absolute_url('assets/audio/desk-notify.wav');
-if (is_file($deskChimeWav)) {
-    $deskChimeUrl .= '?v=' . (string) filemtime($deskChimeWav);
+$deskChimeRel = 'assets/audio/desk-notify.ogg';
+$deskChimePath = AKH_ROOT . '/' . $deskChimeRel;
+$deskChimeUrl = akh_absolute_url($deskChimeRel);
+if (is_file($deskChimePath)) {
+    $deskChimeUrl .= '?v=' . (string) filemtime($deskChimePath);
 }
 $akhPushJs = AKH_ROOT . '/assets/js/portal-push-notify.js';
 $akhPushVer = is_file($akhPushJs) ? (string) filemtime($akhPushJs) : '1';

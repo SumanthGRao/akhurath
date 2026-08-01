@@ -560,10 +560,11 @@ require_once AKH_ROOT . '/includes/header.php';
   $akhPushVer = is_file($akhPushJs) ? (string) filemtime($akhPushJs) : '1';
   $deskAlertJs = AKH_ROOT . '/assets/js/desk-alert.js';
   $deskAlertVer = is_file($deskAlertJs) ? (string) filemtime($deskAlertJs) : '1';
-  $deskChimeWav = AKH_ROOT . '/assets/audio/desk-notify.wav';
-  $deskChimeUrl = akh_absolute_url('assets/audio/desk-notify.wav');
-  if (is_file($deskChimeWav)) {
-      $deskChimeUrl .= '?v=' . (string) filemtime($deskChimeWav);
+  $deskChimeRel = 'assets/audio/desk-notify.ogg';
+  $deskChimePath = AKH_ROOT . '/' . $deskChimeRel;
+  $deskChimeUrl = akh_absolute_url($deskChimeRel);
+  if (is_file($deskChimePath)) {
+      $deskChimeUrl .= '?v=' . (string) filemtime($deskChimePath);
   }
   ?>
   <script>

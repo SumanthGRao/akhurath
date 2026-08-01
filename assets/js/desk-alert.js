@@ -8,7 +8,8 @@
   var silentLoop = null;
   var unlocked = false;
   var clipPrimed = false;
-  var chimeUrl = '';
+  var DEFAULT_CHIME_URL = 'https://akhurathstudio.com/assets/audio/desk-notify.ogg';
+  var chimeUrl = DEFAULT_CHIME_URL;
   var swRegistration = null;
   var notifyIcon = '';
   var notifySwUrl = '';
@@ -126,30 +127,24 @@
     }
   }
 
-  function playNotifyClip(times) {
+  function playNotifyClip() {
     if (!chimeUrl) {
       return false;
     }
-    var count = typeof times === 'number' && times > 1 ? Math.min(times, 2) : 1;
-    for (var i = 0; i < count; i += 1) {
-      (function (idx) {
-        setTimeout(function () {
-          try {
-            var clip = new Audio(chimeUrl);
-            clip.preload = 'auto';
-            clip.volume = idx > 0 ? 0.42 : 0.5;
-            clip.setAttribute('playsinline', '');
-            var p = clip.play();
-            if (p && typeof p.catch === 'function') {
-              p.catch(function () {
-                playDeskPing(1);
-              });
-            }
-          } catch (e) {
-            playDeskPing(1);
-          }
-        }, idx * 360);
-      })(i);
+    try {
+      var clip = new Audio(chimeUrl);
+      clip.preload = 'auto';
+      clip.volume = 0.5;
+      clip.setAttribute('playsinline', '');
+      var p = clip.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(function () {
+          playDeskPing(1);
+        });
+      }
+    } catch (e) {
+      playDeskPing(1);
+      return false;
     }
     return true;
   }
@@ -196,10 +191,10 @@
 
   function playAlert(times) {
     unlockAudio();
-    var count = typeof times === 'number' ? times : 2;
-    if (playNotifyClip(count)) {
+    if (playNotifyClip()) {
       return;
     }
+    var count = typeof times === 'number' ? times : 2;
     try {
       if (!audioCtx) {
         return;
@@ -352,7 +347,7 @@
     var eventTag = uniqueNotifyTag(baseTag);
     var hidden = !!global.document.hidden;
 
-    playAlert(typeof opts.beep === 'number' ? opts.beep : 2);
+    playAlert(typeof opts.beep === 'number' ? opts.beep : 1);
 
     if (!hidden || opts.forcePopup) {
       showPopup(opts.host || document.querySelector('.desk-alert-host'), opts);
