@@ -8,6 +8,7 @@
   var silentLoop = null;
   var unlocked = false;
   var clipPrimed = false;
+  var notifyClip = null;
   var DEFAULT_CHIME_URL = 'https://akhurathstudio.com/assets/audio/desk-notify.ogg';
   var chimeUrl = DEFAULT_CHIME_URL;
   var swRegistration = null;
@@ -79,9 +80,42 @@
       });
   }
 
+  function resolveNotifyClip() {
+    var domClip = document.getElementById('akh-desk-notify-chime');
+    if (domClip && domClip instanceof HTMLMediaElement) {
+      notifyClip = domClip;
+      if (!chimeUrl && domClip.currentSrc) {
+        chimeUrl = domClip.currentSrc;
+      }
+      return notifyClip;
+    }
+    if (!chimeUrl) {
+      return null;
+    }
+    if (!notifyClip) {
+      notifyClip = new Audio(chimeUrl);
+      notifyClip.preload = 'auto';
+      notifyClip.setAttribute('playsinline', '');
+      try {
+        notifyClip.load();
+      } catch (e) {
+        /* ignore */
+      }
+    } else if (notifyClip.src !== chimeUrl && notifyClip.currentSrc !== chimeUrl) {
+      notifyClip.src = chimeUrl;
+      try {
+        notifyClip.load();
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    return notifyClip;
+  }
+
   function unlockAudio() {
     readBootConfig();
-    if (unlocked && audioCtx && audioCtx.state === 'running' && (!chimeUrl || clipPrimed)) {
+    resolveNotifyClip();
+    if (unlocked && clipPrimed && notifyClip) {
       return;
     }
     unlocked = true;
@@ -102,22 +136,22 @@
   }
 
   function primeNotifyClip() {
-    if (!chimeUrl || clipPrimed) {
+    var clip = resolveNotifyClip();
+    if (!clip || clipPrimed) {
       return;
     }
     try {
-      var probe = new Audio(chimeUrl);
-      probe.preload = 'auto';
-      probe.volume = 0.001;
-      probe.setAttribute('playsinline', '');
-      var p = probe.play();
+      clip.volume = 0.001;
+      var p = clip.play();
       if (!p || typeof p.then !== 'function') {
         clipPrimed = true;
+        clip.pause();
+        clip.currentTime = 0;
         return;
       }
       p.then(function () {
-        probe.pause();
-        probe.currentTime = 0;
+        clip.pause();
+        clip.currentTime = 0;
         clipPrimed = true;
       }).catch(function () {
         clipPrimed = false;
@@ -128,23 +162,38 @@
   }
 
   function playNotifyClip() {
-    if (!chimeUrl) {
+    var clip = resolveNotifyClip();
+    if (!clip) {
       return false;
     }
-    try {
-      var clip = new Audio(chimeUrl);
-      clip.preload = 'auto';
-      clip.volume = 0.5;
-      clip.setAttribute('playsinline', '');
-      var p = clip.play();
-      if (p && typeof p.catch === 'function') {
-        p.catch(function () {
-          playDeskPing(1);
-        });
+    function startPlayback() {
+      try {
+        clip.pause();
+        clip.currentTime = 0;
+        clip.volume = 0.85;
+        var p = clip.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(function () {});
+        }
+      } catch (e) {
+        /* ignore */
       }
+    }
+    if (clip.readyState >= 2) {
+      startPlayback();
+      return true;
+    }
+    var onReady = function () {
+      clip.removeEventListener('canplaythrough', onReady);
+      clip.removeEventListener('loadeddata', onReady);
+      startPlayback();
+    };
+    clip.addEventListener('canplaythrough', onReady);
+    clip.addEventListener('loadeddata', onReady);
+    try {
+      clip.load();
     } catch (e) {
-      playDeskPing(1);
-      return false;
+      /* ignore */
     }
     return true;
   }
@@ -191,7 +240,7 @@
 
   function playAlert(times) {
     unlockAudio();
-    if (playNotifyClip()) {
+    if (chimeUrl && playNotifyClip()) {
       return;
     }
     var count = typeof times === 'number' ? times : 2;

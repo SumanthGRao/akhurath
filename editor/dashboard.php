@@ -567,6 +567,7 @@ require_once AKH_ROOT . '/includes/header.php';
       $deskChimeUrl .= '?v=' . (string) filemtime($deskChimePath);
   }
   ?>
+  <audio id="akh-desk-notify-chime" preload="auto" src="<?php echo h($deskChimeUrl); ?>" hidden playsinline></audio>
   <script>
     window._akhDeskNotify = {
       swUrl: <?php echo json_encode(base_path('sw/desk-notify.js'), JSON_THROW_ON_ERROR); ?>,
