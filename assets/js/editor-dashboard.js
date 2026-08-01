@@ -217,7 +217,7 @@
       return;
     }
 
-    playLoudAlert(typeof opts.beep === 'number' ? opts.beep : 2);
+    playLoudAlert(typeof opts.beep === 'number' ? opts.beep : 1);
     showDeskAlert(opts);
     if (document.hidden && window.AkhPortalPush && typeof window.AkhPortalPush.tryOsNotify === 'function') {
       window.AkhPortalPush.tryOsNotify(title, body, taskId, tag);
