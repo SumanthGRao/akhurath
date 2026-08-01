@@ -467,6 +467,65 @@ function akh_task_client_notice_rows(string $clientUsername): array
 }
 
 /**
+ * Resolve customer display name for desk alerts (WhatsApp task / message sources).
+ *
+ * @param array<string, mixed> $t
+ */
+function akh_task_customer_display_name(array $t): string
+{
+    $name = trim((string) ($t['customer_name'] ?? ''));
+    if ($name !== '') {
+        return $name;
+    }
+
+    require_once __DIR__ . '/whatsapp-tasks.php';
+    require_once __DIR__ . '/whatsapp-messages.php';
+
+    $code = akh_task_normalize_id((string) ($t['id'] ?? ''));
+    if ($code === '') {
+        return '';
+    }
+
+    $wa = akh_wa_task_by_code($code);
+    if (is_array($wa)) {
+        $name = trim((string) ($wa['customer_name'] ?? ''));
+        if ($name !== '') {
+            return $name;
+        }
+    }
+
+    return trim(akh_wa_message_customer_name_for_task($code));
+}
+
+/**
+ * Popup / OS notification headline: customer name when known, else task title.
+ *
+ * @param array<string, mixed> $t
+ */
+function akh_task_notice_popup_title(array $t, string $fallbackId = ''): string
+{
+    $name = akh_task_customer_display_name($t);
+    if ($name !== '') {
+        if (mb_strlen($name) > 100) {
+            return mb_substr($name, 0, 99) . '…';
+        }
+
+        return $name;
+    }
+
+    $title = trim((string) ($t['title'] ?? ''));
+    if ($title !== '') {
+        if (mb_strlen($title) > 100) {
+            return mb_substr($title, 0, 99) . '…';
+        }
+
+        return $title;
+    }
+
+    return $fallbackId;
+}
+
+/**
  * @return list<array{task_id: string, anchor_id: string, title: string, label: string, detail: string}>
  */
 function akh_task_editor_notice_rows(string $editorUsername): array
@@ -488,10 +547,7 @@ function akh_task_editor_notice_rows(string $editorUsername): array
             continue;
         }
         if ($t['editor_feedback_notify'] ?? false) {
-            $title = (string) ($t['title'] ?? $tid);
-            if (mb_strlen($title) > 100) {
-                $title = mb_substr($title, 0, 99) . '…';
-            }
+            $title = akh_task_notice_popup_title($t, $tid);
             $detail = trim((string) ($t['editor_notify_detail'] ?? ''));
             if (mb_strlen($detail) > 220) {
                 $detail = mb_substr($detail, 0, 219) . '…';
@@ -500,6 +556,7 @@ function akh_task_editor_notice_rows(string $editorUsername): array
                 'task_id' => $tid,
                 'anchor_id' => $tid,
                 'title' => $title,
+                'customer_name' => akh_task_customer_display_name($t),
                 'label' => 'Client / feedback',
                 'detail' => $detail,
                 'created_at' => (string) ($t['updated_at'] ?? $t['created_at'] ?? ''),
@@ -514,14 +571,12 @@ function akh_task_editor_notice_rows(string $editorUsername): array
             continue;
         }
         if (akh_task_editor_pool_eligible($t) && !in_array($tid, $seen, true)) {
-            $title = (string) ($t['title'] ?? $tid);
-            if (mb_strlen($title) > 100) {
-                $title = mb_substr($title, 0, 99) . '…';
-            }
+            $title = akh_task_notice_popup_title($t, $tid);
             $out[] = [
                 'task_id' => $tid,
                 'anchor_id' => $tid,
                 'title' => $title,
+                'customer_name' => akh_task_customer_display_name($t),
                 'label' => 'New in pool',
                 'detail' => 'Open the board to claim this task.',
                 'created_at' => (string) ($t['created_at'] ?? $t['updated_at'] ?? ''),
@@ -537,9 +592,17 @@ function akh_task_editor_notice_rows(string $editorUsername): array
             continue;
         }
         $t = akh_task_by_id($taskId);
-        $title = is_array($t) ? (string) ($t['title'] ?? $taskId) : $taskId;
-        if (mb_strlen($title) > 100) {
-            $title = mb_substr($title, 0, 99) . '…';
+        $customerName = trim((string) ($alert['customer_name'] ?? ''));
+        if ($customerName === '' && is_array($t)) {
+            $customerName = akh_task_customer_display_name($t);
+        }
+        if ($customerName !== '') {
+            $title = $customerName;
+            if (mb_strlen($title) > 100) {
+                $title = mb_substr($title, 0, 99) . '…';
+            }
+        } else {
+            $title = is_array($t) ? akh_task_notice_popup_title($t, $taskId) : $taskId;
         }
         $detail = trim((string) ($alert['preview'] ?? ''));
         if (($alert['kind'] ?? '') === 'meeting_request') {
@@ -559,6 +622,7 @@ function akh_task_editor_notice_rows(string $editorUsername): array
             'task_id' => $taskId,
             'anchor_id' => $taskId,
             'title' => $title,
+            'customer_name' => $customerName,
             'label' => akh_dashboard_alert_kind_label($alert),
             'detail' => $detail,
             'kind' => (string) ($alert['kind'] ?? ''),

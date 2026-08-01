@@ -402,12 +402,21 @@
     }
   }
 
+  function noticePopupTitle(notice, fallback) {
+    return String(
+      (notice && (notice.customer_name || notice.client)) ||
+        (notice && notice.title) ||
+        fallback ||
+        ''
+    ).trim();
+  }
+
   function noticePayload(data, fallbackBody) {
     if (data && Array.isArray(data.notices) && data.notices.length > 0) {
       var n = data.notices[0];
       return {
-        taskId: String(n.task_id || n.anchor_id || ''),
-        title: String(n.title || n.task_id || site).trim() || site,
+        taskId: String(n.task_id || n.anchor_id || n.task_code || ''),
+        title: noticePopupTitle(n, n.task_id || n.anchor_id || n.task_code || site) || site,
         label: String(n.label || 'Update').trim(),
         body: String(n.detail || n.label || fallbackBody).trim() || fallbackBody,
         icon: String(n.label || '').toLowerCase().indexOf('message') !== -1 ? '💬' : '🔔',

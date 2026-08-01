@@ -866,6 +866,10 @@ function akh_wa_messages_pending_alerts_grouped(): array
             $preview = mb_substr($preview, 0, 119) . '…';
         }
         $created = (string) ($row['created_at'] ?? '');
+        $customerName = trim((string) ($row['customer_name'] ?? ''));
+        if ($customerName === '') {
+            $customerName = trim(akh_wa_message_customer_name_for_task($code));
+        }
         if (!isset($out[$code])) {
             $out[$code] = [
                 'count' => 0,
@@ -874,6 +878,7 @@ function akh_wa_messages_pending_alerts_grouped(): array
                 'kind' => 'whatsapp_message',
                 'priority' => 60,
                 'created_at' => $created,
+                'customer_name' => $customerName,
             ];
         }
         $out[$code]['count']++;
@@ -881,6 +886,9 @@ function akh_wa_messages_pending_alerts_grouped(): array
             $out[$code]['max_id'] = $id;
             $out[$code]['preview'] = $preview;
             $out[$code]['created_at'] = $created;
+            if ($customerName !== '') {
+                $out[$code]['customer_name'] = $customerName;
+            }
         }
     }
 

@@ -179,6 +179,15 @@
     }, 12000);
   }
 
+  function noticePopupTitle(notice, fallback) {
+    return String(
+      (notice && (notice.customer_name || notice.client)) ||
+        (notice && notice.title) ||
+        fallback ||
+        'Update'
+    ).trim();
+  }
+
   function notifyActivity(opts) {
     opts = opts || {};
     var taskId = normId(opts.taskId || '');
@@ -249,7 +258,7 @@
       var taskId = normId(n.task_id || n.anchor_id || '');
       notifyActivity({
         taskId: taskId,
-        title: n.title || taskId || 'Editor desk',
+        title: noticePopupTitle(n, taskId || 'Editor desk'),
         label: n.label || 'Update',
         body: n.detail || n.preview || n.label || 'New activity on your task board.',
         icon: String(n.label || '').toLowerCase().indexOf('message') !== -1 ? '💬' : '🔔',
@@ -292,7 +301,7 @@
       if (unread > prevUnread && unread > 0) {
         notifyActivity({
           taskId: id,
-          title: row.title || id,
+          title: row.client || row.customer_name || row.title || id,
           label: 'New message',
           body: unread === 1 ? '1 unread WhatsApp message' : unread + ' unread WhatsApp messages',
           icon: '💬',

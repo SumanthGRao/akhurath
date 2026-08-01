@@ -358,6 +358,15 @@
     alertsReady = true;
   }
 
+  function waNoticeTitle(notice, fallback) {
+    return String(
+      (notice && notice.customer_name) ||
+        (notice && notice.title) ||
+        fallback ||
+        'Task update'
+    ).trim();
+  }
+
   function notifyWaActivity(opts) {
     opts = opts || {};
     var taskCode = String(opts.taskCode || opts.taskId || '').trim();
@@ -406,7 +415,7 @@
       var kind = String(n.kind || '');
       notifyWaActivity({
         taskCode: code,
-        title: code || 'Task update',
+        title: waNoticeTitle(n, code || 'Task update'),
         label: n.label || 'Update',
         body: n.preview || n.label || 'New update on the WhatsApp board.',
         icon: kind === 'whatsapp_message' ? '💬' : kind.indexOf('meeting_') === 0 ? '📅' : '🔔',
