@@ -9,7 +9,7 @@
     return;
   }
 
-  var POLL_MS = cfg.mode === 'editor' ? 8000 : 14000;
+  var POLL_MS = cfg.mode === 'editor' ? 5000 : 14000;
   var FIRST_POLL_MS = cfg.mode === 'editor' ? 800 : 2200;
   var site = typeof cfg.siteName === 'string' && cfg.siteName !== '' ? cfg.siteName : 'Studio';
   var pollUrl = typeof cfg.pollUrl === 'string' && cfg.pollUrl !== '' ? cfg.pollUrl : window.location.pathname;
@@ -20,11 +20,17 @@
   var lastSig = typeof cfg.sig === 'string' ? cfg.sig : '';
   var lastNotifySig = typeof cfg.notify_sig === 'string' ? cfg.notify_sig : '';
   var pollReady = false;
+  var pollInFlight = false;
+  var pollTimer = null;
+  var lastPollAt = 0;
   var baseTitle = document.title;
   var hiddenBeepAudio = null;
+  var keepaliveAudio = null;
+  var SILENT_WAV =
+    'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
 
   function deskTabInactive() {
-    return document.hidden || !document.hasFocus();
+    return document.hidden;
   }
 
   function postPoll() {
@@ -50,9 +56,7 @@
   function unlockHiddenBeep() {
     if (hiddenBeepAudio) return;
     try {
-      hiddenBeepAudio = new Audio(
-        'data:audio/wav;base64,UklGRlIAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQ4AAAA='
-      );
+      hiddenBeepAudio = new Audio(SILENT_WAV);
       hiddenBeepAudio.volume = 0.01;
       hiddenBeepAudio.play().then(function () {
         hiddenBeepAudio.pause();
@@ -62,6 +66,28 @@
     } catch (e) {
       hiddenBeepAudio = null;
     }
+  }
+
+  /** Loop silent audio so Chrome keeps editor desk timers + fetch polling active while minimized. */
+  function startPollKeepalive() {
+    if (cfg.mode !== 'editor' || keepaliveAudio) return;
+    try {
+      keepaliveAudio = new Audio(SILENT_WAV);
+      keepaliveAudio.loop = true;
+      keepaliveAudio.volume = 0.001;
+      keepaliveAudio.setAttribute('playsinline', '');
+      var p = keepaliveAudio.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(function () {});
+      }
+    } catch (e) {
+      keepaliveAudio = null;
+    }
+  }
+
+  function unlockDeskAudio() {
+    unlockHiddenBeep();
+    startPollKeepalive();
   }
 
   function playHiddenBeep(times) {
@@ -136,7 +162,7 @@
           icon: opts.icon || '🔔',
         });
       }
-    } else if (inactive && !osSent) {
+    } else if (!osSent) {
       playHiddenBeep(typeof opts.beep === 'number' ? opts.beep : 2);
     }
   }
@@ -257,19 +283,21 @@
     wrap.setAttribute('role', 'region');
     wrap.setAttribute('aria-label', 'Desktop alerts');
     wrap.innerHTML =
-      '<p class="portal-push-prompt__text">Get a system-style alert when something changes here (works while this tab is open or in the background).</p>' +
-      '<button type="button" class="btn btn--ghost btn--sm portal-push-prompt__btn">Enable alerts</button>';
+      '<p class="portal-push-prompt__text"><strong>Enable desktop alerts</strong> so you never miss client messages, pool tasks, or meetings — even when this tab is minimized or another window is on top.</p>' +
+      '<button type="button" class="btn btn--primary btn--sm portal-push-prompt__btn">Enable alerts</button>';
     var btn = wrap.querySelector('button');
     btn.addEventListener('click', function () {
-      unlockHiddenBeep();
+      unlockDeskAudio();
       Notification.requestPermission().then(function (perm) {
         if (perm === 'granted') {
-          tryOsNotify(site, 'You will get alerts for new activity on this page.', '', 'akh-portal-on');
+          tryOsNotify(site, 'Editor desk alerts are on. You will be notified even when this tab is in the background.', '', 'akh-portal-on');
           wrap.remove();
-        } else {
-          wrap.querySelector('.portal-push-prompt__text').textContent =
-            'Alerts stay off. You can turn them on later in the browser site settings for this URL.';
-          btn.remove();
+        } else if (perm === 'denied') {
+          wrap.querySelector('.portal-push-prompt__text').innerHTML =
+            '<strong>Desktop alerts are blocked.</strong> Allow notifications for this site in your browser settings to get alerts while the tab is minimized.';
+          btn.textContent = 'Keep polling active';
+          btn.classList.remove('btn--primary');
+          btn.classList.add('btn--ghost');
         }
       });
     });
@@ -322,6 +350,8 @@
 
     var b = typeof data.bell === 'number' ? data.bell : lastBell;
     var p = typeof data.pool === 'number' ? data.pool : lastPool;
+    var pollGap = lastPollAt > 0 ? Date.now() - lastPollAt : 0;
+    var resumed = pollGap > 15000;
 
     if (pollReady && cfg.mode !== 'editor') {
       if (cfg.mode === 'client' && b > lastBell) {
@@ -346,7 +376,8 @@
         pollReady: pollReady,
         bellUp: b > lastBell,
         poolUp: p > lastPool,
-        notifyChanged: notifyChanged,
+        notifyChanged: notifyChanged || (resumed && notifySig !== '' && notifySig !== lastNotifySig),
+        resumed: resumed,
       });
     } else if (sigChanged) {
       window.location.reload();
@@ -363,7 +394,23 @@
     lastPool = p;
   }
 
+  function schedulePoll(delay) {
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+    }
+    pollTimer = setTimeout(function () {
+      pollTimer = null;
+      pollTick();
+    }, Math.max(400, delay));
+  }
+
   function pollTick() {
+    if (pollInFlight) {
+      schedulePoll(600);
+      return;
+    }
+    pollInFlight = true;
+    var started = Date.now();
     if (window.AkhEditorDesk && typeof window.AkhEditorDesk.setLiveSyncing === 'function') {
       window.AkhEditorDesk.setLiveSyncing(true);
     }
@@ -371,24 +418,46 @@
       .then(onPollData)
       .catch(function () {})
       .finally(function () {
+        pollInFlight = false;
+        lastPollAt = Date.now();
         if (window.AkhEditorDesk && typeof window.AkhEditorDesk.setLiveSyncing === 'function') {
           window.AkhEditorDesk.setLiveSyncing(false);
         }
+        var elapsed = Date.now() - started;
+        schedulePoll(Math.max(1200, POLL_MS - elapsed));
       });
+  }
+
+  function forcePoll() {
+    if (pollInFlight) return;
+    pollTick();
   }
 
   function boot() {
     mountPermissionPrompt();
     setTabBellBadge(lastBell);
-    document.addEventListener('pointerdown', unlockHiddenBeep, { once: true });
-    document.addEventListener('keydown', unlockHiddenBeep, { once: true });
-    setTimeout(pollTick, FIRST_POLL_MS);
-    setInterval(pollTick, POLL_MS);
+    document.addEventListener('pointerdown', unlockDeskAudio, { once: true });
+    document.addEventListener('keydown', unlockDeskAudio, { once: true });
+    if (cfg.mode === 'editor' && Notification.permission === 'granted') {
+      unlockDeskAudio();
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) {
+        startPollKeepalive();
+        return;
+      }
+      forcePoll();
+    });
+    window.addEventListener('focus', forcePoll);
+    window.addEventListener('pageshow', forcePoll);
+    schedulePoll(FIRST_POLL_MS);
   }
 
   window.AkhPortalPush = window.AkhPortalPush || {};
   window.AkhPortalPush.notify = notifyDeskActivity;
   window.AkhPortalPush.tryOsNotify = tryOsNotify;
+  window.AkhPortalPush.forcePoll = forcePoll;
+  window.AkhPortalPush.startKeepalive = startPollKeepalive;
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot);

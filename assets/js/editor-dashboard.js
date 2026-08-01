@@ -195,7 +195,7 @@
       (typeof data.pool === 'number' && data.pool > (window._akhPortalPush && window._akhPortalPush.pool ? window._akhPortalPush.pool : 0));
     var ready = meta.pollReady === true || deskAlertReady;
 
-    if (ready && (bellUp || notifyChanged)) {
+    if (ready && (bellUp || notifyChanged || (meta.resumed === true && poolUp))) {
       var n = noticeFromPoll(data);
       notifyActivity({
         taskId: n ? n.task_id || n.anchor_id : '',
@@ -855,7 +855,7 @@
     var live = qs('#edesk-live', root);
     if (live) live.classList.add('edesk-live--active');
     threadPollInterval = setInterval(function () {
-      if (document.hidden || !activeTaskId) return;
+      if (!activeTaskId) return;
       pollThread(activeTaskId, false);
     }, THREAD_POLL_MS);
   }
@@ -1414,8 +1414,17 @@
   markSyncSuccess(false);
 
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) return;
+    if (document.hidden) {
+      if (window.AkhPortalPush && typeof window.AkhPortalPush.startKeepalive === 'function') {
+        window.AkhPortalPush.startKeepalive();
+      }
+      return;
+    }
     if (activeTaskId) pollThread(activeTaskId, false);
+    if (window.AkhPortalPush && typeof window.AkhPortalPush.forcePoll === 'function') {
+      window.AkhPortalPush.forcePoll();
+      return;
+    }
     if (!window._akhPortalPush || !window._akhPortalPush.mode) {
       postAjax('poll', {}).then(handlePoll).catch(function () {});
     }
