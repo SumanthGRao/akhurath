@@ -560,12 +560,18 @@ require_once AKH_ROOT . '/includes/header.php';
   $akhPushVer = is_file($akhPushJs) ? (string) filemtime($akhPushJs) : '1';
   $deskAlertJs = AKH_ROOT . '/assets/js/desk-alert.js';
   $deskAlertVer = is_file($deskAlertJs) ? (string) filemtime($deskAlertJs) : '1';
+  $deskChimeWav = AKH_ROOT . '/assets/audio/desk-notify.wav';
+  $deskChimeUrl = akh_absolute_url('assets/audio/desk-notify.wav');
+  if (is_file($deskChimeWav)) {
+      $deskChimeUrl .= '?v=' . (string) filemtime($deskChimeWav);
+  }
   ?>
   <script>
     window._akhDeskNotify = {
       swUrl: <?php echo json_encode(base_path('sw/desk-notify.js'), JSON_THROW_ON_ERROR); ?>,
       swScope: <?php echo json_encode(base_path('sw/'), JSON_THROW_ON_ERROR); ?>,
-      icon: <?php echo json_encode(akh_absolute_url('assets/images/brand/akhurath-favicon-192.png'), JSON_THROW_ON_ERROR); ?>
+      icon: <?php echo json_encode(akh_absolute_url('assets/images/brand/akhurath-favicon-192.png'), JSON_THROW_ON_ERROR); ?>,
+      chimeUrl: <?php echo json_encode($deskChimeUrl, JSON_THROW_ON_ERROR); ?>
     };
     window._akhPortalPush = {
       mode: 'editor',

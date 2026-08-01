@@ -7,6 +7,8 @@
   var audioCtx = null;
   var silentLoop = null;
   var unlocked = false;
+  var clipPrimed = false;
+  var chimeUrl = '';
   var swRegistration = null;
   var notifyIcon = '';
   var notifySwUrl = '';
@@ -36,6 +38,9 @@
     }
     if (typeof cfg.swScope === 'string' && cfg.swScope !== '') {
       notifySwScope = cfg.swScope;
+    }
+    if (typeof cfg.chimeUrl === 'string' && cfg.chimeUrl !== '') {
+      chimeUrl = cfg.chimeUrl;
     }
   }
 
@@ -74,7 +79,8 @@
   }
 
   function unlockAudio() {
-    if (unlocked && audioCtx && audioCtx.state === 'running') {
+    readBootConfig();
+    if (unlocked && audioCtx && audioCtx.state === 'running' && (!chimeUrl || clipPrimed)) {
       return;
     }
     unlocked = true;
@@ -89,8 +95,63 @@
     } catch (e) {
       /* ignore */
     }
+    primeNotifyClip();
     startKeepalive();
     initServiceWorker();
+  }
+
+  function primeNotifyClip() {
+    if (!chimeUrl || clipPrimed) {
+      return;
+    }
+    try {
+      var probe = new Audio(chimeUrl);
+      probe.preload = 'auto';
+      probe.volume = 0.001;
+      probe.setAttribute('playsinline', '');
+      var p = probe.play();
+      if (!p || typeof p.then !== 'function') {
+        clipPrimed = true;
+        return;
+      }
+      p.then(function () {
+        probe.pause();
+        probe.currentTime = 0;
+        clipPrimed = true;
+      }).catch(function () {
+        clipPrimed = false;
+      });
+    } catch (e) {
+      clipPrimed = false;
+    }
+  }
+
+  function playNotifyClip(times) {
+    if (!chimeUrl) {
+      return false;
+    }
+    var count = typeof times === 'number' && times > 1 ? Math.min(times, 2) : 1;
+    for (var i = 0; i < count; i += 1) {
+      (function (idx) {
+        setTimeout(function () {
+          try {
+            var clip = new Audio(chimeUrl);
+            clip.preload = 'auto';
+            clip.volume = idx > 0 ? 0.42 : 0.5;
+            clip.setAttribute('playsinline', '');
+            var p = clip.play();
+            if (p && typeof p.catch === 'function') {
+              p.catch(function () {
+                playDeskPing(1);
+              });
+            }
+          } catch (e) {
+            playDeskPing(1);
+          }
+        }, idx * 360);
+      })(i);
+    }
+    return true;
   }
 
   function startKeepalive() {
@@ -111,7 +172,7 @@
     }
   }
 
-  /** Desk alert tone from build c50747b (audible square-wave ping). */
+  /** Web Audio fallback when the notify clip cannot play. */
   function playDeskPing(times) {
     var count = typeof times === 'number' ? times : 2;
     var freqs = [880, 1175, 988, 1318];
@@ -136,6 +197,9 @@
   function playAlert(times) {
     unlockAudio();
     var count = typeof times === 'number' ? times : 2;
+    if (playNotifyClip(count)) {
+      return;
+    }
     try {
       if (!audioCtx) {
         return;

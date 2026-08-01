@@ -43,6 +43,11 @@ $waCssVer = is_file(AKH_ROOT . '/assets/css/whatsapp-dashboard.css') ? (string) 
 $waJsVer = is_file(AKH_ROOT . '/assets/js/whatsapp-dashboard.js') ? (string) filemtime(AKH_ROOT . '/assets/js/whatsapp-dashboard.js') : '';
 $deskAlertJs = AKH_ROOT . '/assets/js/desk-alert.js';
 $deskAlertVer = is_file($deskAlertJs) ? (string) filemtime($deskAlertJs) : '1';
+$deskChimeWav = AKH_ROOT . '/assets/audio/desk-notify.wav';
+$deskChimeUrl = akh_absolute_url('assets/audio/desk-notify.wav');
+if (is_file($deskChimeWav)) {
+    $deskChimeUrl .= '?v=' . (string) filemtime($deskChimeWav);
+}
 $akhPushJs = AKH_ROOT . '/assets/js/portal-push-notify.js';
 $akhPushVer = is_file($akhPushJs) ? (string) filemtime($akhPushJs) : '1';
 
@@ -409,7 +414,8 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
     window._akhDeskNotify = {
       swUrl: <?php echo json_encode(base_path('sw/desk-notify.js'), JSON_THROW_ON_ERROR); ?>,
       swScope: <?php echo json_encode(base_path('sw/'), JSON_THROW_ON_ERROR); ?>,
-      icon: <?php echo json_encode(akh_absolute_url('assets/images/brand/akhurath-favicon-192.png'), JSON_THROW_ON_ERROR); ?>
+      icon: <?php echo json_encode(akh_absolute_url('assets/images/brand/akhurath-favicon-192.png'), JSON_THROW_ON_ERROR); ?>,
+      chimeUrl: <?php echo json_encode($deskChimeUrl, JSON_THROW_ON_ERROR); ?>
     };
   </script>
   <script src="<?php echo h(base_path('assets/js/desk-alert.js')); ?>?v=<?php echo h($deskAlertVer); ?>"></script>
