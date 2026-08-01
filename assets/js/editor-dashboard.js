@@ -104,32 +104,9 @@
       window.DeskAlert.play(times);
       return;
     }
-    var count = typeof times === 'number' ? times : 2;
-    try {
-      var Ctx = window.AudioContext || window.webkitAudioContext;
-      if (!Ctx) return;
-      var ctx = new Ctx();
-      var freqs = [880, 1175, 988, 1318];
-      for (var i = 0; i < count; i += 1) {
-        (function (idx) {
-          var o = ctx.createOscillator();
-          var g = ctx.createGain();
-          o.type = 'square';
-          o.frequency.value = freqs[idx % freqs.length];
-          var t0 = ctx.currentTime + idx * 0.24;
-          g.gain.setValueAtTime(0.0001, t0);
-          g.gain.exponentialRampToValueAtTime(0.32, t0 + 0.03);
-          g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
-          o.connect(g);
-          g.connect(ctx.destination);
-          o.start(t0);
-          o.stop(t0 + 0.24);
-        })(i);
-      }
-      setTimeout(function () {
-        ctx.close();
-      }, 1200);
-    } catch (e) {}
+    if (window.DeskAlert && typeof window.DeskAlert.unlock === 'function') {
+      window.DeskAlert.unlock();
+    }
   }
 
   function showDeskAlert(opts) {
@@ -215,7 +192,7 @@
         label: label,
         body: body,
         icon: opts.icon || '🔔',
-        beep: typeof opts.beep === 'number' ? opts.beep : 2,
+        beep: typeof opts.beep === 'number' ? opts.beep : 1,
         tag: tag,
         url: ticketUrl,
         onClick: onClick,
@@ -262,7 +239,7 @@
         label: n.label || 'Update',
         body: n.detail || n.preview || n.label || 'New activity on your task board.',
         icon: String(n.label || '').toLowerCase().indexOf('message') !== -1 ? '💬' : '🔔',
-        beep: 2,
+        beep: 1,
         tag: 'akh-editor-notice-' + fp,
       });
     });
@@ -305,7 +282,7 @@
           label: 'New message',
           body: unread === 1 ? '1 unread WhatsApp message' : unread + ' unread WhatsApp messages',
           icon: '💬',
-          beep: 2,
+          beep: 1,
           tag: 'akh-editor-msg-' + id + '-' + unread,
         });
       }

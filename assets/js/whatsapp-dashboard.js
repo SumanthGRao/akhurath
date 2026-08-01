@@ -396,7 +396,7 @@
         label: opts.label || 'Update',
         body: opts.body || 'New activity on the WhatsApp board.',
         icon: opts.icon || '🔔',
-        beep: typeof opts.beep === 'number' ? opts.beep : 2,
+        beep: typeof opts.beep === 'number' ? opts.beep : 1,
         tag: opts.tag || 'wa-alert-' + taskCode,
         url: window.location.href,
         onClick: onClick,
@@ -419,7 +419,7 @@
         label: n.label || 'Update',
         body: n.preview || n.label || 'New update on the WhatsApp board.',
         icon: kind === 'whatsapp_message' ? '💬' : kind.indexOf('meeting_') === 0 ? '📅' : '🔔',
-        beep: 2,
+        beep: 1,
         tag: 'wa-notice-' + fp,
       });
     });
@@ -670,7 +670,7 @@
             label: 'Tasks',
             body: 'A new task appeared on the board.',
             icon: '📥',
-            beep: 2,
+            beep: 1,
             tag: 'wa-new-task',
           });
         }

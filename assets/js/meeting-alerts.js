@@ -48,6 +48,10 @@
   }
 
   function playChime(times) {
+    if (global.DeskAlert && typeof global.DeskAlert.play === 'function') {
+      global.DeskAlert.play(times);
+      return;
+    }
     var n = typeof times === 'number' ? times : 1;
     var i = 0;
     function ping() {

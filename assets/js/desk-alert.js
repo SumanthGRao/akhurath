@@ -111,33 +111,82 @@
     }
   }
 
-  function playAlert(times) {
+  function ensureAudioReady() {
     unlockAudio();
-    var count = typeof times === 'number' ? times : 2;
-    try {
-      if (!audioCtx) {
+    if (!audioCtx) {
+      return Promise.resolve(false);
+    }
+    if (audioCtx.state === 'suspended') {
+      return audioCtx.resume().then(function () {
+        return audioCtx.state === 'running';
+      }).catch(function () {
+        return false;
+      });
+    }
+    return Promise.resolve(audioCtx.state === 'running');
+  }
+
+  /**
+   * Soft two-note chime (chat-style): subtle sine tones with a warm low-pass.
+   * @param {number} times 1 = single chime, 2+ = gentle repeat for urgent alerts
+   */
+  function playChatChime(times) {
+    var repeats = typeof times === 'number' && times > 1 ? Math.min(times, 2) : 1;
+    ensureAudioReady().then(function (ready) {
+      if (!ready || !audioCtx) {
         return;
       }
-      var freqs = [880, 1175, 988, 1318];
-      for (var i = 0; i < count; i += 1) {
-        (function (idx) {
-          var o = audioCtx.createOscillator();
-          var g = audioCtx.createGain();
-          o.type = 'square';
-          o.frequency.value = freqs[idx % freqs.length];
-          var t0 = audioCtx.currentTime + idx * 0.24;
-          g.gain.setValueAtTime(0.0001, t0);
-          g.gain.exponentialRampToValueAtTime(0.34, t0 + 0.03);
-          g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
-          o.connect(g);
-          g.connect(audioCtx.destination);
-          o.start(t0);
-          o.stop(t0 + 0.24);
-        })(i);
+      for (var r = 0; r < repeats; r += 1) {
+        (function (repeatIdx) {
+          var base = audioCtx.currentTime + repeatIdx * 0.42;
+          var notes = [
+            { freq: 523.25, start: 0, peak: 0.13, duration: 0.2 },
+            { freq: 659.25, start: 0.1, peak: 0.11, duration: 0.26 },
+          ];
+          var master = audioCtx.createGain();
+          master.gain.value = repeatIdx > 0 ? 0.82 : 1;
+          master.connect(audioCtx.destination);
+
+          var filter = audioCtx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.value = 2200;
+          filter.Q.value = 0.55;
+          filter.connect(master);
+
+          notes.forEach(function (note) {
+            var t0 = base + note.start;
+            var osc = audioCtx.createOscillator();
+            var harmonic = audioCtx.createOscillator();
+            var tone = audioCtx.createGain();
+            var shimmer = audioCtx.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.value = note.freq;
+            harmonic.type = 'triangle';
+            harmonic.frequency.value = note.freq * 2;
+            shimmer.gain.value = 0.07;
+
+            tone.gain.setValueAtTime(0.0001, t0);
+            tone.gain.exponentialRampToValueAtTime(note.peak, t0 + 0.02);
+            tone.gain.exponentialRampToValueAtTime(0.0001, t0 + note.duration);
+
+            osc.connect(tone);
+            harmonic.connect(shimmer);
+            shimmer.connect(tone);
+            tone.connect(filter);
+
+            osc.start(t0);
+            harmonic.start(t0);
+            osc.stop(t0 + note.duration + 0.04);
+            harmonic.stop(t0 + note.duration + 0.04);
+          });
+        })(r);
       }
-    } catch (e) {
-      /* ignore */
-    }
+    });
+  }
+
+  function playAlert(times) {
+    playChatChime(times);
   }
 
   function postSwNotify(title, body, tag, url, taskId) {
@@ -282,7 +331,7 @@
     var eventTag = uniqueNotifyTag(baseTag);
     var hidden = !!global.document.hidden;
 
-    playAlert(typeof opts.beep === 'number' ? opts.beep : 2);
+    playAlert(typeof opts.beep === 'number' ? opts.beep : 1);
 
     if (!hidden || opts.forcePopup) {
       showPopup(opts.host || document.querySelector('.desk-alert-host'), opts);
@@ -337,6 +386,11 @@
     initServiceWorker: initServiceWorker,
   };
 
-  document.addEventListener('pointerdown', unlockAudio, { once: true, capture: true });
-  document.addEventListener('keydown', unlockAudio, { once: true, capture: true });
+  document.addEventListener('pointerdown', unlockAudio, { capture: true });
+  document.addEventListener('keydown', unlockAudio, { capture: true });
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) {
+      unlockAudio();
+    }
+  });
 })(window);

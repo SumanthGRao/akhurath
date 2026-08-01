@@ -92,7 +92,10 @@
   }
 
   function playHiddenBeep(times) {
-    var count = typeof times === 'number' ? times : 2;
+    if (window.DeskAlert && typeof window.DeskAlert.play === 'function') {
+      window.DeskAlert.play(typeof times === 'number' ? times : 1);
+      return;
+    }
     if (!hiddenBeepAudio) return;
     var i = 0;
     function ping() {
@@ -102,7 +105,7 @@
         hiddenBeepAudio.play().catch(function () {});
       } catch (e) {}
       i += 1;
-      if (i < count) setTimeout(ping, 320);
+      if (i < (typeof times === 'number' ? times : 1)) setTimeout(ping, 320);
     }
     ping();
   }
@@ -176,7 +179,7 @@
         label: label,
         body: body,
         icon: opts.icon || '🔔',
-        beep: typeof opts.beep === 'number' ? opts.beep : 2,
+        beep: typeof opts.beep === 'number' ? opts.beep : 1,
         tag: tag,
         url: taskId ? buildTicketHref(taskId) : window.location.href,
         onClick: opts.onClick,
@@ -189,7 +192,7 @@
 
     if (!inactive && window.AkhEditorDesk) {
       if (typeof window.AkhEditorDesk.playLoudAlert === 'function') {
-        window.AkhEditorDesk.playLoudAlert(typeof opts.beep === 'number' ? opts.beep : 2);
+        window.AkhEditorDesk.playLoudAlert(typeof opts.beep === 'number' ? opts.beep : 1);
       }
       if (typeof window.AkhEditorDesk.showDeskAlert === 'function') {
         window.AkhEditorDesk.showDeskAlert({
@@ -201,7 +204,7 @@
         });
       }
     } else if (!osSent) {
-      playHiddenBeep(typeof opts.beep === 'number' ? opts.beep : 2);
+      playHiddenBeep(typeof opts.beep === 'number' ? opts.beep : 1);
     }
   }
 
@@ -367,6 +370,9 @@
       if (window.DeskAlert && typeof window.DeskAlert.requestPermission === 'function') {
         window.DeskAlert.requestPermission(function (nextPerm) {
           if (nextPerm === 'granted') {
+            if (window.DeskAlert && typeof window.DeskAlert.play === 'function') {
+              window.DeskAlert.play(1);
+            }
             tryOsNotify(
               site,
               'Browser notifications are on. You will be alerted even when this tab is in the background.',
@@ -383,6 +389,9 @@
       }
       Notification.requestPermission().then(function (nextPerm) {
         if (nextPerm === 'granted') {
+          if (window.DeskAlert && typeof window.DeskAlert.play === 'function') {
+            window.DeskAlert.play(1);
+          }
           tryOsNotify(site, 'Browser notifications are on.', '', 'akh-portal-on');
           wrap.remove();
         } else {
