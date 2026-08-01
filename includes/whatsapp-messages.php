@@ -662,9 +662,6 @@ function akh_wa_messages_list_for_task(string $taskCode, int $limit = 300): arra
                 continue;
             }
             $out[] = $row;
-            if (count($out) >= $limit) {
-                break;
-            }
         }
 
         usort($out, static function (array $a, array $b): int {
@@ -675,6 +672,10 @@ function akh_wa_messages_list_for_task(string $taskCode, int $limit = 300): arra
 
             return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
         });
+
+        if (count($out) > $limit) {
+            $out = array_slice($out, -$limit);
+        }
 
         return $out;
     }
@@ -695,7 +696,7 @@ function akh_wa_messages_list_for_task(string $taskCode, int $limit = 300): arra
         $sql = "SELECT {$cols}
                 FROM whatsapp_messages
                 WHERE {$match['sql']}
-                ORDER BY created_at ASC, id ASC
+                ORDER BY created_at DESC, id DESC
                 LIMIT {$limit}";
         $st = akh_db()->prepare($sql);
         $st->execute($match['params']);
@@ -706,7 +707,7 @@ function akh_wa_messages_list_for_task(string $taskCode, int $limit = 300): arra
             }
         }
 
-        return $out;
+        return array_reverse($out);
     } catch (Throwable $e) {
         error_log('akh_wa_messages_list_for_task: ' . $e->getMessage());
 
@@ -1288,6 +1289,7 @@ function akh_wa_messages_to_conversation_rows(array $waRows): array
             'who' => $who,
             'text' => $text,
             'source' => 'whatsapp',
+            'wa_id' => (int) ($row['id'] ?? 0),
         ];
         if ($media['url'] !== '') {
             $entry['media_url'] = $media['url'];
@@ -1336,6 +1338,11 @@ function akh_task_merged_conversation_list(array $t): array
         $cmp = strcmp((string) ($a['at'] ?? ''), (string) ($b['at'] ?? ''));
         if ($cmp !== 0) {
             return $cmp;
+        }
+        $idA = (int) ($a['wa_id'] ?? 0);
+        $idB = (int) ($b['wa_id'] ?? 0);
+        if ($idA !== $idB) {
+            return $idA <=> $idB;
         }
 
         return strcmp((string) ($a['source'] ?? ''), (string) ($b['source'] ?? ''));

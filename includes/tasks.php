@@ -502,6 +502,8 @@ function akh_task_editor_notice_rows(string $editorUsername): array
                 'title' => $title,
                 'label' => 'Client / feedback',
                 'detail' => $detail,
+                'created_at' => (string) ($t['updated_at'] ?? $t['created_at'] ?? ''),
+                'priority' => 50,
             ];
             $seenIds[] = $tid;
         }
@@ -522,6 +524,8 @@ function akh_task_editor_notice_rows(string $editorUsername): array
                 'title' => $title,
                 'label' => 'New in pool',
                 'detail' => 'Open the board to claim this task.',
+                'created_at' => (string) ($t['created_at'] ?? $t['updated_at'] ?? ''),
+                'priority' => 40,
             ];
             $seenIds[] = $tid;
         }
@@ -557,9 +561,27 @@ function akh_task_editor_notice_rows(string $editorUsername): array
             'title' => $title,
             'label' => akh_dashboard_alert_kind_label($alert),
             'detail' => $detail,
+            'kind' => (string) ($alert['kind'] ?? ''),
+            'created_at' => (string) ($alert['created_at'] ?? ''),
+            'max_id' => (int) ($alert['max_id'] ?? 0),
+            'priority' => (int) ($alert['priority'] ?? akh_dashboard_alert_priority((string) ($alert['kind'] ?? ''))),
         ];
         $seenIds[] = $taskId;
     }
+
+    usort($out, static function (array $a, array $b): int {
+        $pa = (int) ($a['priority'] ?? 0);
+        $pb = (int) ($b['priority'] ?? 0);
+        if ($pa !== $pb) {
+            return $pb <=> $pa;
+        }
+        $cmp = strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? ''));
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+
+        return ((int) ($b['max_id'] ?? 0)) <=> ((int) ($a['max_id'] ?? 0));
+    });
 
     return $out;
 }

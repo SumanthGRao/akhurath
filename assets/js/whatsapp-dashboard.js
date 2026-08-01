@@ -346,6 +346,7 @@
       n.label || '',
       n.preview || '',
       n.created_at || '',
+      n.max_id || n.event_id || '',
     ].join('|');
   }
 
@@ -849,7 +850,9 @@
   function mountChatHtml(html) {
     if (!els.chatScroll) return;
     els.chatScroll.innerHTML = html || '<p class="wa-chat-drawer__empty">No messages yet.</p>';
-    els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
+    requestAnimationFrame(function () {
+      els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
+    });
   }
 
   function pollChatThread() {

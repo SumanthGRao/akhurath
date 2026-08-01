@@ -11,6 +11,18 @@
   var notifyIcon = '';
   var notifySwUrl = '';
   var notifySwScope = '/sw/';
+  var popupSeq = 0;
+  var MAX_POPUPS = 6;
+
+  function uniqueNotifyTag(base) {
+    return (
+      String(base || 'akh-desk-alert') +
+      '-' +
+      Date.now().toString(36) +
+      '-' +
+      Math.random().toString(36).slice(2, 8)
+    );
+  }
   var SILENT_WAV =
     'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
 
@@ -203,9 +215,15 @@
     if (!host) {
       return null;
     }
+    var existing = host.querySelectorAll('.desk-alert-popup');
+    if (existing.length >= MAX_POPUPS) {
+      existing[0].remove();
+    }
     var el = document.createElement('button');
     el.type = 'button';
     el.className = 'edesk-chat-alert desk-alert-popup';
+    popupSeq += 1;
+    el.style.zIndex = String(120 + popupSeq);
     var title = String(opts.title || opts.taskId || 'Update').trim();
     var body = String(opts.body || '').trim();
     var label = String(opts.label || 'Notification').trim();
@@ -236,7 +254,9 @@
     });
     host.appendChild(el);
     requestAnimationFrame(function () {
-      el.classList.add('edesk-chat-alert--in');
+      requestAnimationFrame(function () {
+        el.classList.add('edesk-chat-alert--in');
+      });
     });
     setTimeout(function () {
       if (!el.parentNode) {
@@ -258,17 +278,18 @@
     var title = String(opts.title || opts.taskId || 'Update').trim();
     var body = String(opts.body || 'New activity on your board.').trim();
     var label = String(opts.label || 'Update').trim();
-    var tag = String(opts.tag || 'akh-desk-' + (opts.taskId || label));
+    var baseTag = String(opts.tag || 'akh-desk-' + (opts.taskId || label));
+    var eventTag = uniqueNotifyTag(baseTag);
     var hidden = !!global.document.hidden;
 
     playAlert(typeof opts.beep === 'number' ? opts.beep : 2);
 
-    if (!hidden) {
+    if (!hidden || opts.forcePopup) {
       showPopup(opts.host || document.querySelector('.desk-alert-host'), opts);
     }
 
     if (permissionState() === 'granted') {
-      tryOsNotify(title, body, tag, opts.onClick, opts.taskId, opts.url);
+      tryOsNotify(title, body, eventTag, opts.onClick, opts.taskId, opts.url);
     }
   }
 

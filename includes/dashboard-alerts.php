@@ -203,6 +203,7 @@ function akh_dashboard_notice_rows(array $alerts): array
             'requested_time_text' => (string) ($alert['requested_time_text'] ?? ''),
             'priority' => (int) ($alert['priority'] ?? akh_dashboard_alert_priority((string) ($alert['kind'] ?? ''))),
             'created_at' => (string) ($alert['created_at'] ?? ''),
+            'max_id' => (int) ($alert['max_id'] ?? 0),
         ];
     }
 
@@ -217,7 +218,7 @@ function akh_dashboard_notice_rows(array $alerts): array
             return $cmp;
         }
 
-        return strcmp((string) ($b['task_code'] ?? ''), (string) ($a['task_code'] ?? ''));
+        return ((int) ($b['max_id'] ?? 0)) <=> ((int) ($a['max_id'] ?? 0));
     });
 
     return $out;

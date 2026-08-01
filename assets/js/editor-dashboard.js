@@ -228,6 +228,7 @@
       n.label || '',
       n.detail || n.preview || '',
       n.kind || '',
+      n.event_id || n.max_id || n.created_at || '',
     ].join('|');
   }
 
@@ -296,7 +297,7 @@
           body: unread === 1 ? '1 unread WhatsApp message' : unread + ' unread WhatsApp messages',
           icon: '💬',
           beep: 2,
-          tag: 'akh-editor-msg-' + id,
+          tag: 'akh-editor-msg-' + id + '-' + unread,
         });
       }
     });
@@ -869,13 +870,16 @@
     lastThreadSigByTask[taskId] = sig;
   }
 
-  function updateThreadScroll(panel, html) {
+  function updateThreadScroll(panel, html, opts) {
+    opts = opts || {};
     var scroll = panel.querySelector('.ticket__thread-scroll');
     if (!scroll || typeof html !== 'string') return false;
     var nearBottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 96;
     scroll.innerHTML = html;
-    if (nearBottom) {
-      scroll.scrollTop = scroll.scrollHeight;
+    if (opts.forceBottom || nearBottom) {
+      requestAnimationFrame(function () {
+        scroll.scrollTop = scroll.scrollHeight;
+      });
     }
     return true;
   }
@@ -892,7 +896,7 @@
       if (!force && sig !== '' && sig === prevSig) return data;
       var isNew = sig !== '' && sig !== prevSig && prevSig !== '';
       if (sig !== '') rememberThreadSig(taskId, sig);
-      updateThreadScroll(panel, data.html);
+      updateThreadScroll(panel, data.html, { forceBottom: force || prevSig === '' || isNew });
       markSyncSuccess(isNew);
       return data;
     });
