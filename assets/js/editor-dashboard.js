@@ -27,7 +27,7 @@
   var deskPollInterval = null;
   var liveClockInterval = null;
   var lastSyncAt = Date.now();
-  var THREAD_POLL_MS = 1200;
+  var THREAD_POLL_MS = 2500;
   var DESK_POLL_MS = 2500;
   var activeTaskId = '';
   var activeSection = 'mine';
@@ -854,38 +854,92 @@
       updated_at: row.updated_at || '',
       msg_count: row.msg_count || 0,
       msg_sig: row.msg_sig || '',
+      status: row.status || '',
+      status_slug: row.status_slug || '',
+      notify: !!row.notify,
+      priority: typeof row.priority === 'number' ? row.priority : 0,
     };
   }
 
   function rowNeedsPanelRefresh(row, prev) {
     if (!row || !prev) return false;
-    if (row.updated_at && row.updated_at !== prev.updated_at) return true;
-    return (row.msg_sig || '') !== (prev.msg_sig || '');
+    if ((row.status || '') !== (prev.status || '')) return true;
+    if ((row.status_slug || '') !== (prev.status_slug || '')) return true;
+    if (!!row.notify !== !!prev.notify) return true;
+    if ((row.priority || 0) !== (prev.priority || 0)) return true;
+    return false;
   }
 
-  function rowNeedsThreadOnlyRefresh(row, prev) {
-    if (!row || !prev) return false;
-    if (row.updated_at && row.updated_at !== prev.updated_at) return false;
-    return (row.msg_sig || '') !== (prev.msg_sig || '');
+  function threadMediaPlaying(panel) {
+    if (!panel) return false;
+    var medias = panel.querySelectorAll('.ticket__thread-scroll audio, .ticket__thread-scroll video');
+    for (var i = 0; i < medias.length; i++) {
+      var media = medias[i];
+      if (!media.paused && !media.ended) return true;
+    }
+    return false;
   }
 
-  function rememberThreadSig(taskId, sig) {
-    if (!taskId || !sig) return;
-    lastThreadSigByTask[taskId] = sig;
+  function bindThreadMediaFlush(panel) {
+    if (!panel || panel.getAttribute('data-thread-media-bound') === '1') return;
+    panel.setAttribute('data-thread-media-bound', '1');
+    panel.addEventListener(
+      'pause',
+      function (e) {
+        if (!e.target || !e.target.matches || !e.target.matches('audio, video')) return;
+        flushPendingThread(panel);
+      },
+      true
+    );
+    panel.addEventListener(
+      'ended',
+      function (e) {
+        if (!e.target || !e.target.matches || !e.target.matches('audio, video')) return;
+        flushPendingThread(panel);
+      },
+      true
+    );
   }
 
-  function updateThreadScroll(panel, html, opts) {
+  function flushPendingThread(panel) {
+    if (!panel || !panel._pendingThreadHtml) return;
+    if (threadMediaPlaying(panel)) return;
+    var html = panel._pendingThreadHtml;
+    var opts = panel._pendingThreadOpts || {};
+    delete panel._pendingThreadHtml;
+    delete panel._pendingThreadOpts;
+    applyThreadScrollHtml(panel, html, opts);
+  }
+
+  function applyThreadScrollHtml(panel, html, opts) {
     opts = opts || {};
     var scroll = panel.querySelector('.ticket__thread-scroll');
     if (!scroll || typeof html !== 'string') return false;
     var nearBottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 96;
     scroll.innerHTML = html;
+    bindThreadMediaFlush(panel);
     if (opts.forceBottom || nearBottom) {
       requestAnimationFrame(function () {
         scroll.scrollTop = scroll.scrollHeight;
       });
     }
     return true;
+  }
+
+  function updateThreadScroll(panel, html, opts) {
+    if (!panel || typeof html !== 'string') return false;
+    bindThreadMediaFlush(panel);
+    if (threadMediaPlaying(panel)) {
+      panel._pendingThreadHtml = html;
+      panel._pendingThreadOpts = opts || {};
+      return false;
+    }
+    return applyThreadScrollHtml(panel, html, opts);
+  }
+
+  function rememberThreadSig(taskId, sig) {
+    if (!taskId || !sig) return;
+    lastThreadSigByTask[taskId] = sig;
   }
 
   function pollThread(taskId, force) {
@@ -900,6 +954,7 @@
       if (!force && sig !== '' && sig === prevSig) return data;
       var isNew = sig !== '' && sig !== prevSig && prevSig !== '';
       if (sig !== '') rememberThreadSig(taskId, sig);
+      if (!isNew && threadMediaPlaying(panel)) return data;
       updateThreadScroll(panel, data.html, { forceBottom: force || prevSig === '' || isNew });
       markSyncSuccess(isNew);
       return data;
@@ -921,6 +976,8 @@
     if (live) live.classList.add('edesk-live--active');
     threadPollInterval = setInterval(function () {
       if (!activeTaskId) return;
+      var panel = findPanel(activeTaskId);
+      if (panel && threadMediaPlaying(panel)) return;
       pollThread(activeTaskId, false);
     }, THREAD_POLL_MS);
   }
@@ -1120,6 +1177,7 @@
   }
 
   function bindPanelInteractions(panel) {
+    bindThreadMediaFlush(panel);
     bindStatusForms(panel);
     qsa('.edesk-meeting-read', panel).forEach(function (btn) {
       if (btn.getAttribute('data-bound') === '1') return;
@@ -1262,23 +1320,32 @@
       return;
     }
     bar.hidden = false;
-    var html = '<span class="edesk-meetings__label">Meetings</span>';
+    var html = '<span class="edesk-meetings__label">Upcoming meetings</span>';
     meetings.forEach(function (m) {
       var who = [m.customer_name, m.project_name].filter(Boolean).join(' — ');
       var when = m.when_label || m.start_time || '';
+      var unread = !!m.is_unread;
+      var mins = typeof m.minutes_until === 'number' ? m.minutes_until : null;
       var requested =
         m.requested_time_text && m.requested_time_text !== when
           ? '<p class="edesk-meetings__requested"><strong>Requested:</strong> ' + esc(m.requested_time_text) + '</p>'
           : '';
       var endTime = m.end_time ? '<p class="edesk-meetings__end"><strong>Ends:</strong> ' + esc(m.end_time) + '</p>' : '';
+      var countdown =
+        mins !== null && mins > 0
+          ? '<p class="edesk-meetings__countdown"><strong>Starts in:</strong> ' + esc(String(mins)) + ' min</p>'
+          : '';
       html +=
-        '<article class="edesk-meetings__card">' +
+        '<article class="edesk-meetings__card' +
+        (unread ? ' edesk-meetings__card--unread' : ' edesk-meetings__card--read') +
+        '">' +
         '<button type="button" class="edesk-meetings__jump" data-task-id="' +
         esc(m.task_code) +
         '">' +
         esc(m.task_code) +
         '</button>' +
         '<div class="edesk-meetings__meta">' +
+        countdown +
         (when ? '<p class="edesk-meetings__when"><strong>When:</strong> ' + esc(when) + '</p>' : '') +
         (who ? '<p class="edesk-meetings__who">' + esc(who) + '</p>' : '') +
         requested +
@@ -1287,14 +1354,17 @@
         '<div class="edesk-meetings__actions">';
       if (m.meet_link) {
         html +=
-          '<a class="text-link" href="' +
+          '<a class="btn btn--primary btn--sm" href="' +
           esc(m.meet_link) +
-          '" target="_blank" rel="noopener noreferrer">Join</a>';
+          '" target="_blank" rel="noopener noreferrer">Join Meet</a>';
       }
-      html +=
-        '<button type="button" class="btn btn--ghost btn--sm edesk-meeting-read" data-task-id="' +
-        esc(m.task_code) +
-        '">Mark read</button></div></article>';
+      if (unread) {
+        html +=
+          '<button type="button" class="btn btn--ghost btn--sm edesk-meeting-read" data-task-id="' +
+          esc(m.task_code) +
+          '">Mark read</button>';
+      }
+      html += '</div></article>';
     });
     bar.innerHTML = html;
   }
@@ -1307,18 +1377,22 @@
     renderMeetingsBar(desk.meetings || []);
     updateTabBadges(desk.pool_count || (desk.pool || []).length, desk.mine_count || (desk.mine || []).length);
     refreshRelativeTimes();
-    if (skipPanelRefresh || !preserveSelection || !activeTaskId) return;
+    if (skipPanelRefresh || !preserveSelection || !activeTaskId || !prevActive) return;
     var row = rowCache[activeTaskId];
-    if (!rowNeedsPanelRefresh(row, prevActive)) return;
-    if (rowNeedsThreadOnlyRefresh(row, prevActive)) {
-      pollThread(activeTaskId, true);
-      return;
+    if (!row) return;
+    if ((row.msg_sig || '') !== (prevActive.msg_sig || '')) {
+      pollThread(activeTaskId, false);
     }
+    if (!rowNeedsPanelRefresh(row, prevActive)) return;
     fetchPanel(activeTaskId, { noScroll: true });
   }
 
   function handlePoll(data, meta) {
     if (!data || !data.ok) return false;
+
+    if (Array.isArray(data.reminders) && window.AkhMeetingAlerts) {
+      window.AkhMeetingAlerts.processReminders(data.reminders);
+    }
 
     if (data.desk) {
       scanDeskMessageAlerts(data.desk, meta);
@@ -1401,12 +1475,16 @@
     if (readBtn) {
       e.preventDefault();
       var taskId = readBtn.getAttribute('data-task-id') || '';
-      markMeetingRead(taskId).then(function () {
-        var chip = readBtn.closest('.edesk-meetings__card');
-        if (chip) chip.remove();
-        var bar = qs('#edesk-meetings', root);
-        if (bar && !bar.querySelector('.edesk-meetings__card')) {
-          bar.hidden = true;
+      markMeetingRead(taskId).then(function (data) {
+        if (data && data.desk && data.desk.meetings) {
+          renderMeetingsBar(data.desk.meetings);
+        } else if (data && data.ok) {
+          var card = readBtn.closest('.edesk-meetings__card');
+          if (card) {
+            card.classList.remove('edesk-meetings__card--unread');
+            card.classList.add('edesk-meetings__card--read');
+            readBtn.remove();
+          }
         }
       });
       return;

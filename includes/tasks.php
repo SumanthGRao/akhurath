@@ -755,7 +755,7 @@ function akh_task_ajax_poll_editor(string $editorUsername): array
         'sig' => akh_task_poll_signature_all(),
         'notify_sig' => akh_dashboard_alerts_poll_signature(),
         'notices' => akh_task_editor_notice_rows($editorUsername),
-        'reminders' => akh_meeting_request_upcoming_reminders(),
+        'reminders' => akh_meeting_request_upcoming_reminders_for_editor($editorUsername),
         'desk' => akh_editor_desk_poll_bundle($editorUsername),
     ];
 }

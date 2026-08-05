@@ -165,7 +165,7 @@
     reminderTasks = {};
     (reminders || []).forEach(function (rem) {
       var mins = parseInt(rem.minutes_until, 10);
-      if (isNaN(mins) || mins > 10) return;
+      if (isNaN(mins) || mins > 30) return;
       var code = normalizeTaskCode(rem.task_code);
       if (code) reminderTasks[code] = true;
     });
@@ -872,12 +872,60 @@
     }
   }
 
-  function mountChatHtml(html) {
+  function chatMediaPlaying() {
+    if (!els.chatScroll) return false;
+    var medias = els.chatScroll.querySelectorAll('audio, video');
+    for (var i = 0; i < medias.length; i++) {
+      var media = medias[i];
+      if (!media.paused && !media.ended) return true;
+    }
+    return false;
+  }
+
+  function bindChatMediaFlush() {
+    if (!els.chatScroll || els.chatScroll.getAttribute('data-media-bound') === '1') return;
+    els.chatScroll.setAttribute('data-media-bound', '1');
+    els.chatScroll.addEventListener(
+      'pause',
+      function (e) {
+        if (!e.target || !e.target.matches || !e.target.matches('audio, video')) return;
+        flushPendingChatHtml();
+      },
+      true
+    );
+    els.chatScroll.addEventListener(
+      'ended',
+      function (e) {
+        if (!e.target || !e.target.matches || !e.target.matches('audio, video')) return;
+        flushPendingChatHtml();
+      },
+      true
+    );
+  }
+
+  function flushPendingChatHtml() {
+    if (!els.chatScroll || !els.chatScroll._pendingChatHtml) return;
+    if (chatMediaPlaying()) return;
+    var html = els.chatScroll._pendingChatHtml;
+    delete els.chatScroll._pendingChatHtml;
+    applyChatHtml(html);
+  }
+
+  function applyChatHtml(html) {
     if (!els.chatScroll) return;
     els.chatScroll.innerHTML = html || '<p class="wa-chat-drawer__empty">No messages yet.</p>';
     requestAnimationFrame(function () {
       els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
     });
+  }
+
+  function mountChatHtml(html) {
+    bindChatMediaFlush();
+    if (chatMediaPlaying()) {
+      if (els.chatScroll) els.chatScroll._pendingChatHtml = html;
+      return;
+    }
+    applyChatHtml(html);
   }
 
   function pollChatThread() {

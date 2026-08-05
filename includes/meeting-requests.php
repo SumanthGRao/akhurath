@@ -615,20 +615,23 @@ function akh_meeting_request_upcoming_reminders(): array
     $out = [];
 
     foreach ($rows as $row) {
-        if (akh_meeting_request_wa_ack_is_read((string) ($row['task_code'] ?? ''), (int) ($row['id'] ?? 0))) {
-            continue;
-        }
         $start = akh_meeting_request_effective_start($row);
         if ($start === null || $start <= $now) {
             continue;
         }
         $seconds = $start->getTimestamp() - $now->getTimestamp();
         $minutes = (int) ceil($seconds / 60);
-        if ($minutes > 10 || $minutes < 1) {
+        if ($minutes > 30 || $minutes < 1) {
             continue;
         }
 
-        $tier = $minutes <= 5 ? '5' : '10';
+        $tier = '5';
+        if ($minutes > 15) {
+            $tier = '30';
+        } elseif ($minutes > 5) {
+            $tier = '15';
+        }
+
         $code = (string) ($row['task_code'] ?? '');
         if ($code === '') {
             continue;
@@ -637,9 +640,11 @@ function akh_meeting_request_upcoming_reminders(): array
         $project = trim((string) ($row['project_name'] ?? ''));
         $title = $project !== '' ? $project : ($customer !== '' ? $customer : $code);
         $meetLink = trim((string) ($row['meet_link'] ?? ''));
-        $body = $tier === '5'
-            ? "Meeting {$code} starts in {$minutes} min — join now."
-            : "Meeting {$code} starts in {$minutes} min.";
+        $body = match ($tier) {
+            '5' => "Meeting {$code} starts in {$minutes} min — join now.",
+            '15' => "Meeting {$code} starts in {$minutes} min.",
+            default => "Meeting {$code} starts in {$minutes} min.",
+        };
 
         $out[] = [
             'id' => (int) ($row['id'] ?? 0),
@@ -656,6 +661,27 @@ function akh_meeting_request_upcoming_reminders(): array
     return $out;
 }
 
+/**
+ * @return list<array{id: int, task_code: string, tier: string, minutes_until: int, title: string, body: string, meet_link: string, start_time: string}>
+ */
+function akh_meeting_request_upcoming_reminders_for_editor(string $editorUsername): array
+{
+    $editorUsername = strtolower(trim($editorUsername));
+    if ($editorUsername === '') {
+        return [];
+    }
+
+    $owned = akh_meeting_request_assigned_task_codes_for_editor($editorUsername);
+    $out = [];
+    foreach (akh_meeting_request_upcoming_reminders() as $rem) {
+        if (akh_meeting_request_editor_owns_code($owned, (string) ($rem['task_code'] ?? ''))) {
+            $out[] = $rem;
+        }
+    }
+
+    return $out;
+}
+
 /** @return array<string, array<string, mixed>> */
 function akh_meeting_request_reminder_alert_highlights(): array
 {
@@ -665,8 +691,13 @@ function akh_meeting_request_reminder_alert_highlights(): array
         if ($code === '') {
             continue;
         }
-        $tier = (string) ($rem['tier'] ?? '10');
-        $priority = $tier === '5' ? 100 : 95;
+        $tier = (string) ($rem['tier'] ?? '30');
+        $priority = match ($tier) {
+            '5' => 100,
+            '15' => 98,
+            '30' => 95,
+            default => 90,
+        };
         $existing = $out[$code] ?? null;
         if (is_array($existing) && (int) ($existing['priority'] ?? 0) > $priority) {
             continue;
@@ -974,6 +1005,112 @@ function akh_meeting_requests_table_ready(): bool
 function akh_meeting_request_pending_rows(): array
 {
     return akh_meeting_request_unread_rows();
+}
+
+/**
+ * Latest active scheduled meeting for a task code (read or unread).
+ *
+ * @return array<string, mixed>|null desk payload
+ */
+function akh_meeting_request_desk_for_task_code(string $taskCode): ?array
+{
+    $taskCode = akh_meeting_request_normalize_task_code($taskCode);
+    if ($taskCode === '') {
+        return null;
+    }
+
+    $tz = akh_meeting_request_site_timezone();
+    $now = new DateTimeImmutable('now', $tz);
+    $hideBefore = $now->modify('-30 minutes');
+    $best = null;
+    $bestStart = null;
+
+    foreach (akh_meeting_request_active_rows() as $row) {
+        $code = akh_meeting_request_normalize_task_code((string) ($row['task_code'] ?? ''));
+        if ($code !== $taskCode) {
+            continue;
+        }
+        $start = akh_meeting_request_effective_start($row);
+        if ($start !== null && $start < $hideBefore) {
+            continue;
+        }
+        if ($start === null) {
+            if ($best === null) {
+                $best = akh_meeting_request_desk_payload($row);
+            }
+            continue;
+        }
+        if ($bestStart === null || $start < $bestStart) {
+            $bestStart = $start;
+            $best = akh_meeting_request_desk_payload($row);
+        }
+    }
+
+    return $best;
+}
+
+/**
+ * Upcoming / active meetings for an editor (read + unread) — shown on the editor desk bar.
+ *
+ * @return list<array<string, mixed>>
+ */
+function akh_meeting_request_scheduled_for_editor(string $editorUsername): array
+{
+    $editorUsername = strtolower(trim($editorUsername));
+    if ($editorUsername === '') {
+        return [];
+    }
+
+    $ownedCodes = akh_meeting_request_assigned_task_codes_for_editor($editorUsername);
+    $tz = akh_meeting_request_site_timezone();
+    $now = new DateTimeImmutable('now', $tz);
+    $hideBefore = $now->modify('-30 minutes');
+    $out = [];
+
+    foreach (akh_meeting_request_active_rows() as $row) {
+        $code = akh_meeting_request_normalize_task_code((string) ($row['task_code'] ?? ''));
+        if ($code === '' || !akh_meeting_request_editor_owns_code($ownedCodes, $code)) {
+            continue;
+        }
+
+        $start = akh_meeting_request_effective_start($row);
+        $isUnread = akh_meeting_request_row_is_dashboard_unread($row);
+
+        if ($start === null) {
+            if (!$isUnread) {
+                continue;
+            }
+            $desk = akh_meeting_request_desk_payload($row);
+            $desk['is_unread'] = true;
+            $desk['meeting_id'] = (int) ($row['id'] ?? 0);
+            $desk['minutes_until'] = null;
+            $out[] = $desk;
+            continue;
+        }
+
+        if ($start < $hideBefore) {
+            continue;
+        }
+
+        $desk = akh_meeting_request_desk_payload($row);
+        $desk['is_unread'] = $isUnread;
+        $desk['meeting_id'] = (int) ($row['id'] ?? 0);
+        $seconds = $start->getTimestamp() - $now->getTimestamp();
+        $desk['minutes_until'] = $seconds > 0 ? (int) ceil($seconds / 60) : 0;
+        $out[] = $desk;
+    }
+
+    usort($out, static function (array $a, array $b): int {
+        $au = isset($a['minutes_until']) && $a['minutes_until'] !== null ? (int) $a['minutes_until'] : 99999;
+        $bu = isset($b['minutes_until']) && $b['minutes_until'] !== null ? (int) $b['minutes_until'] : 99999;
+        if ($au !== $bu) {
+            return $au <=> $bu;
+        }
+
+        return strcmp((string) ($a['task_code'] ?? ''), (string) ($b['task_code'] ?? ''));
+    });
+
+    return $out;
 }
 
 /**

@@ -86,19 +86,9 @@ function akh_editor_desk_board_context(string $editorUsername): array
     });
 
     $seenNew = akh_task_editor_seen_load()[$editorUsername] ?? [];
-    $editorMeetingRows = [];
-    $ownedCodes = akh_meeting_request_assigned_task_codes_for_editor($editorUsername);
-    foreach (akh_meeting_request_pending_rows() as $mr) {
-        $c = (string) ($mr['task_code'] ?? '');
-        if ($c !== '' && akh_meeting_request_editor_owns_code($ownedCodes, $c)) {
-            $editorMeetingRows[] = $mr;
-        }
-    }
+    $editorMeetingRows = akh_meeting_request_scheduled_for_editor($editorUsername);
     $editorReminderCodes = [];
-    foreach (akh_meeting_request_upcoming_reminders() as $r) {
-        if (!akh_meeting_request_editor_owns_code($ownedCodes, (string) ($r['task_code'] ?? ''))) {
-            continue;
-        }
+    foreach (akh_meeting_request_upcoming_reminders_for_editor($editorUsername) as $r) {
         $c = akh_task_normalize_id((string) ($r['task_code'] ?? ''));
         if ($c !== '') {
             $editorReminderCodes[$c] = true;
@@ -203,9 +193,8 @@ function akh_editor_desk_lists_json(string $editorUsername): array
         $mine[] = akh_editor_desk_list_row_json($vm);
     }
     $meetings = [];
-    foreach ($ctx['editorMeetingRows'] as $mr) {
-        $desk = akh_meeting_request_desk_payload($mr);
-        if ($desk['task_code'] === '') {
+    foreach ($ctx['editorMeetingRows'] as $desk) {
+        if (!is_array($desk) || (string) ($desk['task_code'] ?? '') === '') {
             continue;
         }
         $meetings[] = $desk;

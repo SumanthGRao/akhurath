@@ -146,10 +146,15 @@
         return;
       }
       sessionStorage.setItem(key, '1');
+      var title = String(rem.title || rem.task_code || 'Meeting');
+      var body = String(rem.body || '');
       if (tier === '5') {
         showJoinModal(rem);
-      } else if (tier === '10') {
-        tryOsNotify(String(rem.title || 'Meeting soon'), String(rem.body || ''), 'akh-meet-' + id + '-' + tier);
+      } else if (tier === '15') {
+        playChime(1);
+        tryOsNotify(title, body || 'Meeting in about 15 minutes.', 'akh-meet-' + id + '-' + tier);
+      } else if (tier === '30') {
+        tryOsNotify(title, body || 'Meeting in about 30 minutes.', 'akh-meet-' + id + '-' + tier);
       }
     });
   }

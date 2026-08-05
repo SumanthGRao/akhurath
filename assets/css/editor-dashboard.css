@@ -239,6 +239,21 @@
   min-width: min(100%, 22rem);
 }
 
+.edesk-meetings__card--unread {
+  border-color: rgba(47, 95, 156, 0.45);
+  box-shadow: 0 0 0 1px rgba(47, 95, 156, 0.1);
+}
+
+.edesk-meetings__card--read {
+  opacity: 0.96;
+}
+
+.edesk-meetings__countdown {
+  margin: 0;
+  font-weight: 600;
+  color: #2f5f9c;
+}
+
 .edesk-meetings__meta {
   display: flex;
   flex-direction: column;
