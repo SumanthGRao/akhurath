@@ -53,13 +53,9 @@ function akh_parse_datetime_to_site(string $raw): ?DateTimeImmutable
         }
     }
 
-    $utc = new DateTimeZone('UTC');
+    // Naive datetimes from DB / WhatsApp bot are already in site local time (IST) — do not treat as UTC.
     $site = akh_site_timezone();
     foreach (['Y-m-d H:i:s', 'Y-m-d H:i', 'd-m-Y H:i:s', 'd-m-Y H:i'] as $fmt) {
-        $dt = DateTimeImmutable::createFromFormat($fmt, $raw, $utc);
-        if ($dt instanceof DateTimeImmutable) {
-            return $dt->setTimezone($site);
-        }
         $dt = DateTimeImmutable::createFromFormat($fmt, $raw, $site);
         if ($dt instanceof DateTimeImmutable) {
             return $dt;
@@ -67,16 +63,10 @@ function akh_parse_datetime_to_site(string $raw): ?DateTimeImmutable
     }
 
     foreach ([DateTimeInterface::ATOM, 'Y-m-d\TH:i:sP', 'Y-m-d\TH:i:s'] as $fmt) {
-        $dt = DateTimeImmutable::createFromFormat($fmt, $raw, $utc);
+        $dt = DateTimeImmutable::createFromFormat($fmt, $raw, $site);
         if ($dt instanceof DateTimeImmutable) {
-            return $dt->setTimezone($site);
+            return $dt;
         }
-    }
-
-    try {
-        return (new DateTimeImmutable($raw, $utc))->setTimezone($site);
-    } catch (Throwable) {
-        // fall through
     }
 
     try {
