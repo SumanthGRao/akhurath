@@ -303,6 +303,7 @@ $editorBellNotices = akh_task_editor_notice_rows($editor);
 $pageCsrf = akh_csrf_token();
 require_once AKH_ROOT . '/includes/meeting-requests.php';
 $editorMeetingRows = akh_meeting_request_scheduled_for_editor($editor);
+$editorMeetingCount = count($editorMeetingRows);
 $editorReminders = akh_meeting_request_upcoming_reminders_for_editor($editor);
 $editorReminderCodes = [];
 foreach ($editorReminders as $r) {
@@ -365,6 +366,12 @@ require_once AKH_ROOT . '/includes/header.php';
               <span class="edesk-tab__badge"><?php echo count($mine); ?></span>
             <?php endif; ?>
           </button>
+          <button type="button" class="edesk-tab" data-section="meetings" aria-selected="false">
+            Meetings
+            <?php if ($editorMeetingCount > 0): ?>
+              <span class="edesk-tab__badge"><?php echo $editorMeetingCount; ?></span>
+            <?php endif; ?>
+          </button>
         </nav>
         <div class="edesk-topbar__actions">
           <span class="edesk-live" id="edesk-live" title="Board refreshes automatically">
@@ -425,50 +432,6 @@ require_once AKH_ROOT . '/includes/header.php';
         </div>
       <?php endif; ?>
 
-      <?php if ($editorMeetingRows !== []): ?>
-        <div class="edesk-meetings" id="edesk-meetings" aria-label="Upcoming meetings">
-          <span class="edesk-meetings__label">Upcoming meetings</span>
-          <?php foreach ($editorMeetingRows as $desk): ?>
-            <?php
-            $mCode = (string) ($desk['task_code'] ?? '');
-            $mLink = (string) ($desk['meet_link'] ?? '');
-            $mUnread = !empty($desk['is_unread']);
-            $mMins = isset($desk['minutes_until']) && $desk['minutes_until'] !== null ? (int) $desk['minutes_until'] : null;
-            ?>
-            <article class="edesk-meetings__card<?php echo $mUnread ? ' edesk-meetings__card--unread' : ' edesk-meetings__card--read'; ?>">
-              <button type="button" class="edesk-meetings__jump" data-task-id="<?php echo h($mCode); ?>"><?php echo h($mCode); ?></button>
-              <div class="edesk-meetings__meta">
-                <?php if ($mMins !== null && $mMins > 0): ?>
-                  <p class="edesk-meetings__countdown"><strong>Starts in:</strong> <?php echo (int) $mMins; ?> min</p>
-                <?php endif; ?>
-                <?php if (($desk['when_label'] ?? '') !== ''): ?>
-                  <p class="edesk-meetings__when"><strong>When:</strong> <?php echo h((string) $desk['when_label']); ?></p>
-                <?php endif; ?>
-                <?php if (($desk['customer_name'] ?? '') !== '' || ($desk['project_name'] ?? '') !== ''): ?>
-                  <p class="edesk-meetings__who">
-                    <?php echo h(trim((string) $desk['customer_name'] . (($desk['project_name'] ?? '') !== '' ? ' — ' . $desk['project_name'] : ''))); ?>
-                  </p>
-                <?php endif; ?>
-                <?php if (($desk['requested_time_text'] ?? '') !== '' && ($desk['requested_time_text'] ?? '') !== ($desk['when_label'] ?? '')): ?>
-                  <p class="edesk-meetings__requested"><strong>Requested:</strong> <?php echo h((string) $desk['requested_time_text']); ?></p>
-                <?php endif; ?>
-                <?php if (($desk['end_time'] ?? '') !== ''): ?>
-                  <p class="edesk-meetings__end"><strong>Ends:</strong> <?php echo h((string) $desk['end_time']); ?></p>
-                <?php endif; ?>
-              </div>
-              <div class="edesk-meetings__actions">
-                <?php if ($mLink !== ''): ?>
-                  <a class="btn btn--primary btn--sm" href="<?php echo h($mLink); ?>" target="_blank" rel="noopener noreferrer">Join Meet</a>
-                <?php endif; ?>
-                <?php if ($mUnread): ?>
-                  <button type="button" class="btn btn--ghost btn--sm edesk-meeting-read" data-task-id="<?php echo h($mCode); ?>">Mark read</button>
-                <?php endif; ?>
-              </div>
-            </article>
-          <?php endforeach; ?>
-        </div>
-      <?php endif; ?>
-
       <div class="edesk-body">
         <aside class="edesk-sidebar" aria-label="Task list">
           <div class="edesk-sidebar__tools">
@@ -506,6 +469,18 @@ require_once AKH_ROOT . '/includes/header.php';
                   $vm = akh_editor_task_view_model($t, $editor, $dashboardAlerts, $editorReminderCodes, $seenNew, 'mine');
                   $sel = $openTicketId !== '' && akh_task_ids_match($openTicketId, (string) $vm['tid']);
                   akh_editor_render_list_item($vm, $sel);
+                  ?>
+                <?php endforeach; ?>
+              <?php endif; ?>
+            </div>
+            <div class="edesk-list edesk-list--meetings" id="edesk-list-meetings" role="list" hidden>
+              <?php if ($editorMeetingRows === []): ?>
+                <p class="edesk-list__empty">No upcoming meetings scheduled.</p>
+              <?php else: ?>
+                <?php foreach ($editorMeetingRows as $desk): ?>
+                  <?php
+                  $mSel = $openTicketId !== '' && akh_task_ids_match($openTicketId, (string) ($desk['task_code'] ?? ''));
+                  akh_editor_render_meeting_list_item($desk, $mSel);
                   ?>
                 <?php endforeach; ?>
               <?php endif; ?>

@@ -238,30 +238,27 @@ html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .field span {
   color: var(--edesk-ink);
 }
 
-html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings {
-  background: rgba(126, 176, 232, 0.1);
-}
-
-html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings__label {
-  color: var(--edesk-accent);
-}
-
-html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings__card {
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings-list__card {
   background: #141210;
   border-color: rgba(126, 176, 232, 0.25);
 }
 
-html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings__when {
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings-list__card--active {
+  border-color: rgba(126, 176, 232, 0.45);
+  box-shadow: 0 0 0 2px rgba(126, 176, 232, 0.16);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings-list__when {
   color: var(--edesk-ink);
 }
 
-html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings__who,
-html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings__requested,
-html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings__end {
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings-list__who,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings-list__requested,
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings-list__end {
   color: var(--edesk-muted);
 }
 
-html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings__jump {
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-meetings-list__jump {
   color: var(--edesk-accent);
 }
 

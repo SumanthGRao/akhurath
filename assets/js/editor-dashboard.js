@@ -320,10 +320,11 @@
     b.classList.toggle('desk-bell--pop', typeof n === 'number' && n > 0);
   }
 
-  function updateTabBadges(poolCount, mineCount) {
+  function updateTabBadges(poolCount, mineCount, meetingsCount) {
     qsa('.edesk-tab', root).forEach(function (tab) {
       var section = tab.getAttribute('data-section');
-      var n = section === 'pool' ? poolCount : mineCount;
+      var n =
+        section === 'pool' ? poolCount : section === 'mine' ? mineCount : meetingsCount || 0;
       var badge = tab.querySelector('.edesk-tab__badge');
       if (n > 0) {
         if (!badge) {
@@ -534,6 +535,7 @@
   var lists = {
     pool: qs('#edesk-list-pool', root),
     mine: qs('#edesk-list-mine', root),
+    meetings: qs('#edesk-list-meetings', root),
   };
   var panelsHost = qs('#edesk-detail-scroll', root);
   var emptyEl = qs('#edesk-empty', root);
@@ -580,13 +582,22 @@
     Object.keys(lists).forEach(function (key) {
       if (lists[key]) lists[key].hidden = key !== section;
     });
-    syncStatusFilterOptions(section);
+    var filtersWrap = qs('.edesk-filters', root);
+    if (filtersWrap) filtersWrap.hidden = section === 'meetings';
+    if (section !== 'meetings') {
+      syncStatusFilterOptions(section);
+    }
     var hint = qs('#edesk-sidebar-hint', root);
     if (hint) {
       hint.textContent =
         section === 'pool'
           ? 'New jobs appear here in real time — claim to move to My tasks.'
-          : 'Live updates for messages, feedback, and status changes.';
+          : section === 'meetings'
+            ? 'Upcoming Google Meet sessions — select one to open the linked task.'
+            : 'Live updates for messages, feedback, and status changes.';
+    }
+    if (searchInput) {
+      searchInput.placeholder = section === 'meetings' ? 'Search meetings…' : 'Search tasks…';
     }
     applyListFilters();
   }
@@ -789,6 +800,43 @@
         filterEmpty.hidden = true;
       }
     });
+
+    var meetingsEl = lists.meetings;
+    if (meetingsEl) {
+      var isMeetingsActive = activeSection === 'meetings';
+      var meetingCards = qsa('.edesk-meetings-list__card', meetingsEl);
+      var meetingVisible = 0;
+      meetingCards.forEach(function (card) {
+        if (!isMeetingsActive) {
+          card.hidden = true;
+          return;
+        }
+        var hay = normalizeSearch(card.getAttribute('data-search') || card.textContent || '');
+        var showMeeting = q === '' || hay.indexOf(q) !== -1;
+        card.hidden = !showMeeting;
+        card.setAttribute('aria-hidden', showMeeting ? 'false' : 'true');
+        if (showMeeting) meetingVisible += 1;
+      });
+      var staticMeetingEmpty = meetingsEl.querySelector('.edesk-list__empty:not(.edesk-list__empty--filter)');
+      var filterMeetingEmpty = meetingsEl.querySelector('.edesk-list__empty--filter');
+      if (meetingCards.length === 0) {
+        if (staticMeetingEmpty) staticMeetingEmpty.hidden = false;
+        if (filterMeetingEmpty) filterMeetingEmpty.hidden = true;
+      } else {
+        if (staticMeetingEmpty) staticMeetingEmpty.hidden = true;
+        if (meetingVisible === 0 && q !== '') {
+          if (!filterMeetingEmpty) {
+            filterMeetingEmpty = document.createElement('p');
+            filterMeetingEmpty.className = 'edesk-list__empty edesk-list__empty--filter';
+            meetingsEl.appendChild(filterMeetingEmpty);
+          }
+          filterMeetingEmpty.textContent = 'No meetings match your search.';
+          filterMeetingEmpty.hidden = false;
+        } else if (filterMeetingEmpty) {
+          filterMeetingEmpty.hidden = true;
+        }
+      }
+    }
   }
 
   function findListItem(taskId, preferSection) {
@@ -1043,8 +1091,12 @@
     if (data.desk) {
       renderList('pool', data.desk.pool || [], true);
       renderList('mine', data.desk.mine || [], true);
-      renderMeetingsBar(data.desk.meetings || []);
-      updateTabBadges(data.desk.pool_count || (data.desk.pool || []).length, data.desk.mine_count || (data.desk.mine || []).length);
+      renderMeetingsList(data.desk.meetings || []);
+      updateTabBadges(
+        data.desk.pool_count || (data.desk.pool || []).length,
+        data.desk.mine_count || (data.desk.mine || []).length,
+        (data.desk.meetings || []).length
+      );
       refreshRelativeTimes();
     }
     if (typeof data.bell === 'number') setDeskBell(data.bell);
@@ -1099,6 +1151,15 @@
     syncActiveThreadPoll(taskId);
   }
 
+  function syncMeetingCardActive(taskId) {
+    qsa('.edesk-meetings-list__card--active', root).forEach(function (el) {
+      el.classList.remove('edesk-meetings-list__card--active');
+    });
+    if (!taskId) return;
+    var card = qs('.edesk-meetings-list__card[data-task-id="' + CSS.escape(taskId) + '"]', root);
+    if (card) card.classList.add('edesk-meetings-list__card--active');
+  }
+
   function selectTask(taskId, opts) {
     opts = opts || {};
     taskId = normId(taskId);
@@ -1109,6 +1170,7 @@
         el.classList.remove('edesk-list__item--active');
         el.setAttribute('aria-current', 'false');
       });
+      syncMeetingCardActive('');
       qsa('.edesk-panel', root).forEach(function (p) {
         p.hidden = true;
       });
@@ -1119,29 +1181,37 @@
     }
 
     var item = findListItem(taskId);
+    var meetingCard = qs('.edesk-meetings-list__card[data-task-id="' + CSS.escape(taskId) + '"]', root);
     if (!item && rowCache[taskId]) {
       var cachedSection = rowCache[taskId].section;
-      showList(cachedSection);
+      if (activeSection !== 'meetings') showList(cachedSection);
       item = findListItem(taskId);
     }
-    if (!item) {
+    if (!item && !meetingCard) {
       if (!opts.skipFetch) {
         fetchPanel(taskId, { show: true, noScroll: opts.noScroll });
       }
       return;
     }
 
-    var section = item.getAttribute('data-section') || 'mine';
+    var section = item
+      ? item.getAttribute('data-section') || 'mine'
+      : rowCache[taskId]
+        ? rowCache[taskId].section
+        : 'mine';
     var panel = findPanel(taskId, section);
-    if (section !== activeSection) showList(section);
+    if (activeSection !== 'meetings' && item && section !== activeSection) showList(section);
 
     activeTaskId = taskId;
     qsa('.edesk-list__item--active', root).forEach(function (el) {
       el.classList.remove('edesk-list__item--active');
       el.setAttribute('aria-current', 'false');
     });
-    item.classList.add('edesk-list__item--active');
-    item.setAttribute('aria-current', 'true');
+    if (item) {
+      item.classList.add('edesk-list__item--active');
+      item.setAttribute('aria-current', 'true');
+    }
+    syncMeetingCardActive(taskId);
 
     var mustRefreshForNotify = itemNeedsNotificationPanel(item);
     if ((mustRefreshForNotify || !panel) && !opts.skipFetch) {
@@ -1311,62 +1381,74 @@
     });
   }
 
-  function renderMeetingsBar(meetings) {
-    var bar = qs('#edesk-meetings', root);
-    if (!bar) return;
+  function meetingListItemHtml(m, selected) {
+    var who = [m.customer_name, m.project_name].filter(Boolean).join(' — ');
+    var when = m.when_label || m.start_time || '';
+    var unread = !!m.is_unread;
+    var mins = typeof m.minutes_until === 'number' ? m.minutes_until : null;
+    var requested =
+      m.requested_time_text && m.requested_time_text !== when
+        ? '<p class="edesk-meetings-list__requested"><strong>Requested:</strong> ' + esc(m.requested_time_text) + '</p>'
+        : '';
+    var endTime = m.end_time ? '<p class="edesk-meetings-list__end"><strong>Ends:</strong> ' + esc(m.end_time) + '</p>' : '';
+    var countdown =
+      mins !== null && mins > 0
+        ? '<p class="edesk-meetings-list__countdown"><strong>Starts in:</strong> ' + esc(String(mins)) + ' min</p>'
+        : '';
+    var searchBlob = normalizeSearch(
+      [m.task_code, when, who, m.requested_time_text || ''].join(' ')
+    );
+    var html =
+      '<article class="edesk-meetings-list__card' +
+      (unread ? ' edesk-meetings-list__card--unread' : ' edesk-meetings-list__card--read') +
+      (selected ? ' edesk-meetings-list__card--active' : '') +
+      '" data-task-id="' +
+      esc(m.task_code) +
+      '" data-search="' +
+      esc(searchBlob) +
+      '">' +
+      '<button type="button" class="edesk-meetings-list__jump" data-task-id="' +
+      esc(m.task_code) +
+      '">' +
+      esc(m.task_code) +
+      '</button>' +
+      '<div class="edesk-meetings-list__meta">' +
+      countdown +
+      (when ? '<p class="edesk-meetings-list__when"><strong>When:</strong> ' + esc(when) + '</p>' : '') +
+      (who ? '<p class="edesk-meetings-list__who">' + esc(who) + '</p>' : '') +
+      requested +
+      endTime +
+      '</div>' +
+      '<div class="edesk-meetings-list__actions">';
+    if (m.meet_link) {
+      html +=
+        '<a class="btn btn--primary btn--sm" href="' +
+        esc(m.meet_link) +
+        '" target="_blank" rel="noopener noreferrer">Join Meet</a>';
+    }
+    if (unread) {
+      html +=
+        '<button type="button" class="btn btn--ghost btn--sm edesk-meeting-read" data-task-id="' +
+        esc(m.task_code) +
+        '">Mark read</button>';
+    }
+    html += '</div></article>';
+    return html;
+  }
+
+  function renderMeetingsList(meetings) {
+    var listEl = lists.meetings;
+    if (!listEl) return;
     if (!meetings || meetings.length === 0) {
-      bar.hidden = true;
-      bar.innerHTML = '';
+      listEl.innerHTML = '<p class="edesk-list__empty">No upcoming meetings scheduled.</p>';
       return;
     }
-    bar.hidden = false;
-    var html = '<span class="edesk-meetings__label">Upcoming meetings</span>';
+    var html = '';
     meetings.forEach(function (m) {
-      var who = [m.customer_name, m.project_name].filter(Boolean).join(' — ');
-      var when = m.when_label || m.start_time || '';
-      var unread = !!m.is_unread;
-      var mins = typeof m.minutes_until === 'number' ? m.minutes_until : null;
-      var requested =
-        m.requested_time_text && m.requested_time_text !== when
-          ? '<p class="edesk-meetings__requested"><strong>Requested:</strong> ' + esc(m.requested_time_text) + '</p>'
-          : '';
-      var endTime = m.end_time ? '<p class="edesk-meetings__end"><strong>Ends:</strong> ' + esc(m.end_time) + '</p>' : '';
-      var countdown =
-        mins !== null && mins > 0
-          ? '<p class="edesk-meetings__countdown"><strong>Starts in:</strong> ' + esc(String(mins)) + ' min</p>'
-          : '';
-      html +=
-        '<article class="edesk-meetings__card' +
-        (unread ? ' edesk-meetings__card--unread' : ' edesk-meetings__card--read') +
-        '">' +
-        '<button type="button" class="edesk-meetings__jump" data-task-id="' +
-        esc(m.task_code) +
-        '">' +
-        esc(m.task_code) +
-        '</button>' +
-        '<div class="edesk-meetings__meta">' +
-        countdown +
-        (when ? '<p class="edesk-meetings__when"><strong>When:</strong> ' + esc(when) + '</p>' : '') +
-        (who ? '<p class="edesk-meetings__who">' + esc(who) + '</p>' : '') +
-        requested +
-        endTime +
-        '</div>' +
-        '<div class="edesk-meetings__actions">';
-      if (m.meet_link) {
-        html +=
-          '<a class="btn btn--primary btn--sm" href="' +
-          esc(m.meet_link) +
-          '" target="_blank" rel="noopener noreferrer">Join Meet</a>';
-      }
-      if (unread) {
-        html +=
-          '<button type="button" class="btn btn--ghost btn--sm edesk-meeting-read" data-task-id="' +
-          esc(m.task_code) +
-          '">Mark read</button>';
-      }
-      html += '</div></article>';
+      html += meetingListItemHtml(m, normId(activeTaskId) === normId(m.task_code));
     });
-    bar.innerHTML = html;
+    listEl.innerHTML = html;
+    applyListFilters();
   }
 
   function applyDeskLists(desk, preserveSelection, skipPanelRefresh) {
@@ -1374,8 +1456,12 @@
     var prevActive = preserveSelection && activeTaskId ? snapshotTaskRow(activeTaskId) : null;
     renderList('pool', desk.pool || [], preserveSelection);
     renderList('mine', desk.mine || [], preserveSelection);
-    renderMeetingsBar(desk.meetings || []);
-    updateTabBadges(desk.pool_count || (desk.pool || []).length, desk.mine_count || (desk.mine || []).length);
+    renderMeetingsList(desk.meetings || []);
+    updateTabBadges(
+      desk.pool_count || (desk.pool || []).length,
+      desk.mine_count || (desk.mine || []).length,
+      (desk.meetings || []).length
+    );
     refreshRelativeTimes();
     if (skipPanelRefresh || !preserveSelection || !activeTaskId || !prevActive) return;
     var row = rowCache[activeTaskId];
@@ -1429,6 +1515,9 @@
       showList(section);
       if (isMobile()) {
         selectTask('');
+      } else if (section === 'meetings') {
+        var firstMeeting = qs('.edesk-meetings-list__card:not([hidden])', lists.meetings);
+        selectTask(firstMeeting ? firstMeeting.getAttribute('data-task-id') || '' : '');
       } else {
         var first = qs('.edesk-list__item[data-section="' + section + '"]:not([hidden])', root);
         selectTask(first ? first.getAttribute('data-task-id') || '' : '');
@@ -1462,12 +1551,6 @@
     });
   }
 
-  qsa('.edesk-meetings__jump', root).forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      selectTask(btn.getAttribute('data-task-id') || '');
-    });
-  });
-
   root.addEventListener('click', function (e) {
     var target = e.target;
     if (!target || !target.closest) return;
@@ -1477,19 +1560,19 @@
       var taskId = readBtn.getAttribute('data-task-id') || '';
       markMeetingRead(taskId).then(function (data) {
         if (data && data.desk && data.desk.meetings) {
-          renderMeetingsBar(data.desk.meetings);
+          renderMeetingsList(data.desk.meetings);
         } else if (data && data.ok) {
-          var card = readBtn.closest('.edesk-meetings__card');
+          var card = readBtn.closest('.edesk-meetings-list__card');
           if (card) {
-            card.classList.remove('edesk-meetings__card--unread');
-            card.classList.add('edesk-meetings__card--read');
+            card.classList.remove('edesk-meetings-list__card--unread');
+            card.classList.add('edesk-meetings-list__card--read');
             readBtn.remove();
           }
         }
       });
       return;
     }
-    var jump = target.closest('.edesk-meetings__jump');
+    var jump = target.closest('.edesk-meetings-list__jump');
     if (jump) {
       e.preventDefault();
       selectTask(jump.getAttribute('data-task-id') || '');
@@ -1498,10 +1581,15 @@
 
   document.addEventListener('keydown', function (e) {
     if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
-    var items = qsa('.edesk-list:not([hidden]) .edesk-list__item:not([hidden])', root);
+    var items =
+      activeSection === 'meetings'
+        ? qsa('.edesk-list:not([hidden]) .edesk-meetings-list__card:not([hidden])', root)
+        : qsa('.edesk-list:not([hidden]) .edesk-list__item:not([hidden])', root);
     if (items.length === 0) return;
+    var activeClass =
+      activeSection === 'meetings' ? 'edesk-meetings-list__card--active' : 'edesk-list__item--active';
     var idx = items.findIndex(function (el) {
-      return el.classList.contains('edesk-list__item--active');
+      return el.classList.contains(activeClass);
     });
     if (e.key === '/' && searchInput) {
       e.preventDefault();

@@ -199,6 +199,62 @@ function akh_editor_task_view_model(
 }
 
 /**
+ * Sidebar row for an upcoming scheduled meeting.
+ *
+ * @param array<string, mixed> $desk
+ */
+function akh_editor_render_meeting_list_item(array $desk, bool $selected = false): void
+{
+    $mCode = (string) ($desk['task_code'] ?? '');
+    if ($mCode === '') {
+        return;
+    }
+    $mLink = (string) ($desk['meet_link'] ?? '');
+    $mUnread = !empty($desk['is_unread']);
+    $mMins = isset($desk['minutes_until']) && $desk['minutes_until'] !== null ? (int) $desk['minutes_until'] : null;
+    $when = trim((string) ($desk['when_label'] ?? ''));
+    $who = trim((string) ($desk['customer_name'] ?? ''));
+    $proj = trim((string) ($desk['project_name'] ?? ''));
+    $whoLine = $who . ($proj !== '' ? ' — ' . $proj : '');
+    $requested = trim((string) ($desk['requested_time_text'] ?? ''));
+    $searchBlob = strtolower(implode(' ', array_filter([$mCode, $when, $who, $proj, $requested], static fn (string $p): bool => trim($p) !== '')));
+    ?>
+    <article
+      class="edesk-meetings-list__card<?php echo $mUnread ? ' edesk-meetings-list__card--unread' : ' edesk-meetings-list__card--read'; ?><?php echo $selected ? ' edesk-meetings-list__card--active' : ''; ?>"
+      data-task-id="<?php echo h($mCode); ?>"
+      data-search="<?php echo h($searchBlob); ?>"
+    >
+      <button type="button" class="edesk-meetings-list__jump" data-task-id="<?php echo h($mCode); ?>"><?php echo h($mCode); ?></button>
+      <div class="edesk-meetings-list__meta">
+        <?php if ($mMins !== null && $mMins > 0): ?>
+          <p class="edesk-meetings-list__countdown"><strong>Starts in:</strong> <?php echo (int) $mMins; ?> min</p>
+        <?php endif; ?>
+        <?php if ($when !== ''): ?>
+          <p class="edesk-meetings-list__when"><strong>When:</strong> <?php echo h($when); ?></p>
+        <?php endif; ?>
+        <?php if ($whoLine !== ''): ?>
+          <p class="edesk-meetings-list__who"><?php echo h($whoLine); ?></p>
+        <?php endif; ?>
+        <?php if ($requested !== '' && $requested !== $when): ?>
+          <p class="edesk-meetings-list__requested"><strong>Requested:</strong> <?php echo h($requested); ?></p>
+        <?php endif; ?>
+        <?php if (($desk['end_time'] ?? '') !== ''): ?>
+          <p class="edesk-meetings-list__end"><strong>Ends:</strong> <?php echo h((string) $desk['end_time']); ?></p>
+        <?php endif; ?>
+      </div>
+      <div class="edesk-meetings-list__actions">
+        <?php if ($mLink !== ''): ?>
+          <a class="btn btn--primary btn--sm" href="<?php echo h($mLink); ?>" target="_blank" rel="noopener noreferrer">Join Meet</a>
+        <?php endif; ?>
+        <?php if ($mUnread): ?>
+          <button type="button" class="btn btn--ghost btn--sm edesk-meeting-read" data-task-id="<?php echo h($mCode); ?>">Mark read</button>
+        <?php endif; ?>
+      </div>
+    </article>
+    <?php
+}
+
+/**
  * @param array<string, mixed> $vm
  */
 function akh_editor_render_list_item(array $vm, bool $selected = false): void
@@ -314,7 +370,6 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
     $meetingAlert = is_array($taskAlert) && str_starts_with((string) ($taskAlert['kind'] ?? ''), 'meeting_')
         ? $taskAlert
         : null;
-    $scheduledMeeting = $meetingAlert === null ? akh_meeting_request_desk_for_task_code($tid) : null;
     $opts = ['assigned', 'in_progress', 'review', 'preview_sent', 'delivered', 'reverted', 'closed'];
     $pipelineOpts = $section === 'pool' ? ['new', 'assigned'] : $opts;
     ?>
@@ -428,8 +483,8 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
         <div class="edesk-panel__activity">
           <section class="edesk-card edesk-card--updates" aria-label="Client updates">
             <h3 class="edesk-card__title">Updates</h3>
-            <?php if ($meetingAlert !== null): ?>
-              <article class="edesk-update edesk-update--alert<?php echo !empty($vm['meeting_unread']) ? ' edesk-update--meeting' : ''; ?>">
+            <?php if ($meetingAlert !== null && !empty($vm['meeting_unread'])): ?>
+              <article class="edesk-update edesk-update--alert edesk-update--meeting">
                 <div class="edesk-update__head">
                   <p class="edesk-update__label"><?php echo h(akh_dashboard_alert_kind_label($meetingAlert)); ?></p>
                   <?php if (!empty($vm['meeting_unread'])): ?>
@@ -460,28 +515,6 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
                 <?php endif; ?>
                 <?php if (trim((string) ($meetingAlert['end_time'] ?? '')) !== ''): ?>
                   <p class="edesk-muted edesk-muted--sm"><strong>Ends:</strong> <?php echo h((string) $meetingAlert['end_time']); ?></p>
-                <?php endif; ?>
-              </article>
-            <?php elseif (is_array($scheduledMeeting) && (
-                trim((string) ($scheduledMeeting['meet_link'] ?? '')) !== ''
-                || trim((string) ($scheduledMeeting['when_label'] ?? '')) !== ''
-            )): ?>
-              <article class="edesk-update edesk-update--scheduled-meeting">
-                <p class="edesk-update__label">Scheduled meeting</p>
-                <?php if (trim((string) ($scheduledMeeting['when_label'] ?? '')) !== ''): ?>
-                  <p class="edesk-muted edesk-muted--sm"><strong>When:</strong> <?php echo h((string) $scheduledMeeting['when_label']); ?></p>
-                <?php endif; ?>
-                <?php if (trim((string) ($scheduledMeeting['customer_name'] ?? '')) !== '' || trim((string) ($scheduledMeeting['project_name'] ?? '')) !== ''): ?>
-                  <p class="edesk-muted edesk-muted--sm">
-                    <?php
-                    $who = trim((string) ($scheduledMeeting['customer_name'] ?? ''));
-                    $proj = trim((string) ($scheduledMeeting['project_name'] ?? ''));
-                    echo h($who . ($proj !== '' ? ' — ' . $proj : ''));
-                    ?>
-                  </p>
-                <?php endif; ?>
-                <?php if (trim((string) ($scheduledMeeting['meet_link'] ?? '')) !== ''): ?>
-                  <a class="btn btn--primary btn--sm" href="<?php echo h((string) $scheduledMeeting['meet_link']); ?>" target="_blank" rel="noopener noreferrer">Join Google Meet</a>
                 <?php endif; ?>
               </article>
             <?php endif; ?>
@@ -517,8 +550,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
               </article>
             <?php endif; ?>
             <?php if (
-                $meetingAlert === null
-                && $scheduledMeeting === null
+                ($meetingAlert === null || empty($vm['meeting_unread']))
                 && $notificationUpdates === []
                 && (!is_array($taskAlert) || ($taskAlert['kind'] ?? '') !== 'whatsapp_message')
                 && trim((string) ($t['client_feedback'] ?? '')) === ''

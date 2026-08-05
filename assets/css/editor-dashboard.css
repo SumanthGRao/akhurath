@@ -201,60 +201,46 @@
   border: 1px solid rgba(180, 60, 45, 0.22);
 }
 
-.edesk-meetings {
+.edesk-list--meetings {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.65rem;
-  align-items: center;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--edesk-line);
-  background: rgba(47, 95, 156, 0.06);
-  font-size: 0.84rem;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem 0.75rem;
 }
 
-.edesk-meetings__label {
-  font-weight: 700;
-  color: #2f5f9c;
-}
-
-.edesk-meetings__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.25rem 0.55rem;
-  border-radius: 999px;
-  background: #fff;
-  border: 1px solid rgba(47, 95, 156, 0.2);
-}
-
-.edesk-meetings__card {
+.edesk-meetings-list__card {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 0.5rem 0.75rem;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.65rem;
   align-items: start;
-  padding: 0.55rem 0.75rem;
+  padding: 0.65rem 0.7rem;
   border-radius: 10px;
   background: #fff;
   border: 1px solid rgba(47, 95, 156, 0.2);
-  min-width: min(100%, 22rem);
 }
 
-.edesk-meetings__card--unread {
+.edesk-meetings-list__card--unread {
   border-color: rgba(47, 95, 156, 0.45);
   box-shadow: 0 0 0 1px rgba(47, 95, 156, 0.1);
 }
 
-.edesk-meetings__card--read {
+.edesk-meetings-list__card--read {
   opacity: 0.96;
 }
 
-.edesk-meetings__countdown {
+.edesk-meetings-list__card--active {
+  border-color: rgba(47, 95, 156, 0.55);
+  box-shadow: 0 0 0 2px rgba(47, 95, 156, 0.14);
+}
+
+.edesk-meetings-list__countdown {
   margin: 0;
   font-weight: 600;
   color: #2f5f9c;
 }
 
-.edesk-meetings__meta {
+.edesk-meetings-list__meta {
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
@@ -262,29 +248,30 @@
   line-height: 1.35;
 }
 
-.edesk-meetings__meta p {
+.edesk-meetings-list__meta p {
   margin: 0;
 }
 
-.edesk-meetings__when {
+.edesk-meetings-list__when {
   font-weight: 600;
   color: var(--edesk-ink);
 }
 
-.edesk-meetings__who,
-.edesk-meetings__requested,
-.edesk-meetings__end {
+.edesk-meetings-list__who,
+.edesk-meetings-list__requested,
+.edesk-meetings-list__end {
   color: var(--edesk-muted);
 }
 
-.edesk-meetings__actions {
+.edesk-meetings-list__actions {
+  grid-column: 1 / -1;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.25rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
 }
 
-.edesk-meetings__jump {
+.edesk-meetings-list__jump {
   border: 0;
   background: transparent;
   padding: 0;
@@ -292,9 +279,10 @@
   font-weight: 700;
   color: #2f5f9c;
   cursor: pointer;
+  text-align: left;
 }
 
-.edesk-meetings__jump:hover {
+.edesk-meetings-list__jump:hover {
   text-decoration: underline;
 }
 
