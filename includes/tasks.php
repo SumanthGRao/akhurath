@@ -742,6 +742,11 @@ function akh_task_ajax_poll_editor(string $editorUsername): array
     $editorUsername = strtolower(trim($editorUsername));
     require_once __DIR__ . '/meeting-requests.php';
     require_once __DIR__ . '/editor-dashboard-api.php';
+    require_once __DIR__ . '/whatsapp-tasks.php';
+    akh_wa_sync_whatsapp_pool_to_studio_board();
+    if ($editorUsername !== '') {
+        akh_wa_sync_for_editor($editorUsername);
+    }
 
     return [
         'ok' => true,

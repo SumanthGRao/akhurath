@@ -23,9 +23,12 @@ function akh_editor_desk_board_context(string $editorUsername): array
     require_once __DIR__ . '/meeting-requests.php';
     require_once __DIR__ . '/whatsapp-tasks.php';
 
-    akh_wa_sync_whatsapp_pool_to_studio_board();
-
     $editorUsername = strtolower(trim($editorUsername));
+    akh_wa_sync_whatsapp_pool_to_studio_board();
+    if ($editorUsername !== '') {
+        akh_wa_sync_for_editor($editorUsername);
+    }
+
     $all = akh_tasks_all_sorted();
     $newTasks = array_values(array_filter($all, static function (array $t): bool {
         return akh_task_editor_pool_eligible($t);

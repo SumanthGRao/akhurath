@@ -787,6 +787,208 @@ function akh_wa_find_studio_task_id(int $waId, string $taskCode): string
     return '';
 }
 
+function akh_wa_editor_id_by_username(string $username): ?int
+{
+    $username = strtolower(trim($username));
+    if ($username === '' || !function_exists('akh_db')) {
+        return null;
+    }
+
+    try {
+        $st = akh_db()->prepare('SELECT id FROM users WHERE LOWER(username) = ? AND role = ? LIMIT 1');
+        $st->execute([$username, 'editor']);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row)) {
+            return null;
+        }
+        $id = (int) ($row['id'] ?? 0);
+
+        return $id > 0 ? $id : null;
+    } catch (Throwable) {
+        return null;
+    }
+}
+
+/** @return list<array<string, mixed>> */
+function akh_wa_tasks_assigned_to_editor(int $editorId): array
+{
+    if ($editorId <= 0 || !akh_wa_tasks_table_exists()) {
+        return [];
+    }
+
+    try {
+        $st = akh_db()->prepare('SELECT * FROM whatsapp_tasks WHERE assigned_editor = ? ORDER BY updated_at DESC');
+        $st->execute([$editorId]);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+
+        return is_array($rows) ? $rows : [];
+    } catch (Throwable) {
+        return [];
+    }
+}
+
+function akh_wa_row_notify_fingerprint(array $waRow): string
+{
+    return hash('sha256', implode("\n", [
+        (string) ($waRow['updated_at'] ?? ''),
+        strtolower(trim((string) ($waRow['comments'] ?? ''))),
+        strtolower(trim((string) ($waRow['instructions'] ?? ''))),
+        strtolower(trim((string) ($waRow['task_type'] ?? ''))),
+        strtolower(trim((string) ($waRow['status'] ?? ''))),
+    ]));
+}
+
+function akh_wa_row_is_meeting_request(array $waRow): bool
+{
+    foreach (['task_type', 'comments', 'instructions', 'status'] as $field) {
+        $v = strtolower(trim((string) ($waRow[$field] ?? '')));
+        if ($v === '') {
+            continue;
+        }
+        if (str_contains($v, 'meeting') || str_contains($v, 'meet request') || str_contains($v, 'google meet')) {
+            return true;
+        }
+    }
+    foreach (['comments', 'instructions', 'drive_link', 'reference_link'] as $field) {
+        if (str_contains(strtolower((string) ($waRow[$field] ?? '')), 'meet.google.com')) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/** @return array{meeting_date: string, meeting_link: string, feedback: string} */
+function akh_wa_extract_meeting_from_row(array $waRow): array
+{
+    $blob = trim((string) ($waRow['comments'] ?? ''));
+    $instructions = trim((string) ($waRow['instructions'] ?? ''));
+    if ($instructions !== '') {
+        $blob .= ($blob !== '' ? "\n" : '') . $instructions;
+    }
+
+    $meetingDate = '';
+    $meetingLink = '';
+    if (preg_match('#https://meet\.google\.com/[\w-]+#i', $blob, $m)) {
+        $meetingLink = $m[0];
+    }
+    if (preg_match('#\b(20\d{2}-\d{2}-\d{2})\b#', $blob, $m)) {
+        $meetingDate = $m[1];
+    }
+
+    return [
+        'meeting_date' => $meetingDate,
+        'meeting_link' => $meetingLink,
+        'feedback' => trim((string) ($waRow['comments'] ?? '')),
+    ];
+}
+
+function akh_wa_build_editor_notify_detail(array $waRow): string
+{
+    $meeting = akh_wa_extract_meeting_from_row($waRow);
+    $parts = [];
+    if (akh_wa_row_is_meeting_request($waRow)) {
+        $parts[] = 'WhatsApp meeting request';
+    }
+    if ($meeting['meeting_date'] !== '') {
+        $parts[] = 'Meet: ' . $meeting['meeting_date'];
+    }
+    if ($meeting['feedback'] !== '') {
+        $snippet = mb_strlen($meeting['feedback']) > 100 ? mb_substr($meeting['feedback'], 0, 99) . '…' : $meeting['feedback'];
+        $parts[] = $snippet;
+    }
+    if ($parts === []) {
+        $taskType = trim((string) ($waRow['task_type'] ?? ''));
+        $parts[] = $taskType !== '' ? 'WhatsApp update: ' . $taskType : 'WhatsApp task updated.';
+    }
+    $detail = implode(' · ', $parts);
+    if (mb_strlen($detail) > 220) {
+        $detail = mb_substr($detail, 0, 219) . '…';
+    }
+
+    return $detail;
+}
+
+function akh_wa_apply_meeting_notify_to_studio(array $waRow, string $studioId, ?string $editorUsername): void
+{
+    if ($studioId === '' || $editorUsername === null || trim($editorUsername) === '') {
+        return;
+    }
+
+    require_once __DIR__ . '/tasks.php';
+
+    $fp = akh_wa_row_notify_fingerprint($waRow);
+    $list = akh_tasks_load();
+    foreach ($list as $i => $t) {
+        if ((string) ($t['id'] ?? '') !== $studioId) {
+            continue;
+        }
+        if (strtolower(trim((string) ($t['assigned_editor'] ?? ''))) !== strtolower(trim($editorUsername))) {
+            return;
+        }
+
+        $prevFp = (string) ($t['whatsapp_sync_hash'] ?? '');
+        $list[$i]['whatsapp_sync_hash'] = $fp;
+        $list[$i]['whatsapp_updated_at'] = (string) ($waRow['updated_at'] ?? '');
+
+        if ($prevFp === $fp || !akh_wa_row_is_meeting_request($waRow)) {
+            akh_tasks_save_locked($list);
+
+            return;
+        }
+
+        $meeting = akh_wa_extract_meeting_from_row($waRow);
+        if ($meeting['feedback'] !== '') {
+            $list[$i]['client_feedback'] = $meeting['feedback'];
+        }
+        if ($meeting['meeting_date'] !== '') {
+            $list[$i]['client_meeting_date'] = $meeting['meeting_date'];
+        }
+        if ($meeting['meeting_link'] !== '') {
+            $list[$i]['client_meeting_link'] = $meeting['meeting_link'];
+        }
+        $list[$i]['editor_feedback_notify'] = true;
+        $list[$i]['editor_notify_detail'] = akh_wa_build_editor_notify_detail($waRow);
+        $st = (string) ($t['status'] ?? '');
+        if (in_array($st, ['delivered', 'review'], true)) {
+            $list[$i]['status'] = 'reverted';
+        }
+        $list[$i]['updated_at'] = gmdate('c');
+        if (!akh_tasks_save_locked($list)) {
+            return;
+        }
+
+        foreach ($list as $row) {
+            if ((string) ($row['id'] ?? '') !== $studioId) {
+                continue;
+            }
+            akh_task_write_editor_feedback_notification($row);
+
+            return;
+        }
+
+        return;
+    }
+}
+
+/** Sync WhatsApp rows assigned to this editor into the studio task board (incl. meeting alerts). */
+function akh_wa_sync_for_editor(string $editorUsername): void
+{
+    $editorUsername = strtolower(trim($editorUsername));
+    if ($editorUsername === '' || !akh_wa_tasks_table_exists()) {
+        return;
+    }
+
+    $editorId = akh_wa_editor_id_by_username($editorUsername);
+    if ($editorId === null) {
+        return;
+    }
+
+    foreach (akh_wa_tasks_assigned_to_editor($editorId) as $waRow) {
+        akh_wa_sync_to_studio($waRow);
+    }
+}
+
 /**
  * Editor-board task id for a WhatsApp row (same value as task_code).
  */
@@ -924,6 +1126,8 @@ function akh_wa_sync_to_studio(array $waRow): ?string
             }
         }
     }
+
+    akh_wa_apply_meeting_notify_to_studio($waRow, $studioId, $editorUsername);
 
     return null;
 }
