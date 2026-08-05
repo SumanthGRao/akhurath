@@ -104,6 +104,8 @@ const AKH_ALLOW_CLIENT_REGISTRATION = true;
  */
 const AKH_ADMIN_SETUP_ENABLED = true;
 
+const AKH_HR_DASHBOARD_ENABLED =  true;
+
 /** Site identity */
 const SITE_NAME = 'Akhurath Studio';
 const SITE_TAGLINE = 'Wedding film editing — edit, color, sound, and story.';
