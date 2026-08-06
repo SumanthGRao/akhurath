@@ -94,7 +94,7 @@ function akh_wa_editors_for_select(): array
 }
 
 /**
- * @param array{status?: string, q?: string} $filters
+ * @param array{status?: string, q?: string, scope?: string} $filters scope: active (default), closed, all
  * @return list<array<string, mixed>>
  */
 function akh_wa_tasks_list(array $filters = []): array
@@ -110,10 +110,17 @@ function akh_wa_tasks_list(array $filters = []): array
     $where = ['1=1'];
     $params = [];
 
+    $scope = strtolower(trim((string) ($filters['scope'] ?? 'active')));
     $status = isset($filters['status']) ? akh_wa_task_normalize_status((string) $filters['status']) : null;
-    if ($status !== null) {
+    if ($scope === 'closed') {
+        $where[] = 'LOWER(status) = ?';
+        $params[] = 'closed';
+    } elseif ($status !== null) {
         $where[] = 'LOWER(status) = ?';
         $params[] = $status;
+    } elseif ($scope !== 'all') {
+        $where[] = 'LOWER(status) <> ?';
+        $params[] = 'closed';
     }
 
     $q = strtolower(trim((string) ($filters['q'] ?? '')));

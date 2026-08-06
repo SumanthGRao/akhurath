@@ -320,11 +320,17 @@
     b.classList.toggle('desk-bell--pop', typeof n === 'number' && n > 0);
   }
 
-  function updateTabBadges(poolCount, mineCount, meetingsCount) {
+  function updateTabBadges(poolCount, mineCount, meetingsCount, closedCount) {
     qsa('.edesk-tab', root).forEach(function (tab) {
       var section = tab.getAttribute('data-section');
       var n =
-        section === 'pool' ? poolCount : section === 'mine' ? mineCount : meetingsCount || 0;
+        section === 'pool'
+          ? poolCount
+          : section === 'mine'
+            ? mineCount
+            : section === 'closed'
+              ? closedCount || 0
+              : meetingsCount || 0;
       var badge = tab.querySelector('.edesk-tab__badge');
       if (n > 0) {
         if (!badge) {
@@ -536,6 +542,7 @@
     pool: qs('#edesk-list-pool', root),
     mine: qs('#edesk-list-mine', root),
     meetings: qs('#edesk-list-meetings', root),
+    closed: qs('#edesk-list-closed', root),
   };
   var panelsHost = qs('#edesk-detail-scroll', root);
   var emptyEl = qs('#edesk-empty', root);
@@ -583,8 +590,8 @@
       if (lists[key]) lists[key].hidden = key !== section;
     });
     var filtersWrap = qs('.edesk-filters', root);
-    if (filtersWrap) filtersWrap.hidden = section === 'meetings';
-    if (section !== 'meetings') {
+    if (filtersWrap) filtersWrap.hidden = section === 'meetings' || section === 'closed';
+    if (section !== 'meetings' && section !== 'closed') {
       syncStatusFilterOptions(section);
     }
     var hint = qs('#edesk-sidebar-hint', root);
@@ -594,7 +601,9 @@
           ? 'New jobs appear here in real time — claim to move to My tasks.'
           : section === 'meetings'
             ? 'Upcoming Google Meet sessions — select one to open the linked task.'
-            : 'Live updates for messages, feedback, and status changes.';
+            : section === 'closed'
+              ? 'Finished jobs stay here for reference — reopen from the task detail if needed.'
+              : 'Live updates for messages, feedback, and status changes.';
     }
     if (searchInput) {
       searchInput.placeholder = section === 'meetings' ? 'Search meetings…' : 'Search tasks…';
@@ -748,7 +757,7 @@
 
   function applyListFilters() {
     var q = normalizeSearch(searchQuery);
-    ['pool', 'mine'].forEach(function (section) {
+    ['pool', 'mine', 'closed'].forEach(function (section) {
       var listEl = lists[section];
       if (!listEl) return;
       var isActiveList = section === activeSection;
@@ -1095,7 +1104,8 @@
       updateTabBadges(
         data.desk.pool_count || (data.desk.pool || []).length,
         data.desk.mine_count || (data.desk.mine || []).length,
-        (data.desk.meetings || []).length
+        (data.desk.meetings || []).length,
+        data.desk.closed_count || (data.desk.closed || []).length
       );
       refreshRelativeTimes();
     }
@@ -1456,11 +1466,13 @@
     var prevActive = preserveSelection && activeTaskId ? snapshotTaskRow(activeTaskId) : null;
     renderList('pool', desk.pool || [], preserveSelection);
     renderList('mine', desk.mine || [], preserveSelection);
+    renderList('closed', desk.closed || [], preserveSelection);
     renderMeetingsList(desk.meetings || []);
     updateTabBadges(
       desk.pool_count || (desk.pool || []).length,
       desk.mine_count || (desk.mine || []).length,
-      (desk.meetings || []).length
+      (desk.meetings || []).length,
+      desk.closed_count || (desk.closed || []).length
     );
     refreshRelativeTimes();
     if (skipPanelRefresh || !preserveSelection || !activeTaskId || !prevActive) return;
@@ -1518,6 +1530,9 @@
       } else if (section === 'meetings') {
         var firstMeeting = qs('.edesk-meetings-list__card:not([hidden])', lists.meetings);
         selectTask(firstMeeting ? firstMeeting.getAttribute('data-task-id') || '' : '');
+      } else if (section === 'closed') {
+        var firstClosed = qs('.edesk-list__item[data-section="closed"]:not([hidden])', root);
+        selectTask(firstClosed ? firstClosed.getAttribute('data-task-id') || '' : '');
       } else {
         var first = qs('.edesk-list__item[data-section="' + section + '"]:not([hidden])', root);
         selectTask(first ? first.getAttribute('data-task-id') || '' : '');

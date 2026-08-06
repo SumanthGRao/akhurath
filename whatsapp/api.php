@@ -95,6 +95,7 @@ try {
         $filters = [
             'status' => (string) ($_POST['status'] ?? ''),
             'q' => (string) ($_POST['q'] ?? ''),
+            'scope' => (string) ($_POST['scope'] ?? 'active'),
         ];
         $rows = akh_wa_tasks_list_for_dashboard($filters);
         $editors = akh_wa_editors_for_select();

@@ -333,6 +333,8 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
         <?php endif; ?>
         <?php if ($section === 'mine'): ?>
           <span class="task-badge task-badge--<?php echo h($stSlug); ?>"><?php echo h(akh_task_status_label($st)); ?></span>
+        <?php elseif ($section === 'closed'): ?>
+          <span class="task-badge task-badge--closed">Closed</span>
         <?php endif; ?>
         <?php if ($vm['has_reminder']): ?>
           <span class="edesk-list__pill edesk-list__pill--soon">Soon</span>
@@ -387,6 +389,8 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
           <div class="edesk-panel__chips">
             <?php if ($section === 'mine'): ?>
               <span class="task-badge task-badge--<?php echo h($stSlug); ?>"><?php echo h(akh_task_status_label($st)); ?></span>
+            <?php elseif ($section === 'closed'): ?>
+              <span class="task-badge task-badge--closed">Closed</span>
             <?php else: ?>
               <span class="edesk-panel__chip">Pool</span>
             <?php endif; ?>
@@ -405,7 +409,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
         </dl>
       </header>
 
-      <?php if ($section === 'mine'): ?>
+      <?php if ($section === 'mine' || $section === 'closed'): ?>
         <nav class="edesk-pipeline" aria-label="Workflow progress">
           <?php foreach ($pipelineOpts as $o): ?>
             <?php if ($o === 'new') { continue; } ?>

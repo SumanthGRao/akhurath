@@ -178,7 +178,7 @@ function akh_dashboard_notification_payload(): array
         'notices' => akh_dashboard_notice_rows($alerts),
         'notify_sig' => akh_dashboard_alerts_poll_signature(),
         'reminders' => akh_meeting_request_upcoming_reminders(),
-        'meetings' => akh_meeting_request_list_for_dashboard(),
+        'meetings' => akh_meeting_request_upcoming_list_for_dashboard(),
     ];
 }
 

@@ -44,25 +44,52 @@ function akh_editor_desk_board_context(string $editorUsername): array
     $mine = array_values(array_filter($all, static function (array $t) use ($editorUsername): bool {
         return strtolower(trim((string) ($t['assigned_editor'] ?? ''))) === $editorUsername;
     }));
+    $closed = array_values(array_filter($mine, static function (array $t): bool {
+        return strtolower(trim((string) ($t['status'] ?? ''))) === 'closed';
+    }));
+    $mine = array_values(array_filter($mine, static function (array $t): bool {
+        return strtolower(trim((string) ($t['status'] ?? ''))) !== 'closed';
+    }));
 
     $dashboardAlerts = akh_dashboard_alerts_for_editor($editorUsername);
     $mineIds = [];
+    $closedIds = [];
     foreach ($mine as $t) {
         $nid = akh_task_normalize_id((string) ($t['id'] ?? ''));
         if ($nid !== '') {
             $mineIds[$nid] = true;
         }
     }
+    foreach ($closed as $t) {
+        $nid = akh_task_normalize_id((string) ($t['id'] ?? ''));
+        if ($nid !== '') {
+            $closedIds[$nid] = true;
+        }
+    }
     foreach (array_keys($dashboardAlerts) as $alertTaskId) {
-        if (isset($mineIds[$alertTaskId])) {
+        if (isset($mineIds[$alertTaskId]) || isset($closedIds[$alertTaskId])) {
             continue;
         }
         $extra = akh_task_notification_editor_board_row($alertTaskId, $editorUsername);
-        if (is_array($extra)) {
+        if (!is_array($extra)) {
+            continue;
+        }
+        $nid = akh_task_normalize_id((string) ($extra['id'] ?? ''));
+        if (strtolower(trim((string) ($extra['status'] ?? ''))) === 'closed') {
+            $closed[] = $extra;
+            if ($nid !== '') {
+                $closedIds[$nid] = true;
+            }
+        } else {
             $mine[] = $extra;
-            $mineIds[$alertTaskId] = true;
+            if ($nid !== '') {
+                $mineIds[$nid] = true;
+            }
         }
     }
+    usort($closed, static function (array $a, array $b): int {
+        return strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
+    });
     usort($mine, static function (array $a, array $b) use ($dashboardAlerts): int {
         $aid = akh_task_normalize_id((string) ($a['id'] ?? ''));
         $bid = akh_task_normalize_id((string) ($b['id'] ?? ''));
@@ -98,6 +125,7 @@ function akh_editor_desk_board_context(string $editorUsername): array
     return [
         'newTasks' => $newTasks,
         'mine' => $mine,
+        'closed' => $closed,
         'dashboardAlerts' => $dashboardAlerts,
         'seenNew' => is_array($seenNew) ? $seenNew : [],
         'editorReminderCodes' => $editorReminderCodes,
@@ -192,6 +220,18 @@ function akh_editor_desk_lists_json(string $editorUsername): array
         );
         $mine[] = akh_editor_desk_list_row_json($vm);
     }
+    $closed = [];
+    foreach ($ctx['closed'] as $t) {
+        $vm = akh_editor_task_view_model(
+            $t,
+            $editorUsername,
+            $ctx['dashboardAlerts'],
+            $ctx['editorReminderCodes'],
+            $ctx['seenNew'],
+            'closed'
+        );
+        $closed[] = akh_editor_desk_list_row_json($vm);
+    }
     $meetings = [];
     foreach ($ctx['editorMeetingRows'] as $desk) {
         if (!is_array($desk) || (string) ($desk['task_code'] ?? '') === '') {
@@ -200,7 +240,7 @@ function akh_editor_desk_lists_json(string $editorUsername): array
         $meetings[] = $desk;
     }
 
-    return ['pool' => $pool, 'mine' => $mine, 'meetings' => $meetings];
+    return ['pool' => $pool, 'mine' => $mine, 'closed' => $closed, 'meetings' => $meetings];
 }
 
 /**
@@ -335,8 +375,10 @@ function akh_editor_desk_poll_bundle(string $editorUsername): array
     return [
         'pool' => $lists['pool'],
         'mine' => $lists['mine'],
+        'closed' => $lists['closed'],
         'meetings' => $lists['meetings'],
         'pool_count' => count($lists['pool']),
         'mine_count' => count($lists['mine']),
+        'closed_count' => count($lists['closed']),
     ];
 }

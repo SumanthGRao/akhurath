@@ -24,7 +24,7 @@ try {
     if (!akh_wa_tasks_table_exists()) {
         $dbError = 'Table whatsapp_tasks was not found. Import sql/migrations/004_whatsapp_tasks.sql in phpMyAdmin.';
     } else {
-        $initialTasks = akh_wa_tasks_list_for_dashboard();
+        $initialTasks = akh_wa_tasks_list_for_dashboard(['scope' => 'active']);
         $initialCounts = akh_wa_task_status_counts();
         $editors = akh_wa_editors_for_select();
         $pollSig = akh_wa_tasks_poll_signature();
@@ -184,12 +184,21 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
           <span class="wa-tabs__badge wa-tabs__badge--hidden" id="wa-meetings-badge">0</span>
         <?php endif; ?>
       </button>
+      <button type="button" class="wa-tabs__btn" data-wa-tab="closed" id="wa-tab-closed">
+        Closed
+        <?php if ((int) ($initialCounts['closed'] ?? 0) > 0): ?>
+          <span class="wa-tabs__badge" id="wa-closed-badge"><?php echo (int) $initialCounts['closed']; ?></span>
+        <?php else: ?>
+          <span class="wa-tabs__badge wa-tabs__badge--hidden" id="wa-closed-badge">0</span>
+        <?php endif; ?>
+      </button>
     </nav>
 
     <div class="wa-panel" id="wa-panel-tasks">
 
     <section class="wa-stats" aria-label="Task counts by status">
       <?php foreach (akh_wa_task_statuses() as $st): ?>
+        <?php if ($st === 'closed') { continue; } ?>
         <button
           type="button"
           class="wa-stat wa-stat--<?php echo h($st); ?><?php echo $fStatus === $st ? ' is-active' : ''; ?>"
@@ -274,7 +283,7 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
 
     <div class="wa-panel wa-panel--hidden" id="wa-panel-meetings" hidden>
       <div class="wa-meetings-wrap">
-        <p class="wa-meetings-intro">Scheduled and requested meetings. Unread requests are highlighted. Join popup appears about 5 minutes before start time.</p>
+        <p class="wa-meetings-intro">Upcoming meetings (within the last 30 minutes or later). Unread requests are highlighted.</p>
         <div class="wa-table-wrap">
           <table class="wa-table wa-meetings-table" id="wa-meetings-table">
             <thead>
@@ -293,6 +302,33 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <div class="wa-panel wa-panel--hidden" id="wa-panel-closed" hidden>
+      <section class="wa-toolbar">
+        <label class="wa-search">
+          <span class="visually-hidden">Search closed tasks</span>
+          <input type="search" id="wa-closed-search" placeholder="Search closed tasks…" autocomplete="off" />
+        </label>
+      </section>
+      <div class="wa-table-wrap" id="wa-closed-table-wrap">
+        <table class="wa-table" id="wa-closed-table">
+          <thead>
+            <tr>
+              <th scope="col">Task ID</th>
+              <th scope="col">Customer</th>
+              <th scope="col">Project</th>
+              <th scope="col">Type</th>
+              <th scope="col">Editor</th>
+              <th scope="col">Updated</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="wa-closed-body">
+            <tr class="wa-table__empty"><td colspan="7">No closed tasks.</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
 

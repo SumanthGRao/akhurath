@@ -238,80 +238,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 require_once AKH_ROOT . '/includes/meeting-requests.php';
-akh_wa_sync_whatsapp_pool_to_studio_board();
-akh_wa_sync_for_editor($editor);
-
-$all = akh_tasks_all_sorted();
-$newTasks = array_values(array_filter($all, static function (array $t): bool {
-    return akh_task_editor_pool_eligible($t);
-}));
-usort($newTasks, static function (array $a, array $b): int {
-    $cmp = strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? ''));
-    if ($cmp !== 0) {
-        return $cmp;
-    }
-
-    return strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
-});
-$mine = array_values(array_filter($all, static function (array $t) use ($editor): bool {
-    return strtolower(trim((string) ($t['assigned_editor'] ?? ''))) === strtolower(trim($editor));
-}));
-require_once AKH_ROOT . '/includes/dashboard-alerts.php';
-$dashboardAlerts = akh_dashboard_alerts_for_editor($editor);
-$mineIds = [];
-foreach ($mine as $t) {
-    $nid = akh_task_normalize_id((string) ($t['id'] ?? ''));
-    if ($nid !== '') {
-        $mineIds[$nid] = true;
-    }
-}
-foreach (array_keys($dashboardAlerts) as $alertTaskId) {
-    if (isset($mineIds[$alertTaskId])) {
-        continue;
-    }
-    $extra = akh_task_notification_editor_board_row($alertTaskId, $editor);
-    if (is_array($extra)) {
-        $mine[] = $extra;
-        $mineIds[$alertTaskId] = true;
-    }
-}
-usort($mine, static function (array $a, array $b) use ($dashboardAlerts): int {
-    $aid = akh_task_normalize_id((string) ($a['id'] ?? ''));
-    $bid = akh_task_normalize_id((string) ($b['id'] ?? ''));
-    $aa = $dashboardAlerts[$aid] ?? null;
-    $ab = $dashboardAlerts[$bid] ?? null;
-    $pa = is_array($aa) ? (int) ($aa['priority'] ?? 0) : 0;
-    $pb = is_array($ab) ? (int) ($ab['priority'] ?? 0) : 0;
-    if ($pa !== $pb) {
-        return $pb <=> $pa;
-    }
-    if ($pa > 0 && $pb > 0) {
-        $ta = (string) ($aa['created_at'] ?? '');
-        $tb = (string) ($ab['created_at'] ?? '');
-        $cmp = strcmp($tb, $ta);
-        if ($cmp !== 0) {
-            return $cmp;
-        }
-    }
-
-    return strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
-});
-$seenNew = akh_task_editor_seen_load()[strtolower($editor)] ?? [];
+$boardCtx = akh_editor_desk_board_context($editor);
+$newTasks = $boardCtx['newTasks'];
+$mine = $boardCtx['mine'];
+$closed = $boardCtx['closed'];
+$dashboardAlerts = $boardCtx['dashboardAlerts'];
+$seenNew = $boardCtx['seenNew'];
+$editorReminderCodes = $boardCtx['editorReminderCodes'];
+$editorMeetingRows = $boardCtx['editorMeetingRows'];
 $editorBellCount = akh_task_editor_board_bell_count($editor);
 $editorBoardSig = akh_task_poll_signature_all();
 $editorBellNotices = akh_task_editor_notice_rows($editor);
 $pageCsrf = akh_csrf_token();
-require_once AKH_ROOT . '/includes/meeting-requests.php';
-$editorMeetingRows = akh_meeting_request_scheduled_for_editor($editor);
 $editorMeetingCount = count($editorMeetingRows);
 $editorReminders = akh_meeting_request_upcoming_reminders_for_editor($editor);
-$editorReminderCodes = [];
-foreach ($editorReminders as $r) {
-    $c = akh_task_normalize_id((string) ($r['task_code'] ?? ''));
-    if ($c !== '') {
-        $editorReminderCodes[$c] = true;
-    }
-}
 $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filemtime(AKH_ROOT . '/assets/js/meeting-alerts.js') : '1';
 
 $attendanceOn = AKH_EDITOR_ATTENDANCE_ENABLED && akh_editor_attendance_is_clocked_in($editor);
@@ -327,6 +267,14 @@ if ($openTicketId !== '') {
         if (akh_task_ids_match((string) ($t['id'] ?? ''), $openTicketId)) {
             $defaultDeskTab = 'pool';
             break;
+        }
+    }
+    if ($defaultDeskTab !== 'pool') {
+        foreach ($closed as $t) {
+            if (akh_task_ids_match((string) ($t['id'] ?? ''), $openTicketId)) {
+                $defaultDeskTab = 'closed';
+                break;
+            }
         }
     }
 }
@@ -370,6 +318,12 @@ require_once AKH_ROOT . '/includes/header.php';
             Meetings
             <?php if ($editorMeetingCount > 0): ?>
               <span class="edesk-tab__badge"><?php echo $editorMeetingCount; ?></span>
+            <?php endif; ?>
+          </button>
+          <button type="button" class="edesk-tab" data-section="closed" aria-selected="false">
+            Closed
+            <?php if (count($closed) > 0): ?>
+              <span class="edesk-tab__badge"><?php echo count($closed); ?></span>
             <?php endif; ?>
           </button>
         </nav>
@@ -473,6 +427,19 @@ require_once AKH_ROOT . '/includes/header.php';
                 <?php endforeach; ?>
               <?php endif; ?>
             </div>
+            <div class="edesk-list" id="edesk-list-closed" role="list" hidden>
+              <?php if ($closed === []): ?>
+                <p class="edesk-list__empty">No closed tasks.</p>
+              <?php else: ?>
+                <?php foreach ($closed as $t): ?>
+                  <?php
+                  $vm = akh_editor_task_view_model($t, $editor, $dashboardAlerts, $editorReminderCodes, $seenNew, 'closed');
+                  $sel = $openTicketId !== '' && akh_task_ids_match($openTicketId, (string) $vm['tid']);
+                  akh_editor_render_list_item($vm, $sel);
+                  ?>
+                <?php endforeach; ?>
+              <?php endif; ?>
+            </div>
             <div class="edesk-list edesk-list--meetings" id="edesk-list-meetings" role="list" hidden>
               <?php if ($editorMeetingRows === []): ?>
                 <p class="edesk-list__empty">No upcoming meetings scheduled.</p>
@@ -515,6 +482,15 @@ require_once AKH_ROOT . '/includes/header.php';
                 }
                 $renderedPanels[$tid] = true;
                 $vm = akh_editor_task_view_model($t, $editor, $dashboardAlerts, $editorReminderCodes, $seenNew, 'pool');
+                akh_editor_render_detail_panel($vm, $pageCsrf);
+            }
+            foreach ($closed as $t) {
+                $tid = (string) ($t['id'] ?? '');
+                if ($tid === '' || isset($renderedPanels[$tid])) {
+                    continue;
+                }
+                $renderedPanels[$tid] = true;
+                $vm = akh_editor_task_view_model($t, $editor, $dashboardAlerts, $editorReminderCodes, $seenNew, 'closed');
                 akh_editor_render_detail_panel($vm, $pageCsrf);
             }
             ?>

@@ -15,6 +15,7 @@
   var reminderList = cfg.reminders || [];
   var reminderTasks = {};
   var activeTab = 'tasks';
+  var closedQ = '';
   var bellOpen = false;
   var filterStatus = cfg.filterStatus || '';
   var filterQ = cfg.filterQ || '';
@@ -58,6 +59,10 @@
     notifyMarkAll: document.getElementById('wa-notify-mark-all'),
     panelTasks: document.getElementById('wa-panel-tasks'),
     panelMeetings: document.getElementById('wa-panel-meetings'),
+    panelClosed: document.getElementById('wa-panel-closed'),
+    closedBody: document.getElementById('wa-closed-body'),
+    closedSearch: document.getElementById('wa-closed-search'),
+    closedBadge: document.getElementById('wa-closed-badge'),
     meetingsBody: document.getElementById('wa-meetings-body'),
     meetingsBadge: document.getElementById('wa-meetings-badge'),
     meetingBanner: document.getElementById('wa-meeting-banner'),
@@ -519,8 +524,16 @@
     });
     if (els.totalCount) {
       var total = 0;
-      Object.keys(counts).forEach(function (k) { total += counts[k] || 0; });
+      Object.keys(counts).forEach(function (k) {
+        if (k === 'closed') return;
+        total += counts[k] || 0;
+      });
       els.totalCount.textContent = String(total);
+    }
+    if (els.closedBadge) {
+      var closedN = parseInt((counts && counts.closed) || 0, 10);
+      els.closedBadge.textContent = String(closedN);
+      els.closedBadge.classList.toggle('wa-tabs__badge--hidden', closedN === 0);
     }
   }
 
@@ -578,13 +591,13 @@
 
     var list = meetings || [];
     if (list.length === 0) {
-      els.meetingsBody.innerHTML = '<tr class="wa-table__empty"><td colspan="7">No meetings scheduled yet.</td></tr>';
+      els.meetingsBody.innerHTML = '<tr class="wa-table__empty"><td colspan="7">No upcoming meetings.</td></tr>';
       return;
     }
 
     els.meetingsBody.innerHTML = list.map(function (m) {
       var rowClass = m.is_unread ? ' wa-meetings-row--unread' : '';
-      var when = escHtml(m.start_time || m.requested_time_text || m.slot_selected || '—');
+      var when = escHtml(m.when_label || m.start_time || m.requested_time_text || m.slot_selected || '—');
       var status = escHtml(m.status || 'pending');
       var link = String(m.meet_link || '').trim();
       var linkCell = link
@@ -609,8 +622,48 @@
     }).join('');
   }
 
+  function renderClosedTable(tasks) {
+    if (!els.closedBody) return;
+    if (!tasks || tasks.length === 0) {
+      els.closedBody.innerHTML = '<tr class="wa-table__empty"><td colspan="7">No closed tasks.</td></tr>';
+      return;
+    }
+    els.closedBody.innerHTML = tasks
+      .map(function (t) {
+        var editor = t.assigned_editor_name ? escHtml(t.assigned_editor_name) : '—';
+        return (
+          '<tr class="wa-table__row" data-task-id="' +
+          t.id +
+          '">' +
+          '<td><code class="wa-code">' +
+          escHtml(t.task_code) +
+          '</code></td>' +
+          '<td><span class="wa-cell-main">' +
+          escHtml(t.customer_name || '—') +
+          '</span></td>' +
+          '<td>' +
+          escHtml(t.project_name || '—') +
+          '</td>' +
+          '<td>' +
+          escHtml(t.task_type || '—') +
+          '</td>' +
+          '<td>' +
+          editor +
+          '</td>' +
+          '<td class="wa-cell-muted">' +
+          escHtml(t.updated_at) +
+          '</td>' +
+          '<td class="wa-table__actions"><button type="button" class="wa-btn wa-btn--sm wa-btn--edit" data-wa-edit="' +
+          t.id +
+          '">Edit</button></td>' +
+          '</tr>'
+        );
+      })
+      .join('');
+  }
+
   function switchTab(tab) {
-    activeTab = tab === 'meetings' ? 'meetings' : 'tasks';
+    activeTab = tab === 'meetings' ? 'meetings' : tab === 'closed' ? 'closed' : 'tasks';
     document.querySelectorAll('[data-wa-tab]').forEach(function (btn) {
       var t = btn.getAttribute('data-wa-tab');
       btn.classList.toggle('is-active', t === activeTab);
@@ -623,8 +676,16 @@
       els.panelMeetings.hidden = activeTab !== 'meetings';
       els.panelMeetings.classList.toggle('wa-panel--hidden', activeTab !== 'meetings');
     }
+    if (els.panelClosed) {
+      els.panelClosed.hidden = activeTab !== 'closed';
+      els.panelClosed.classList.toggle('wa-panel--hidden', activeTab !== 'closed');
+    }
     if (activeTab === 'meetings') {
       renderMeetingsTable();
+    } else if (activeTab === 'closed') {
+      loadTasks(false);
+    } else {
+      loadTasks(false);
     }
   }
 
@@ -640,6 +701,24 @@
   }
 
   function applyFiltersLocally() {
+    if (activeTab === 'closed') {
+      var closedList = Object.keys(tasksById).map(function (id) {
+        return tasksById[id];
+      });
+      closedList.sort(function (a, b) {
+        return String(b.updated_at).localeCompare(String(a.updated_at));
+      });
+      var cq = closedQ.toLowerCase().trim();
+      if (cq) {
+        closedList = closedList.filter(function (t) {
+          var hay = [t.task_code, t.customer_name, t.project_name, t.task_type].join(' ').toLowerCase();
+          return hay.indexOf(cq) !== -1;
+        });
+      }
+      renderClosedTable(closedList);
+      return;
+    }
+
     var list = Object.keys(tasksById).map(function (id) { return tasksById[id]; });
     list.sort(function (a, b) {
       var pa = alertPriority(alertForTask(a));
@@ -675,8 +754,9 @@
     if (!silent) setLoading(true);
 
     return post('list', {
-      status: filterStatus,
-      q: filterQ,
+      status: activeTab === 'closed' ? '' : filterStatus,
+      q: activeTab === 'closed' ? closedQ : filterQ,
+      scope: activeTab === 'closed' ? 'closed' : 'active',
     })
       .then(function (data) {
         var newCount = (data.tasks || []).length;
@@ -1038,6 +1118,18 @@
         switchTab(btn.getAttribute('data-wa-tab') || 'tasks');
       });
     });
+
+    if (els.closedSearch) {
+      els.closedSearch.addEventListener('input', function () {
+        closedQ = els.closedSearch.value;
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(function () {
+          if (activeTab === 'closed') {
+            loadTasks(false);
+          }
+        }, 350);
+      });
+    }
 
     if (els.search) {
       els.search.addEventListener('input', function () {

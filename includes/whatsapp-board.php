@@ -41,6 +41,9 @@ function akh_wa_board_task_rows(): array
 
     foreach (akh_wa_tasks_list_for_dashboard() as $row) {
         $json = akh_wa_task_row_for_json($row, $editors);
+        if (strtolower((string) ($json['status'] ?? '')) === 'closed') {
+            continue;
+        }
         $code = (string) ($json['task_code'] ?? '');
         $alert = $code !== '' ? akh_dashboard_alert_for_code($alerts, $code) : null;
         $out[] = [
@@ -75,19 +78,9 @@ function akh_wa_board_meeting_rows(): array
         return [];
     }
 
-    $deskById = [];
-    foreach (akh_meeting_request_active_rows() as $active) {
-        $id = (int) ($active['id'] ?? 0);
-        if ($id > 0) {
-            $deskById[$id] = akh_meeting_request_desk_payload($active);
-        }
-    }
-
     $out = [];
-    foreach (akh_meeting_request_list_for_dashboard() as $row) {
-        $id = (int) ($row['id'] ?? 0);
-        $desk = $deskById[$id] ?? null;
-        $when = $desk !== null ? (string) ($desk['when_label'] ?? '') : '';
+    foreach (akh_meeting_request_upcoming_list_for_dashboard() as $row) {
+        $when = trim((string) ($row['when_label'] ?? ''));
         if ($when === '') {
             $when = trim((string) ($row['requested_time_text'] ?? ''));
         }
@@ -96,7 +89,7 @@ function akh_wa_board_meeting_rows(): array
         }
 
         $out[] = [
-            'id' => $id,
+            'id' => (int) ($row['id'] ?? 0),
             'task_code' => (string) ($row['task_code'] ?? ''),
             'customer_name' => (string) ($row['customer_name'] ?? ''),
             'project_name' => (string) ($row['project_name'] ?? ''),

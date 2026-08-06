@@ -1113,6 +1113,101 @@ function akh_meeting_request_scheduled_for_editor(string $editorUsername): array
     return $out;
 }
 
+function akh_meeting_request_upcoming_buffer_minutes(): int
+{
+    return 30;
+}
+
+function akh_meeting_request_upcoming_cutoff(?int $bufferMinutes = null): DateTimeImmutable
+{
+    $bufferMinutes = $bufferMinutes ?? akh_meeting_request_upcoming_buffer_minutes();
+    $tz = akh_meeting_request_site_timezone();
+
+    return (new DateTimeImmutable('now', $tz))->modify('-' . max(0, $bufferMinutes) . ' minutes');
+}
+
+/** @param array<string, mixed> $row */
+function akh_meeting_request_row_is_upcoming(array $row, ?int $bufferMinutes = null): bool
+{
+    $start = akh_meeting_request_effective_start($row);
+    if ($start === null) {
+        return akh_meeting_request_row_is_dashboard_unread($row);
+    }
+
+    return $start >= akh_meeting_request_upcoming_cutoff($bufferMinutes);
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function akh_meeting_request_dashboard_row_from_norm(array $norm): array
+{
+    $code = akh_meeting_request_normalize_task_code((string) ($norm['task_code'] ?? ''));
+    $start = akh_meeting_request_effective_start($norm);
+    $desk = akh_meeting_request_desk_payload($norm);
+
+    return [
+        'id' => (int) ($norm['id'] ?? 0),
+        'task_code' => $code !== '' ? $code : (string) ($norm['task_code'] ?? ''),
+        'customer_name' => (string) ($norm['customer_name'] ?? ''),
+        'project_name' => (string) ($norm['project_name'] ?? ''),
+        'phone' => (string) ($norm['phone'] ?? ''),
+        'slot_selected' => (string) ($norm['slot_selected'] ?? ''),
+        'requested_time_text' => (string) ($norm['requested_time_text'] ?? ''),
+        'start_time' => $start !== null ? $start->format('Y-m-d H:i') : (string) ($norm['start_time'] ?? ''),
+        'when_label' => (string) ($desk['when_label'] ?? ''),
+        'end_time' => (string) ($norm['end_time'] ?? ''),
+        'meet_link' => trim((string) ($norm['meet_link'] ?? '')),
+        'status' => (string) ($norm['status'] ?? ''),
+        'created_at' => (string) ($norm['created_at'] ?? ''),
+        'preview' => akh_meeting_request_preview_from_row($norm),
+        'is_unread' => akh_meeting_request_row_is_dashboard_unread($norm),
+    ];
+}
+
+/**
+ * Upcoming meetings for dashboard lists (hides meetings that ended more than buffer minutes ago).
+ *
+ * @return list<array<string, mixed>>
+ */
+function akh_meeting_request_upcoming_list_for_dashboard(?int $bufferMinutes = null): array
+{
+    if (!akh_meeting_requests_table_exists()) {
+        return [];
+    }
+
+    $out = [];
+    foreach (akh_meeting_request_active_rows() as $row) {
+        if (!akh_meeting_request_row_is_upcoming($row, $bufferMinutes)) {
+            continue;
+        }
+        $norm = akh_meeting_request_normalize_row($row);
+        $item = akh_meeting_request_dashboard_row_from_norm($norm);
+        $start = akh_meeting_request_effective_start($norm);
+        $tz = akh_meeting_request_site_timezone();
+        $now = new DateTimeImmutable('now', $tz);
+        if ($start !== null) {
+            $seconds = $start->getTimestamp() - $now->getTimestamp();
+            $item['minutes_until'] = $seconds > 0 ? (int) ceil($seconds / 60) : 0;
+        } else {
+            $item['minutes_until'] = null;
+        }
+        $out[] = $item;
+    }
+
+    usort($out, static function (array $a, array $b): int {
+        $au = isset($a['minutes_until']) && $a['minutes_until'] !== null ? (int) $a['minutes_until'] : 99999;
+        $bu = isset($b['minutes_until']) && $b['minutes_until'] !== null ? (int) $b['minutes_until'] : 99999;
+        if ($au !== $bu) {
+            return $au <=> $bu;
+        }
+
+        return strcmp((string) ($a['task_code'] ?? ''), (string) ($b['task_code'] ?? ''));
+    });
+
+    return $out;
+}
+
 /**
  * All non-cancelled meetings for the Meetings tab (includes read / scheduled).
  *
@@ -1147,24 +1242,7 @@ function akh_meeting_request_list_for_dashboard(): array
                 continue;
             }
             $norm = akh_meeting_request_normalize_row($row);
-            $code = akh_meeting_request_normalize_task_code((string) ($norm['task_code'] ?? ''));
-            $start = akh_meeting_request_effective_start($norm);
-            $out[] = [
-                'id' => (int) ($norm['id'] ?? 0),
-                'task_code' => $code !== '' ? $code : (string) ($norm['task_code'] ?? ''),
-                'customer_name' => (string) ($norm['customer_name'] ?? ''),
-                'project_name' => (string) ($norm['project_name'] ?? ''),
-                'phone' => (string) ($norm['phone'] ?? ''),
-                'slot_selected' => (string) ($norm['slot_selected'] ?? ''),
-                'requested_time_text' => (string) ($norm['requested_time_text'] ?? ''),
-                'start_time' => $start !== null ? $start->format('Y-m-d H:i') : (string) ($norm['start_time'] ?? ''),
-                'end_time' => (string) ($norm['end_time'] ?? ''),
-                'meet_link' => trim((string) ($norm['meet_link'] ?? '')),
-                'status' => (string) ($norm['status'] ?? ''),
-                'created_at' => (string) ($norm['created_at'] ?? ''),
-                'preview' => akh_meeting_request_preview_from_row($norm),
-                'is_unread' => akh_meeting_request_row_is_dashboard_unread($norm),
-            ];
+            $out[] = akh_meeting_request_dashboard_row_from_norm($norm);
         }
 
         return $out;
