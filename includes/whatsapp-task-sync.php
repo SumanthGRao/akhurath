@@ -124,7 +124,8 @@ function akh_task_progress_update_meta(array $task): array
 
     $hoursSince = (int) floor((time() - $dt->getTimestamp()) / 3600);
     $stale = $hoursSince >= akh_task_progress_stale_hours();
-    $hasLoggedUpdate = akh_task_status_updates_recent($taskCode, 1) !== [];
+    $recentUpdates = akh_task_status_updates_recent($taskCode, 1);
+    $hasLoggedUpdate = $recentUpdates !== [];
 
     $label = '';
     if ($stale) {
@@ -146,45 +147,57 @@ function akh_task_progress_update_meta(array $task): array
  */
 function akh_task_progress_stale_alerts_grouped(): array
 {
-    if (!akh_wa_tasks_table_exists()) {
-        return [];
+    static $cached = null;
+    if (is_array($cached)) {
+        return $cached;
     }
 
-    require_once __DIR__ . '/whatsapp-tasks.php';
+    if (!akh_wa_tasks_table_exists()) {
+        $cached = [];
+
+        return $cached;
+    }
 
     $out = [];
-    foreach (akh_wa_tasks_list_for_dashboard(['scope' => 'active']) as $row) {
-        if (!is_array($row)) {
-            continue;
+    try {
+        foreach (akh_wa_tasks_list(['scope' => 'active']) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $meta = akh_task_progress_update_meta($row);
+            if (!$meta['stale']) {
+                continue;
+            }
+            $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+            if ($code === '') {
+                continue;
+            }
+            $project = trim((string) ($row['project_name'] ?? ''));
+            $customer = trim((string) ($row['customer_name'] ?? ''));
+            $preview = (string) $meta['label'];
+            if ($project !== '') {
+                $preview .= ' — ' . $project;
+            } elseif ($customer !== '') {
+                $preview .= ' — ' . $customer;
+            }
+            $out[$code] = [
+                'kind' => 'progress_stale',
+                'preview' => $preview,
+                'priority' => 45,
+                'created_at' => (string) ($meta['last_at'] ?? ''),
+                'project_name' => $project,
+                'customer_name' => $customer,
+                'count' => 1,
+            ];
         }
-        $meta = akh_task_progress_update_meta($row);
-        if (!$meta['stale']) {
-            continue;
-        }
-        $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
-        if ($code === '') {
-            continue;
-        }
-        $project = trim((string) ($row['project_name'] ?? ''));
-        $customer = trim((string) ($row['customer_name'] ?? ''));
-        $preview = (string) $meta['label'];
-        if ($project !== '') {
-            $preview .= ' — ' . $project;
-        } elseif ($customer !== '') {
-            $preview .= ' — ' . $customer;
-        }
-        $out[$code] = [
-            'kind' => 'progress_stale',
-            'preview' => $preview,
-            'priority' => 45,
-            'created_at' => (string) ($meta['last_at'] ?? ''),
-            'project_name' => $project,
-            'customer_name' => $customer,
-            'count' => 1,
-        ];
+    } catch (Throwable $e) {
+        error_log('akh_task_progress_stale_alerts_grouped: ' . $e->getMessage());
+        $out = [];
     }
 
-    return $out;
+    $cached = $out;
+
+    return $cached;
 }
 
 /**

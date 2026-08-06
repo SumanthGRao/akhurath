@@ -83,36 +83,46 @@ function akh_dashboard_normalize_alert_row(array $alert): array
  */
 function akh_dashboard_unread_alerts_grouped(): array
 {
+    static $building = false;
+    if ($building) {
+        return [];
+    }
+
+    $building = true;
     $merged = [];
 
-    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
-        foreach (akh_dashboard_data_alerts() as $code => $alert) {
-            if (!is_array($alert)) {
-                continue;
+    try {
+        if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+            foreach (akh_dashboard_data_alerts() as $code => $alert) {
+                if (!is_array($alert)) {
+                    continue;
+                }
+                $normalized = akh_dashboard_normalize_alert_row($alert);
+                $normalized['priority'] = (int) ($alert['priority'] ?? akh_dashboard_alert_priority((string) ($normalized['kind'] ?? '')));
+                $merged[$code] = $normalized;
             }
-            $normalized = akh_dashboard_normalize_alert_row($alert);
-            $normalized['priority'] = (int) ($alert['priority'] ?? akh_dashboard_alert_priority((string) ($normalized['kind'] ?? '')));
-            $merged[$code] = $normalized;
         }
-    }
 
-    foreach (akh_task_notification_pending_alerts_grouped() as $code => $alert) {
-        $normalized = akh_dashboard_normalize_alert_row($alert);
-        $normalized['priority'] = akh_dashboard_alert_priority((string) ($normalized['kind'] ?? 'client_update'));
-        $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $normalized);
-    }
+        foreach (akh_task_notification_pending_alerts_grouped() as $code => $alert) {
+            $normalized = akh_dashboard_normalize_alert_row($alert);
+            $normalized['priority'] = akh_dashboard_alert_priority((string) ($normalized['kind'] ?? 'client_update'));
+            $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $normalized);
+        }
 
-    foreach (akh_meeting_request_pending_alerts_grouped() as $code => $alert) {
-        $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $alert);
-    }
+        foreach (akh_meeting_request_pending_alerts_grouped() as $code => $alert) {
+            $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $alert);
+        }
 
-    foreach (akh_wa_messages_pending_alerts_grouped() as $code => $alert) {
-        $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $alert);
-    }
+        foreach (akh_wa_messages_pending_alerts_grouped() as $code => $alert) {
+            $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $alert);
+        }
 
-    require_once __DIR__ . '/whatsapp-task-sync.php';
-    foreach (akh_task_progress_stale_alerts_grouped() as $code => $alert) {
-        $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $alert);
+        require_once __DIR__ . '/whatsapp-task-sync.php';
+        foreach (akh_task_progress_stale_alerts_grouped() as $code => $alert) {
+            $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $alert);
+        }
+    } finally {
+        $building = false;
     }
 
     return $merged;
