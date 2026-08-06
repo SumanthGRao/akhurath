@@ -484,9 +484,9 @@ function akh_wa_build_studio_description(array $waRow): string
 function akh_wa_resolve_delivery_mode(array $waRow): array
 {
     $driveRaw = trim((string) ($waRow['drive_link'] ?? ''));
-    $drive = akh_wa_normalize_http_url($driveRaw);
-    if ($drive !== '' && preg_match('#^https?://#i', $drive)) {
-        return ['google_drive', $drive];
+    $links = akh_wa_split_http_urls($driveRaw);
+    if ($links !== []) {
+        return ['google_drive', implode(' ', $links)];
     }
 
     $dtype = strtolower(trim((string) ($waRow['delivery_type'] ?? '')));
@@ -514,6 +514,30 @@ function akh_wa_normalize_http_url(string $url): string
     }
 
     return $url;
+}
+
+/**
+ * Split a field that may contain multiple http(s) URLs separated by whitespace.
+ *
+ * @return list<string>
+ */
+function akh_wa_split_http_urls(string $raw): array
+{
+    $raw = trim($raw);
+    if ($raw === '') {
+        return [];
+    }
+
+    $parts = preg_split('/\s+/u', $raw, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+    $links = [];
+    foreach ($parts as $part) {
+        $url = akh_wa_normalize_http_url($part);
+        if ($url !== '' && preg_match('#^https?://#i', $url)) {
+            $links[] = $url;
+        }
+    }
+
+    return $links;
 }
 
 /**

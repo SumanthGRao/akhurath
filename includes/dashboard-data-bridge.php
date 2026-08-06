@@ -580,6 +580,19 @@ function akh_dashboard_merge_wa_fields_into_task(array $task, array $wa): array
         $task['phone'] = $phone;
     }
 
+    $driveLink = trim((string) ($wa['drive_link'] ?? ''));
+    if ($driveLink !== '') {
+        $task['drive_link'] = $driveLink;
+    }
+
+    $waUpdated = trim((string) ($wa['updated_at'] ?? ''));
+    if ($waUpdated !== '') {
+        $taskUpdated = trim((string) ($task['updated_at'] ?? ''));
+        if ($taskUpdated === '' || strcmp($waUpdated, $taskUpdated) > 0) {
+            $task['updated_at'] = $waUpdated;
+        }
+    }
+
     $client = strtolower(trim((string) ($task['client_username'] ?? '')));
     if ($customerName !== '' && ($client === '' || $client === 'whatsapp')) {
         $task['client_username'] = $customerName;

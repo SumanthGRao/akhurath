@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/editor-dashboard-render.php';
 require_once __DIR__ . '/whatsapp-messages.php';
+require_once __DIR__ . '/site-datetime.php';
 
 /**
  * Build the same board slices as editor/dashboard.php for API + live sync.
@@ -151,6 +152,8 @@ function akh_editor_desk_list_row_json(array $vm): array
         $listAt = (string) $alert['created_at'];
     }
 
+    $displayAtRaw = (string) (($t['updated_at'] ?? '') !== '' ? $t['updated_at'] : ($t['created_at'] ?? ''));
+
     return [
         'id' => (string) $vm['tid'],
         'section' => $section,
@@ -171,9 +174,10 @@ function akh_editor_desk_list_row_json(array $vm): array
         'status' => (string) $vm['status'],
         'status_label' => akh_task_status_label((string) $vm['status']),
         'status_slug' => (string) $vm['status_slug'],
-        'updated_at' => (string) ($t['updated_at'] ?? ''),
-        'created_at' => (string) ($t['created_at'] ?? ''),
-        'list_at' => $listAt,
+        'updated_at' => akh_datetime_to_iso8601((string) ($t['updated_at'] ?? '')),
+        'created_at' => akh_datetime_to_iso8601((string) ($t['created_at'] ?? '')),
+        'display_at' => akh_datetime_to_iso8601($displayAtRaw),
+        'list_at' => akh_datetime_to_iso8601($listAt),
         'notify' => (bool) $vm['notify'],
         'unseen_new' => (bool) $vm['unseen_new'],
         'has_reminder' => (bool) $vm['has_reminder'],

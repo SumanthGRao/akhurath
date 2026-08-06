@@ -421,14 +421,46 @@
     }
   }
 
+  function siteTzOffsetSuffix(date) {
+    date = date || new Date();
+    try {
+      var parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: siteTimezone,
+        timeZoneName: 'longOffset',
+      }).formatToParts(date);
+      var name = parts.find(function (p) {
+        return p.type === 'timeZoneName';
+      });
+      if (!name || !name.value) return '+05:30';
+      var match = name.value.match(/GMT([+-]\d{1,2})(?::(\d{2}))?/);
+      if (!match) return '+05:30';
+      var hours = match[1];
+      var mins = match[2] || '00';
+      if (/^[+-]\d$/.test(hours)) {
+        hours = hours.charAt(0) + '0' + hours.slice(1);
+      }
+      return hours + ':' + mins;
+    } catch (e) {
+      return '+05:30';
+    }
+  }
+
   function parseTs(iso) {
     if (!iso) return NaN;
-    var t = Date.parse(iso);
+    var s = String(iso).trim();
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(s) && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(s)) {
+      var normalized = s.replace(' ', 'T');
+      if (!/:\d{2}:\d{2}$/.test(normalized)) {
+        normalized += ':00';
+      }
+      s = normalized + siteTzOffsetSuffix(new Date());
+    }
+    var t = Date.parse(s);
     if (!isNaN(t)) return t;
     t = Date.parse(String(iso).replace(' ', 'T'));
     if (!isNaN(t)) return t;
     if (!/Z|[+-]\d{2}:?\d{2}$/.test(String(iso))) {
-      t = Date.parse(String(iso).replace(' ', 'T') + 'Z');
+      t = Date.parse(String(iso).replace(' ', 'T') + siteTzOffsetSuffix(new Date()));
     }
     return t;
   }
@@ -450,6 +482,10 @@
       return row.created_at || row.updated_at || '';
     }
     return row.updated_at || row.created_at || '';
+  }
+
+  function displayAtForRow(row) {
+    return row.display_at || row.updated_at || row.created_at || '';
   }
 
   function refreshRelativeTimes() {
@@ -650,8 +686,9 @@
         : '';
     var soon = row.has_reminder ? '<span class="edesk-list__pill edesk-list__pill--soon">Soon</span>' : '';
     var listAt = listAtForRow(row);
-    var when = listAt
-      ? '<span class="edesk-list__when" data-ts="' + esc(listAt) + '">' + esc(relativeTime(listAt)) + '</span>'
+    var displayAt = displayAtForRow(row);
+    var when = displayAt
+      ? '<span class="edesk-list__when" data-ts="' + esc(displayAt) + '">' + esc(relativeTime(displayAt)) + '</span>'
       : '';
     var unreadMsgs = unreadMsgCount(row);
     var msg = unreadMsgs > 0 ? '<span class="edesk-list__msgs">' + unreadMsgs + ' msg</span>' : '';

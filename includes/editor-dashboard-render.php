@@ -5,6 +5,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/dashboard-alerts.php';
 require_once __DIR__ . '/task-thread-panel.php';
 require_once __DIR__ . '/whatsapp-messages.php';
+require_once __DIR__ . '/whatsapp-tasks.php';
+require_once __DIR__ . '/site-datetime.php';
 
 /**
  * Sidebar label for edit / WhatsApp task type (falls back to couple/title).
@@ -170,6 +172,23 @@ function akh_editor_task_view_model(
         'from_whatsapp' => $fromWhatsapp,
     ]);
 
+    if ($tidNorm !== '' && akh_wa_tasks_table_exists()) {
+        $waRow = akh_wa_task_by_code($tidNorm);
+        if (is_array($waRow)) {
+            $waDrive = trim((string) ($waRow['drive_link'] ?? ''));
+            if ($waDrive !== '') {
+                $t['drive_link'] = $waDrive;
+            }
+            $waUpdated = trim((string) ($waRow['updated_at'] ?? ''));
+            if ($waUpdated !== '') {
+                $taskUpdated = trim((string) ($t['updated_at'] ?? ''));
+                if ($taskUpdated === '' || strcmp($waUpdated, $taskUpdated) > 0) {
+                    $t['updated_at'] = $waUpdated;
+                }
+            }
+        }
+    }
+
     return [
         'task' => $t,
         'tid' => $tid,
@@ -271,6 +290,8 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
     $listAt = $section === 'pool'
         ? (string) (($t['created_at'] ?? '') !== '' ? $t['created_at'] : ($t['updated_at'] ?? ''))
         : (string) (($t['updated_at'] ?? '') !== '' ? $t['updated_at'] : ($t['created_at'] ?? ''));
+    $displayAtRaw = (string) (($t['updated_at'] ?? '') !== '' ? $t['updated_at'] : ($t['created_at'] ?? ''));
+    $displayAtIso = akh_datetime_to_iso8601($displayAtRaw);
     $typeLabel = (string) ($vm['type_label'] ?? '');
     $customerLabel = (string) ($vm['customer_label'] ?? akh_editor_task_customer_display_name($t));
     $statusLabel = akh_task_status_label($st);
@@ -345,6 +366,9 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
         ?>
           <span class="edesk-list__msgs"><?php echo (int) $waUnread; ?> msg</span>
         <?php endif; ?>
+        <?php if ($displayAtIso !== ''): ?>
+          <span class="edesk-list__when" data-ts="<?php echo h($displayAtIso); ?>"><?php echo h(akh_format_relative_time_site($displayAtRaw)); ?></span>
+        <?php endif; ?>
       </span>
     </button>
     <?php
@@ -368,6 +392,8 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
     $taskAlert = $vm['task_alert'];
     $customerLabel = (string) ($vm['customer_label'] ?? akh_editor_task_customer_display_name($t));
     $customerTone = (string) ($vm['customer_tone'] ?? akh_editor_task_customer_badge_tone($t, $vm));
+    $driveLinks = akh_wa_split_http_urls((string) ($t['drive_link'] ?? ''));
+    $referenceLink = trim((string) ($t['reference_link'] ?? ''));
     $notificationUpdates = akh_task_notification_panel_updates($tid, is_array($taskAlert) ? $taskAlert : null);
     $meetingAlert = is_array($taskAlert) && str_starts_with((string) ($taskAlert['kind'] ?? ''), 'meeting_')
         ? $taskAlert
@@ -432,16 +458,16 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
             </section>
           <?php endif; ?>
 
-          <?php if (trim((string) ($t['reference_link'] ?? '')) !== '' || ($dm === 'google_drive' && trim((string) ($t['drive_link'] ?? '')) !== '')): ?>
+          <?php if ($referenceLink !== '' || $driveLinks !== []): ?>
             <section class="edesk-card edesk-card--links">
               <h3 class="edesk-card__title">Links</h3>
               <div class="edesk-link-row">
-                <?php if (trim((string) ($t['reference_link'] ?? '')) !== ''): ?>
-                  <a class="edesk-link" href="<?php echo h((string) $t['reference_link']); ?>" target="_blank" rel="noopener noreferrer">Reference / style</a>
+                <?php if ($referenceLink !== ''): ?>
+                  <a class="edesk-link" href="<?php echo h($referenceLink); ?>" target="_blank" rel="noopener noreferrer">Reference / style</a>
                 <?php endif; ?>
-                <?php if ($dm === 'google_drive' && trim((string) ($t['drive_link'] ?? '')) !== ''): ?>
-                  <a class="edesk-link" href="<?php echo h((string) $t['drive_link']); ?>" target="_blank" rel="noopener noreferrer">Client Drive</a>
-                <?php endif; ?>
+                <?php foreach ($driveLinks as $driveIndex => $driveUrl): ?>
+                  <a class="edesk-link" href="<?php echo h($driveUrl); ?>" target="_blank" rel="noopener noreferrer"><?php echo h(count($driveLinks) > 1 ? 'Client Drive ' . ($driveIndex + 1) : 'Client Drive'); ?></a>
+                <?php endforeach; ?>
               </div>
             </section>
           <?php endif; ?>

@@ -94,3 +94,41 @@ function akh_format_datetime_site_short(string $raw): string
 {
     return akh_format_datetime_site($raw, 'M j, g:i A');
 }
+
+function akh_datetime_to_iso8601(string $raw): string
+{
+    if (trim($raw) === '') {
+        return '';
+    }
+
+    $dt = akh_parse_datetime_to_site($raw);
+    if ($dt === null) {
+        return $raw;
+    }
+
+    return $dt->format(DateTimeInterface::ATOM);
+}
+
+function akh_format_relative_time_site(string $raw): string
+{
+    $dt = akh_parse_datetime_to_site($raw);
+    if ($dt === null) {
+        return '';
+    }
+
+    $sec = time() - $dt->getTimestamp();
+    if ($sec < 0) {
+        $sec = 0;
+    }
+    if ($sec < 60) {
+        return $sec . 's ago';
+    }
+    if ($sec < 3600) {
+        return (int) floor($sec / 60) . 'm ago';
+    }
+    if ($sec < 86400) {
+        return (int) floor($sec / 3600) . 'h ago';
+    }
+
+    return (int) floor($sec / 86400) . 'd ago';
+}
