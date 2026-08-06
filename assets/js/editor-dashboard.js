@@ -685,11 +685,10 @@
         ? '<span class="task-badge task-badge--' + esc(row.status_slug) + '">' + esc(row.status_label) + '</span>'
         : '';
     var soon = row.has_reminder ? '<span class="edesk-list__pill edesk-list__pill--soon">Soon</span>' : '';
-    var listAt = listAtForRow(row);
-    var displayAt = displayAtForRow(row);
-    var when = displayAt
-      ? '<span class="edesk-list__when" data-ts="' + esc(displayAt) + '">' + esc(relativeTime(displayAt)) + '</span>'
+    var stale = row.progress_stale
+      ? '<span class="edesk-list__pill edesk-list__pill--stale" title="' + esc(row.progress_stale_label || 'Needs progress update') + '">Stale</span>'
       : '';
+    var listAt = listAtForRow(row);
     var unreadMsgs = unreadMsgCount(row);
     var msg = unreadMsgs > 0 ? '<span class="edesk-list__msgs">' + unreadMsgs + ' msg</span>' : '';
 
@@ -742,8 +741,8 @@
       waPill +
       statusBadge +
       soon +
+      stale +
       msg +
-      when +
       '</span></button>'
     );
   }

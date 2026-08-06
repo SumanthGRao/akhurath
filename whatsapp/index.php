@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once AKH_ROOT . '/includes/whatsapp-dashboard-auth.php';
 require_once AKH_ROOT . '/includes/whatsapp-tasks.php';
+require_once AKH_ROOT . '/includes/whatsapp-task-sync.php';
 require_once AKH_ROOT . '/includes/dashboard-alerts.php';
 require_once AKH_ROOT . '/includes/csrf.php';
 
@@ -232,7 +233,7 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
             <th scope="col">Type</th>
             <th scope="col">Status</th>
             <th scope="col">Editor</th>
-            <th scope="col">Updated</th>
+            <th scope="col">Last progress</th>
             <th scope="col"><span class="visually-hidden">Actions</span></th>
           </tr>
         </thead>
@@ -270,7 +271,17 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
                 <td><?php echo h((string) $t['task_type']); ?></td>
                 <td><span class="wa-badge wa-badge--<?php echo h((string) $t['status']); ?>"><?php echo h((string) $t['status_label']); ?></span></td>
                 <td><?php echo h((string) ($t['assigned_editor_name'] !== '' ? $t['assigned_editor_name'] : '—')); ?></td>
-                <td class="wa-cell-muted"><?php echo h((string) $t['updated_at']); ?></td>
+                <td class="wa-cell-muted"><?php
+                  $recentUpdates = akh_task_status_updates_for_display((string) ($t['task_code'] ?? ''), 1);
+                  if ($recentUpdates !== []) {
+                      $latest = $recentUpdates[0];
+                      echo h(trim((string) ($latest['status'] ?? '') . ' · ' . (string) ($latest['relative_at'] !== '' ? $latest['relative_at'] : $latest['created_at_label']), ' ·'));
+                  } elseif (trim((string) ($t['last_progress_label'] ?? '')) !== '') {
+                      echo h((string) $t['last_progress_label']);
+                  } else {
+                      echo 'No update yet';
+                  }
+                ?></td>
                 <td><button type="button" class="wa-btn wa-btn--sm wa-btn--edit" data-wa-edit="<?php echo (int) $t['id']; ?>">Edit</button></td>
               </tr>
             <?php endforeach; ?>
@@ -321,7 +332,7 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
               <th scope="col">Project</th>
               <th scope="col">Type</th>
               <th scope="col">Editor</th>
-              <th scope="col">Updated</th>
+              <th scope="col">Last progress</th>
               <th scope="col"><span class="visually-hidden">Actions</span></th>
             </tr>
           </thead>
@@ -407,6 +418,11 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
             <textarea name="comments" id="wa-field-comments" rows="3"></textarea>
           </label>
         </div>
+
+        <section class="wa-progress-panel" id="wa-edit-progress-wrap" aria-label="Recent progress updates">
+          <h3 class="wa-progress-panel__title">Recent progress updates</h3>
+          <div id="wa-edit-progress"></div>
+        </section>
 
         <p class="wa-modal__meta" id="wa-edit-meta"></p>
         <p class="wa-banner wa-banner--err wa-banner--hidden" id="wa-edit-error" role="alert"></p>

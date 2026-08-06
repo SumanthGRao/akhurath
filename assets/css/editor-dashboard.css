@@ -201,6 +201,12 @@
   border: 1px solid rgba(180, 60, 45, 0.22);
 }
 
+.edesk-banner--warn {
+  background: rgba(180, 120, 20, 0.12);
+  border: 1px solid rgba(180, 120, 20, 0.22);
+  color: #8a5a00;
+}
+
 .edesk-list--meetings {
   display: flex;
   flex-direction: column;
@@ -523,6 +529,14 @@
   border-radius: 999px;
   background: rgba(196, 92, 42, 0.14);
   color: #a84820;
+  font-weight: 600;
+}
+
+.edesk-list__pill--stale {
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(180, 70, 40, 0.14);
+  color: #a33b12;
   font-weight: 600;
 }
 
@@ -1076,6 +1090,34 @@
 
 .edesk-list__when {
   font-variant-numeric: tabular-nums;
+}
+
+.edesk-progress-update {
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--edesk-line);
+}
+
+.edesk-progress-update:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.edesk-progress-update__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.8rem;
+}
+
+.edesk-progress-update__status {
+  font-weight: 700;
+  color: var(--edesk-accent);
+}
+
+.edesk-progress-update__when {
+  color: var(--edesk-muted);
+  white-space: nowrap;
 }
 
 .edesk-list__msgs {

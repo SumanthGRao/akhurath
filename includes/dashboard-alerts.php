@@ -110,6 +110,11 @@ function akh_dashboard_unread_alerts_grouped(): array
         $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $alert);
     }
 
+    require_once __DIR__ . '/whatsapp-task-sync.php';
+    foreach (akh_task_progress_stale_alerts_grouped() as $code => $alert) {
+        $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $alert);
+    }
+
     return $merged;
 }
 
@@ -156,11 +161,14 @@ function akh_dashboard_alerts_for_editor(string $editorUsername): array
 
 function akh_dashboard_alerts_poll_signature(): string
 {
+    require_once __DIR__ . '/whatsapp-task-sync.php';
+
     return hash(
         'sha256',
         akh_task_notification_poll_signature()
         . '|' . akh_meeting_request_poll_signature()
         . '|' . akh_wa_messages_poll_signature()
+        . '|' . hash('sha256', json_encode(array_keys(akh_task_progress_stale_alerts_grouped())) ?: '[]')
     );
 }
 
@@ -258,6 +266,9 @@ function akh_dashboard_alert_kind_label(array $alert): string
     }
     if ($kind === 'whatsapp_message') {
         return akh_whatsapp_message_kind_label();
+    }
+    if ($kind === 'progress_stale') {
+        return 'Needs update';
     }
 
     return akh_task_notification_kind_label($kind);

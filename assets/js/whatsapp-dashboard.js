@@ -103,6 +103,9 @@
     if (kind === 'whatsapp_message') {
       return { className: 'wa-alert-pill wa-alert-pill--message', label: 'Message' };
     }
+    if (kind === 'progress_stale') {
+      return { className: 'wa-alert-pill wa-alert-pill--stale', label: 'Stale' };
+    }
     return { className: 'wa-alert-pill', label: 'Update' };
   }
 
@@ -537,6 +540,51 @@
     }
   }
 
+  function progressCellLabel(task) {
+    if (!task) return '—';
+    if (task.recent_updates && task.recent_updates.length > 0) {
+      var latest = task.recent_updates[0];
+      var bits = [];
+      if (latest.status) bits.push(latest.status);
+      if (latest.relative_at) bits.push(latest.relative_at);
+      else if (latest.created_at_label) bits.push(latest.created_at_label);
+      return bits.join(' · ') || '—';
+    }
+    if (task.last_progress_label) return task.last_progress_label;
+    return 'No update yet';
+  }
+
+  function renderProgressUpdatesHtml(task) {
+    var updates = (task && task.recent_updates) || [];
+    if (!updates.length) {
+      return '<p class="wa-progress-updates__empty">No status updates logged yet.</p>';
+    }
+    return (
+      '<div class="wa-progress-updates">' +
+      updates
+        .map(function (u) {
+          return (
+            '<article class="wa-progress-update">' +
+            '<div class="wa-progress-update__head">' +
+            '<strong>' +
+            escHtml(u.status || 'Update') +
+            '</strong>' +
+            '<span>' +
+            escHtml(u.created_at_label || u.relative_at || '') +
+            '</span>' +
+            '</div>' +
+            '<p>' +
+            escHtml(u.comment || '') +
+            '</p>' +
+            (u.updated_by ? '<p class="wa-progress-update__by">By ' + escHtml(u.updated_by) + '</p>' : '') +
+            '</article>'
+          );
+        })
+        .join('') +
+      '</div>'
+    );
+  }
+
   function renderTable(tasks) {
     if (!els.body) return;
 
@@ -555,9 +603,15 @@
       if (isReminderTask(t.task_code)) {
         rowClass += ' wa-table__row--meeting-reminder';
       }
+      if (t.progress_stale) {
+        rowClass += ' wa-table__row--stale';
+      }
       var pill = alertPillMeta(alert);
       var alertBadge = alert
         ? '<span class="' + pill.className + '" title="' + escHtml(alert.preview || pill.label) + '">' + escHtml(pill.label) + '</span> '
+        : '';
+      var staleBadge = t.progress_stale && !alert
+        ? '<span class="wa-alert-pill wa-alert-pill--stale" title="' + escHtml(t.progress_stale_label || 'Needs progress update') + '">Stale</span> '
         : '';
       var showChat =
         t.can_chat ||
@@ -572,13 +626,13 @@
         : '';
       return (
         '<tr class="wa-table__row' + rowClass + '" data-task-id="' + t.id + '">' +
-        '<td>' + alertBadge + '<code class="wa-code">' + escHtml(t.task_code) + '</code></td>' +
+        '<td>' + alertBadge + staleBadge + '<code class="wa-code">' + escHtml(t.task_code) + '</code></td>' +
         '<td><span class="wa-cell-main">' + escHtml(t.customer_name || '—') + '</span></td>' +
         '<td>' + escHtml(t.project_name || '—') + '</td>' +
         '<td>' + escHtml(t.task_type || '—') + '</td>' +
         '<td><span class="wa-badge wa-badge--' + escHtml(t.status) + '">' + escHtml(t.status_label) + '</span></td>' +
         '<td>' + editor + '</td>' +
-        '<td class="wa-cell-muted">' + escHtml(t.updated_at) + '</td>' +
+        '<td class="wa-cell-muted">' + escHtml(progressCellLabel(t)) + '</td>' +
         '<td class="wa-table__actions">' + chatBtn +
         '<button type="button" class="wa-btn wa-btn--sm wa-btn--edit" data-wa-edit="' + t.id + '">Edit</button></td>' +
         '</tr>'
@@ -651,7 +705,7 @@
           editor +
           '</td>' +
           '<td class="wa-cell-muted">' +
-          escHtml(t.updated_at) +
+          escHtml(progressCellLabel(t)) +
           '</td>' +
           '<td class="wa-table__actions"><button type="button" class="wa-btn wa-btn--sm wa-btn--edit" data-wa-edit="' +
           t.id +
@@ -849,7 +903,13 @@
     }
     if (els.editMeta) {
       var phoneLine = t.phone ? ' · Phone ' + t.phone : '';
-      els.editMeta.textContent = 'Created ' + (t.created_at || '—') + ' · Updated ' + (t.updated_at || '—') + phoneLine;
+      var progressLine = t.progress_stale ? ' · ' + (t.progress_stale_label || 'Needs progress update') : '';
+      els.editMeta.textContent =
+        'Created ' + (t.created_at || '—') + ' · Updated ' + (t.updated_at || '—') + phoneLine + progressLine;
+    }
+    var progressHost = document.getElementById('wa-edit-progress');
+    if (progressHost) {
+      progressHost.innerHTML = renderProgressUpdatesHtml(t);
     }
     if (els.editError) {
       els.editError.textContent = '';

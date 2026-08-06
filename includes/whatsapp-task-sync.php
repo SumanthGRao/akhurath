@@ -15,6 +15,200 @@ function akh_whatsapp_task_sync_set_error(string $message): void
     $GLOBALS['akh_whatsapp_task_sync_error'] = $message;
 }
 
+function akh_task_progress_stale_hours(): int
+{
+    if (defined('AKH_TASK_PROGRESS_STALE_HOURS')) {
+        return max(1, (int) AKH_TASK_PROGRESS_STALE_HOURS);
+    }
+
+    return 48;
+}
+
+/** @return list<string> */
+function akh_task_statuses_requiring_progress_updates(): array
+{
+    return ['assigned', 'in_progress', 'review', 'preview_sent', 'reverted'];
+}
+
+/** @return list<string> */
+function akh_wa_statuses_requiring_progress_updates(): array
+{
+    return ['assigned', 'editing', 'review', 'preview_sent'];
+}
+
+/**
+ * @return list<array{id: int, task_id: string, status: string, comment: string, updated_by: string, created_at: string}>
+ */
+function akh_task_status_updates_recent(string $taskCode, int $limit = 2): array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    if ($taskCode === '' || !akh_wa_task_updates_table_exists()) {
+        return [];
+    }
+
+    $limit = max(1, min(20, $limit));
+
+    try {
+        $st = akh_db()->prepare(
+            'SELECT id, task_id, status, comment, updated_by, created_at
+             FROM task_updates
+             WHERE task_id = ?
+             ORDER BY created_at DESC, id DESC
+             LIMIT ' . $limit
+        );
+        $st->execute([$taskCode]);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        return array_map(static function (array $row): array {
+            return [
+                'id' => (int) ($row['id'] ?? 0),
+                'task_id' => (string) ($row['task_id'] ?? ''),
+                'status' => (string) ($row['status'] ?? ''),
+                'comment' => (string) ($row['comment'] ?? ''),
+                'updated_by' => (string) ($row['updated_by'] ?? ''),
+                'created_at' => (string) ($row['created_at'] ?? ''),
+            ];
+        }, $rows);
+    } catch (Throwable) {
+        return [];
+    }
+}
+
+function akh_task_last_progress_at(string $taskCode): string
+{
+    $updates = akh_task_status_updates_recent($taskCode, 1);
+    if ($updates !== []) {
+        return (string) ($updates[0]['created_at'] ?? '');
+    }
+
+    return '';
+}
+
+/**
+ * @param array<string, mixed> $task
+ * @return array{stale: bool, last_at: string, hours_since: ?int, label: string}
+ */
+function akh_task_progress_update_meta(array $task): array
+{
+    require_once __DIR__ . '/tasks.php';
+    require_once __DIR__ . '/site-datetime.php';
+
+    $empty = ['stale' => false, 'last_at' => '', 'hours_since' => null, 'label' => ''];
+    $taskCode = akh_task_normalize_id((string) ($task['task_code'] ?? $task['id'] ?? ''));
+    if ($taskCode === '') {
+        return $empty;
+    }
+
+    $status = strtolower(trim((string) ($task['status'] ?? '')));
+    $needsProgress = in_array($status, akh_task_statuses_requiring_progress_updates(), true)
+        || in_array($status, akh_wa_statuses_requiring_progress_updates(), true);
+    $hasEditor = trim((string) ($task['assigned_editor'] ?? '')) !== ''
+        || trim((string) ($task['assigned_editor_name'] ?? '')) !== ''
+        || akh_wa_task_has_assigned_editor($task);
+
+    if (!$needsProgress || !$hasEditor) {
+        return $empty;
+    }
+
+    $lastAt = akh_task_last_progress_at($taskCode);
+    if ($lastAt === '') {
+        $lastAt = (string) ($task['updated_at'] ?? $task['created_at'] ?? '');
+    }
+
+    $dt = akh_parse_datetime_to_site($lastAt);
+    if ($dt === null) {
+        return ['stale' => false, 'last_at' => $lastAt, 'hours_since' => null, 'label' => ''];
+    }
+
+    $hoursSince = (int) floor((time() - $dt->getTimestamp()) / 3600);
+    $stale = $hoursSince >= akh_task_progress_stale_hours();
+    $hasLoggedUpdate = akh_task_status_updates_recent($taskCode, 1) !== [];
+
+    $label = '';
+    if ($stale) {
+        $label = 'No progress update in ' . $hoursSince . ' hours';
+    } elseif (!$hasLoggedUpdate) {
+        $label = 'No status updates logged yet';
+    }
+
+    return [
+        'stale' => $stale,
+        'last_at' => $lastAt,
+        'hours_since' => $hoursSince,
+        'label' => $label,
+    ];
+}
+
+/**
+ * @return array<string, array<string, mixed>>
+ */
+function akh_task_progress_stale_alerts_grouped(): array
+{
+    if (!akh_wa_tasks_table_exists()) {
+        return [];
+    }
+
+    require_once __DIR__ . '/whatsapp-tasks.php';
+
+    $out = [];
+    foreach (akh_wa_tasks_list_for_dashboard(['scope' => 'active']) as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $meta = akh_task_progress_update_meta($row);
+        if (!$meta['stale']) {
+            continue;
+        }
+        $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+        if ($code === '') {
+            continue;
+        }
+        $project = trim((string) ($row['project_name'] ?? ''));
+        $customer = trim((string) ($row['customer_name'] ?? ''));
+        $preview = (string) $meta['label'];
+        if ($project !== '') {
+            $preview .= ' — ' . $project;
+        } elseif ($customer !== '') {
+            $preview .= ' — ' . $customer;
+        }
+        $out[$code] = [
+            'kind' => 'progress_stale',
+            'preview' => $preview,
+            'priority' => 45,
+            'created_at' => (string) ($meta['last_at'] ?? ''),
+            'project_name' => $project,
+            'customer_name' => $customer,
+            'count' => 1,
+        ];
+    }
+
+    return $out;
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function akh_task_status_updates_for_display(string $taskCode, int $limit = 2): array
+{
+    require_once __DIR__ . '/site-datetime.php';
+
+    $rows = [];
+    foreach (akh_task_status_updates_recent($taskCode, $limit) as $row) {
+        $rows[] = [
+            'status' => (string) ($row['status'] ?? ''),
+            'comment' => (string) ($row['comment'] ?? ''),
+            'updated_by' => (string) ($row['updated_by'] ?? ''),
+            'created_at' => (string) ($row['created_at'] ?? ''),
+            'created_at_label' => akh_format_datetime_site_short((string) ($row['created_at'] ?? '')),
+            'relative_at' => akh_format_relative_time_site((string) ($row['created_at'] ?? '')),
+        ];
+    }
+
+    return $rows;
+}
+
 function akh_wa_task_updates_table_exists(): bool
 {
     if (!function_exists('akh_db')) {

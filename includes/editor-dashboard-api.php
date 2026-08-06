@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/editor-dashboard-render.php';
 require_once __DIR__ . '/whatsapp-messages.php';
 require_once __DIR__ . '/site-datetime.php';
+require_once __DIR__ . '/whatsapp-task-sync.php';
 
 /**
  * Build the same board slices as editor/dashboard.php for API + live sync.
@@ -153,6 +154,7 @@ function akh_editor_desk_list_row_json(array $vm): array
     }
 
     $displayAtRaw = (string) (($t['updated_at'] ?? '') !== '' ? $t['updated_at'] : ($t['created_at'] ?? ''));
+    $progressMeta = akh_task_progress_update_meta($t);
 
     return [
         'id' => (string) $vm['tid'],
@@ -178,6 +180,8 @@ function akh_editor_desk_list_row_json(array $vm): array
         'created_at' => akh_datetime_to_iso8601((string) ($t['created_at'] ?? '')),
         'display_at' => akh_datetime_to_iso8601($displayAtRaw),
         'list_at' => akh_datetime_to_iso8601($listAt),
+        'progress_stale' => (bool) ($progressMeta['stale'] ?? false),
+        'progress_stale_label' => (string) ($progressMeta['label'] ?? ''),
         'notify' => (bool) $vm['notify'],
         'unseen_new' => (bool) $vm['unseen_new'],
         'has_reminder' => (bool) $vm['has_reminder'],

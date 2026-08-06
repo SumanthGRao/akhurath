@@ -7,6 +7,7 @@ require_once __DIR__ . '/task-thread-panel.php';
 require_once __DIR__ . '/whatsapp-messages.php';
 require_once __DIR__ . '/whatsapp-tasks.php';
 require_once __DIR__ . '/site-datetime.php';
+require_once __DIR__ . '/whatsapp-task-sync.php';
 
 /**
  * Sidebar label for edit / WhatsApp task type (falls back to couple/title).
@@ -290,8 +291,7 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
     $listAt = $section === 'pool'
         ? (string) (($t['created_at'] ?? '') !== '' ? $t['created_at'] : ($t['updated_at'] ?? ''))
         : (string) (($t['updated_at'] ?? '') !== '' ? $t['updated_at'] : ($t['created_at'] ?? ''));
-    $displayAtRaw = (string) (($t['updated_at'] ?? '') !== '' ? $t['updated_at'] : ($t['created_at'] ?? ''));
-    $displayAtIso = akh_datetime_to_iso8601($displayAtRaw);
+    $progressMeta = akh_task_progress_update_meta($t);
     $typeLabel = (string) ($vm['type_label'] ?? '');
     $customerLabel = (string) ($vm['customer_label'] ?? akh_editor_task_customer_display_name($t));
     $statusLabel = akh_task_status_label($st);
@@ -360,14 +360,14 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
         <?php if ($vm['has_reminder']): ?>
           <span class="edesk-list__pill edesk-list__pill--soon">Soon</span>
         <?php endif; ?>
+        <?php if (!empty($progressMeta['stale'])): ?>
+          <span class="edesk-list__pill edesk-list__pill--stale" title="<?php echo h((string) ($progressMeta['label'] ?? 'Needs progress update')); ?>">Stale</span>
+        <?php endif; ?>
         <?php
         $waUnread = akh_wa_message_unread_count_for_task((string) ($vm['tid_norm'] ?? $tid));
         if ($waUnread > 0):
         ?>
           <span class="edesk-list__msgs"><?php echo (int) $waUnread; ?> msg</span>
-        <?php endif; ?>
-        <?php if ($displayAtIso !== ''): ?>
-          <span class="edesk-list__when" data-ts="<?php echo h($displayAtIso); ?>"><?php echo h(akh_format_relative_time_site($displayAtRaw)); ?></span>
         <?php endif; ?>
       </span>
     </button>
@@ -394,6 +394,8 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
     $customerTone = (string) ($vm['customer_tone'] ?? akh_editor_task_customer_badge_tone($t, $vm));
     $driveLinks = akh_wa_split_http_urls((string) ($t['drive_link'] ?? ''));
     $referenceLink = trim((string) ($t['reference_link'] ?? ''));
+    $progressUpdates = akh_task_status_updates_for_display($tid, 2);
+    $progressMeta = akh_task_progress_update_meta($t);
     $notificationUpdates = akh_task_notification_panel_updates($tid, is_array($taskAlert) ? $taskAlert : null);
     $meetingAlert = is_array($taskAlert) && str_starts_with((string) ($taskAlert['kind'] ?? ''), 'meeting_')
         ? $taskAlert
@@ -447,6 +449,12 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
             ><?php echo h(akh_task_status_label($o)); ?></button>
           <?php endforeach; ?>
         </nav>
+      <?php endif; ?>
+
+      <?php if (!empty($progressMeta['stale'])): ?>
+        <p class="edesk-banner edesk-banner--warn" role="status">
+          <?php echo h((string) ($progressMeta['label'] !== '' ? $progressMeta['label'] : 'This task needs a progress update.')); ?>
+        </p>
       <?php endif; ?>
 
       <div class="edesk-panel__grid">
@@ -506,6 +514,26 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
                 <p class="edesk-muted edesk-muted--sm">Status changes sync to WhatsApp history.</p>
                 <button type="submit" class="btn btn--primary btn--sm">Save changes</button>
               </form>
+            </section>
+
+            <section class="edesk-card edesk-card--progress" aria-label="Recent progress updates">
+              <h3 class="edesk-card__title">Progress updates</h3>
+              <?php if ($progressUpdates === []): ?>
+                <p class="edesk-muted">No status updates logged yet. Change workflow status with a note to record progress.</p>
+              <?php else: ?>
+                <?php foreach ($progressUpdates as $update): ?>
+                  <article class="edesk-progress-update">
+                    <div class="edesk-progress-update__head">
+                      <span class="edesk-progress-update__status"><?php echo h((string) ($update['status'] ?? '')); ?></span>
+                      <span class="edesk-progress-update__when"><?php echo h((string) ($update['created_at_label'] ?? '')); ?></span>
+                    </div>
+                    <div class="edesk-prose"><?php echo nl2br(h((string) ($update['comment'] ?? ''))); ?></div>
+                    <?php if (trim((string) ($update['updated_by'] ?? '')) !== ''): ?>
+                      <p class="edesk-muted edesk-muted--sm">By <?php echo h((string) $update['updated_by']); ?></p>
+                    <?php endif; ?>
+                  </article>
+                <?php endforeach; ?>
+              <?php endif; ?>
             </section>
           <?php endif; ?>
         </div>

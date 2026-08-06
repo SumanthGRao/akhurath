@@ -1243,6 +1243,8 @@ function akh_wa_task_can_chat(array $row): bool
 /** @return array<string, mixed> */
 function akh_wa_task_row_for_json(array $row, array $editors): array
 {
+    require_once __DIR__ . '/whatsapp-task-sync.php';
+
     $editorId = isset($row['assigned_editor']) && $row['assigned_editor'] !== null && $row['assigned_editor'] !== ''
         ? (int) $row['assigned_editor']
         : null;
@@ -1256,6 +1258,10 @@ function akh_wa_task_row_for_json(array $row, array $editors): array
         $messageCount = count(akh_wa_messages_list_for_task($taskCode, 300));
         $unreadMessages = akh_wa_message_unread_count_for_task($taskCode);
     }
+
+    $progressMeta = akh_task_progress_update_meta($row);
+    $recentUpdates = akh_task_status_updates_for_display($taskCode, 2);
+    $lastProgressAt = (string) ($progressMeta['last_at'] ?? '');
 
     return [
         'id' => (int) ($row['id'] ?? 0),
@@ -1279,5 +1285,10 @@ function akh_wa_task_row_for_json(array $row, array $editors): array
         'can_chat' => akh_wa_task_can_chat($row),
         'created_at' => (string) ($row['created_at'] ?? ''),
         'updated_at' => (string) ($row['updated_at'] ?? ''),
+        'recent_updates' => $recentUpdates,
+        'progress_stale' => (bool) ($progressMeta['stale'] ?? false),
+        'progress_stale_label' => (string) ($progressMeta['label'] ?? ''),
+        'last_progress_at' => $lastProgressAt,
+        'last_progress_label' => $lastProgressAt !== '' ? akh_format_relative_time_site($lastProgressAt) : '',
     ];
 }

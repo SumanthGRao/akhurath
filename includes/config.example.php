@@ -179,6 +179,9 @@ const AKH_N8N_WA_MESSAGE_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook/a
  */
 const AKH_N8N_TASK_STATUS_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook/8054f3a3-50da-4270-88f3-8e6aa1be1a5a';
 
+/** Hours without a logged status update before a task is flagged as stale (assigned / in-progress work). */
+const AKH_TASK_PROGRESS_STALE_HOURS = 48;
+
 /**
  * Customer portal: web UI for your NAS / drive (Synology Drive, Nextcloud, etc.).
  * After login, the dashboard links here — users sign in on YOUR drive with the
