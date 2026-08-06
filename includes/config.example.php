@@ -160,6 +160,9 @@ const AKH_WA_DASHBOARD_PASS_HASH = '$2y$12$CQb.aKIcjY.Fz6s4PV1h8.BMrtswBIJI1QaNT
 /** Auto-refresh interval in seconds (default 5 minutes). */
 const AKH_WA_DASHBOARD_REFRESH_SECONDS = 300;
 
+/** Public read-only board at /whatsapp/board.php (tasks + meetings, no login). */
+const AKH_WA_PUBLIC_BOARD_ENABLED = true;
+
 /** HR attendance dashboard (read-only editor clock data). */
 const AKH_HR_DASHBOARD_ENABLED = true;
 

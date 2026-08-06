@@ -93,7 +93,10 @@ $waCssVer = is_file(AKH_ROOT . '/assets/css/whatsapp-dashboard.css') ? (string) 
         </form>
       <?php endif; ?>
 
-      <p class="portal-foot"><a class="text-link" href="<?php echo h(base_path('index.php')); ?>">← Website home</a></p>
+      <p class="portal-foot">
+        <a class="text-link" href="<?php echo h(base_path('whatsapp/board.php')); ?>">View live board (no login)</a>
+        · <a class="text-link" href="<?php echo h(base_path('index.php')); ?>">Website home</a>
+      </p>
     </div>
   </main>
 
