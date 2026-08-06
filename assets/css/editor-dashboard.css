@@ -890,6 +890,12 @@
   max-height: 14rem;
 }
 
+.edesk-card--thread .ticket__msg-body a {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .page-editor-desk.edesk--mobile-detail .edesk-body {
   grid-template-columns: 1fr;
 }

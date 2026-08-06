@@ -1113,6 +1113,25 @@ function akh_wa_message_extract_url_from_text(string $text): string
     return '';
 }
 
+function akh_wa_message_url_looks_like_media_asset(string $url): bool
+{
+    if ($url === '') {
+        return false;
+    }
+    if (str_contains($url, '/chat_media/')) {
+        return true;
+    }
+    $path = (string) parse_url($url, PHP_URL_PATH);
+    if ($path === '') {
+        return false;
+    }
+
+    return (bool) preg_match(
+        '/\.(jpe?g|png|gif|webp|heic|bmp|svg|mp4|webm|mov|m4v|3gp|mkv|avi|mp3|ogg|oga|opus|m4a|wav|aac|amr|pdf)$/i',
+        $path
+    );
+}
+
 function akh_wa_message_normalize_media_kind(string $raw, string $filename, string $url): string
 {
     $raw = strtolower(trim($raw));
@@ -1232,11 +1251,19 @@ function akh_wa_message_media_mime_type(string $kind, string $filename, string $
 function akh_wa_message_media_meta(array $row): array
 {
     $filename = akh_wa_message_row_string($row, ['filename', 'file_name', 'fileName']);
-    $url = akh_wa_message_row_string($row, ['media_url', 'mediaUrl', 'url', 'file_path', 'path']);
+    $explicitUrl = akh_wa_message_row_string($row, ['media_url', 'mediaUrl', 'url', 'file_path', 'path']);
     $message = trim((string) ($row['message'] ?? ''));
+    $url = $explicitUrl;
 
     if ($url === '' && $message !== '') {
-        $url = akh_wa_message_extract_url_from_text($message);
+        $extracted = akh_wa_message_extract_url_from_text($message);
+        if (
+            $extracted !== ''
+            && trim($message) === $extracted
+            && akh_wa_message_url_looks_like_media_asset($extracted)
+        ) {
+            $url = $extracted;
+        }
     }
 
     if ($url === '' && $filename !== '' && preg_match('/^[a-zA-Z0-9._-]+$/', $filename)) {

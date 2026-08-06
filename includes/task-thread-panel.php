@@ -42,6 +42,29 @@ function akh_task_merged_conversation_sig(array $t): string
 }
 
 /**
+ * Escape message text and turn http(s) URLs into safe clickable links.
+ */
+function akh_task_thread_linkify_text(string $text): string
+{
+    $escaped = htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $linked = preg_replace_callback(
+        '#https?://[^\s<>"\']+#i',
+        static function (array $matches): string {
+            $url = rtrim((string) ($matches[0] ?? ''), '.,);]\'"');
+            if ($url === '') {
+                return (string) ($matches[0] ?? '');
+            }
+            $href = htmlspecialchars($url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
+            return '<a href="' . $href . '" target="_blank" rel="noopener noreferrer">' . $href . '</a>';
+        },
+        $escaped
+    );
+
+    return is_string($linked) ? $linked : $escaped;
+}
+
+/**
  * @param array{at?: string, role?: string, who?: string, text?: string, source?: string, media_url?: string, media_filename?: string, media_kind?: string} $row
  */
 function akh_render_task_thread_message_body(array $row): void
@@ -104,10 +127,13 @@ function akh_render_task_thread_message_body(array $row): void
         }
     }
 
-    if ($text !== '' && $text !== $mediaUrl && !($mediaUrl !== '' && str_contains($text, $mediaUrl))) {
-        ?>
-        <div class="ticket__msg-body"><?php echo nl2br(h($text)); ?></div>
-        <?php
+    if ($text !== '') {
+        $skipDuplicateText = $mediaUrl !== '' && trim($text) === trim($mediaUrl);
+        if (!$skipDuplicateText) {
+            ?>
+        <div class="ticket__msg-body"><?php echo nl2br(akh_task_thread_linkify_text($text), false); ?></div>
+            <?php
+        }
     }
 }
 

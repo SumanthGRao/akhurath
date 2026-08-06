@@ -3542,6 +3542,18 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   margin: 0;
   line-height: 1.45;
   word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.ticket__msg-body a,
+.chat-message a {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
 }
 
 .ticket__msg-media-link {

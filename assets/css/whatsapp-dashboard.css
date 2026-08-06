@@ -1142,8 +1142,15 @@ body.page-wa-dashboard .site-footer {
 }
 
 .wa-chat-drawer .ticket__msg-body {
-  white-space: pre-wrap;
+  white-space: normal;
   word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.wa-chat-drawer .ticket__msg-body a {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 html[data-theme="light"] .wa-btn--chat {
