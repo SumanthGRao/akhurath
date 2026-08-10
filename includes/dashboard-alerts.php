@@ -179,6 +179,7 @@ function akh_dashboard_alerts_poll_signature(): string
         . '|' . akh_meeting_request_poll_signature()
         . '|' . akh_wa_messages_poll_signature()
         . '|' . hash('sha256', json_encode(array_keys(akh_task_progress_stale_alerts_grouped())) ?: '[]')
+        . '|' . akh_task_progress_stale_poll_signature()
     );
 }
 
@@ -224,6 +225,7 @@ function akh_dashboard_notice_rows(array $alerts): array
             'priority' => (int) ($alert['priority'] ?? akh_dashboard_alert_priority((string) ($alert['kind'] ?? ''))),
             'created_at' => (string) ($alert['created_at'] ?? ''),
             'max_id' => (int) ($alert['max_id'] ?? 0),
+            'alert_day' => (string) ($alert['alert_day'] ?? ''),
         ];
     }
 
@@ -287,6 +289,7 @@ function akh_dashboard_alert_kind_label(array $alert): string
 function akh_dashboard_mark_task_read(string $taskCode): void
 {
     require_once __DIR__ . '/tasks.php';
+    require_once __DIR__ . '/whatsapp-task-sync.php';
     $canonical = akh_task_normalize_id(trim($taskCode));
     if ($canonical === '') {
         $canonical = trim($taskCode);
@@ -294,11 +297,14 @@ function akh_dashboard_mark_task_read(string $taskCode): void
     akh_task_notification_mark_task_read($canonical !== '' ? $canonical : $taskCode);
     akh_meeting_request_mark_task_read($canonical !== '' ? $canonical : $taskCode);
     akh_wa_message_mark_task_read($canonical !== '' ? $canonical : $taskCode);
+    akh_task_progress_stale_mark_read($canonical !== '' ? $canonical : $taskCode);
 }
 
 function akh_dashboard_mark_all_read(): void
 {
+    require_once __DIR__ . '/whatsapp-task-sync.php';
     akh_task_notification_mark_all_read();
     akh_meeting_request_mark_all_read();
     akh_wa_message_mark_all_read();
+    akh_task_progress_stale_mark_all_read();
 }

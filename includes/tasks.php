@@ -680,6 +680,7 @@ function akh_task_editor_notice_rows(string $editorUsername): array
             'label' => akh_dashboard_alert_kind_label($alert),
             'detail' => $detail,
             'kind' => (string) ($alert['kind'] ?? ''),
+            'alert_day' => (string) ($alert['alert_day'] ?? ''),
             'created_at' => (string) ($alert['created_at'] ?? ''),
             'max_id' => (int) ($alert['max_id'] ?? 0),
             'priority' => (int) ($alert['priority'] ?? akh_dashboard_alert_priority((string) ($alert['kind'] ?? ''))),

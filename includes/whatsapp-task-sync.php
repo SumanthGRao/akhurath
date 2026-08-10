@@ -24,6 +24,202 @@ function akh_task_progress_stale_hours(): int
     return 48;
 }
 
+function akh_task_progress_stale_ack_kv_key(): string
+{
+    return 'task_progress_stale_alert_acks';
+}
+
+function akh_task_progress_stale_site_day(?int $timestamp = null): string
+{
+    require_once __DIR__ . '/site-datetime.php';
+
+    $ts = $timestamp ?? time();
+
+    return (new DateTimeImmutable('@' . $ts))->setTimezone(akh_site_timezone())->format('Y-m-d');
+}
+
+/** @return array<string, array{day: string, at: int}> */
+function akh_task_progress_stale_ack_codes(): array
+{
+    if (isset($GLOBALS['akh_task_progress_stale_ack_codes']) && is_array($GLOBALS['akh_task_progress_stale_ack_codes'])) {
+        return $GLOBALS['akh_task_progress_stale_ack_codes'];
+    }
+
+    require_once __DIR__ . '/app-kv.php';
+    $raw = akh_kv_get(akh_task_progress_stale_ack_kv_key());
+    if (!is_string($raw) || trim($raw) === '') {
+        $GLOBALS['akh_task_progress_stale_ack_codes'] = [];
+
+        return $GLOBALS['akh_task_progress_stale_ack_codes'];
+    }
+
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        $GLOBALS['akh_task_progress_stale_ack_codes'] = [];
+
+        return $GLOBALS['akh_task_progress_stale_ack_codes'];
+    }
+
+    require_once __DIR__ . '/tasks.php';
+    $out = [];
+    foreach ($decoded as $code => $meta) {
+        $norm = akh_task_normalize_id((string) $code);
+        if ($norm === '') {
+            continue;
+        }
+        if (is_array($meta)) {
+            $out[$norm] = [
+                'day' => trim((string) ($meta['day'] ?? '')),
+                'at' => (int) ($meta['at'] ?? 0),
+            ];
+        } else {
+            $out[$norm] = [
+                'day' => akh_task_progress_stale_site_day((int) $meta),
+                'at' => (int) $meta,
+            ];
+        }
+    }
+    $GLOBALS['akh_task_progress_stale_ack_codes'] = $out;
+
+    return $out;
+}
+
+function akh_task_progress_stale_ack_codes_invalidate(): void
+{
+    unset($GLOBALS['akh_task_progress_stale_ack_codes']);
+}
+
+function akh_task_progress_stale_alerts_invalidate(): void
+{
+    $GLOBALS['akh_task_progress_stale_cache_gen'] = (int) ($GLOBALS['akh_task_progress_stale_cache_gen'] ?? 0) + 1;
+}
+
+function akh_task_progress_stale_is_dismissed(string $taskCode): bool
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $today = akh_task_progress_stale_site_day();
+    $acks = akh_task_progress_stale_ack_codes();
+    foreach (akh_task_id_match_variants($taskCode) as $variant) {
+        $norm = akh_task_normalize_id($variant);
+        if ($norm === '' || !isset($acks[$norm])) {
+            continue;
+        }
+        if (($acks[$norm]['day'] ?? '') === $today) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function akh_task_progress_stale_mark_read(string $taskCode): void
+{
+    require_once __DIR__ . '/app-kv.php';
+    require_once __DIR__ . '/tasks.php';
+
+    $variants = akh_task_id_match_variants($taskCode);
+    if ($variants === []) {
+        return;
+    }
+
+    $acks = akh_task_progress_stale_ack_codes();
+    $today = akh_task_progress_stale_site_day();
+    $now = time();
+    $changed = false;
+
+    foreach ($variants as $variant) {
+        $norm = akh_task_normalize_id($variant);
+        if ($norm === '') {
+            continue;
+        }
+        if (($acks[$norm]['day'] ?? '') === $today) {
+            continue;
+        }
+        $acks[$norm] = ['day' => $today, 'at' => $now];
+        $changed = true;
+    }
+
+    if (!$changed) {
+        return;
+    }
+
+    try {
+        akh_kv_set(akh_task_progress_stale_ack_kv_key(), json_encode($acks, JSON_UNESCAPED_SLASHES) ?: '{}');
+    } catch (Throwable $e) {
+        error_log('akh_task_progress_stale_mark_read: ' . $e->getMessage());
+
+        return;
+    }
+
+    akh_task_progress_stale_ack_codes_invalidate();
+    akh_task_progress_stale_alerts_invalidate();
+}
+
+function akh_task_progress_stale_mark_all_read(): void
+{
+    if (!akh_wa_tasks_table_exists()) {
+        return;
+    }
+
+    require_once __DIR__ . '/app-kv.php';
+    require_once __DIR__ . '/tasks.php';
+
+    $acks = akh_task_progress_stale_ack_codes();
+    $today = akh_task_progress_stale_site_day();
+    $now = time();
+    $changed = false;
+
+    try {
+        foreach (akh_wa_tasks_list(['scope' => 'active']) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $meta = akh_task_progress_update_meta($row);
+            if (!$meta['stale']) {
+                continue;
+            }
+            $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+            if ($code === '' || ($acks[$code]['day'] ?? '') === $today) {
+                continue;
+            }
+            $acks[$code] = ['day' => $today, 'at' => $now];
+            $changed = true;
+        }
+    } catch (Throwable $e) {
+        error_log('akh_task_progress_stale_mark_all_read: ' . $e->getMessage());
+
+        return;
+    }
+
+    if (!$changed) {
+        return;
+    }
+
+    try {
+        akh_kv_set(akh_task_progress_stale_ack_kv_key(), json_encode($acks, JSON_UNESCAPED_SLASHES) ?: '{}');
+    } catch (Throwable $e) {
+        error_log('akh_task_progress_stale_mark_all_read: ' . $e->getMessage());
+
+        return;
+    }
+
+    akh_task_progress_stale_ack_codes_invalidate();
+    akh_task_progress_stale_alerts_invalidate();
+}
+
+function akh_task_progress_stale_alert_label(): string
+{
+    $days = max(1, (int) ceil(akh_task_progress_stale_hours() / 24));
+
+    return 'No progress update in ' . $days . '+ days';
+}
+
+function akh_task_progress_stale_poll_signature(): string
+{
+    return hash('sha256', json_encode(akh_task_progress_stale_ack_codes(), JSON_UNESCAPED_SLASHES) ?: '[]');
+}
+
 /** @return list<string> */
 function akh_task_statuses_requiring_progress_updates(): array
 {
@@ -129,7 +325,7 @@ function akh_task_progress_update_meta(array $task): array
 
     $label = '';
     if ($stale) {
-        $label = 'No progress update in ' . $hoursSince . ' hours';
+        $label = akh_task_progress_stale_alert_label();
     } elseif (!$hasLoggedUpdate) {
         $label = 'No status updates logged yet';
     }
@@ -148,17 +344,21 @@ function akh_task_progress_update_meta(array $task): array
 function akh_task_progress_stale_alerts_grouped(): array
 {
     static $cached = null;
-    if (is_array($cached)) {
+    static $cacheGen = -1;
+    $gen = (int) ($GLOBALS['akh_task_progress_stale_cache_gen'] ?? 0);
+    if (is_array($cached) && $cacheGen === $gen) {
         return $cached;
     }
 
     if (!akh_wa_tasks_table_exists()) {
         $cached = [];
+        $cacheGen = $gen;
 
         return $cached;
     }
 
     $out = [];
+    $alertDay = akh_task_progress_stale_site_day();
     try {
         foreach (akh_wa_tasks_list(['scope' => 'active']) as $row) {
             if (!is_array($row)) {
@@ -169,7 +369,7 @@ function akh_task_progress_stale_alerts_grouped(): array
                 continue;
             }
             $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
-            if ($code === '') {
+            if ($code === '' || akh_task_progress_stale_is_dismissed($code)) {
                 continue;
             }
             $project = trim((string) ($row['project_name'] ?? ''));
@@ -185,6 +385,7 @@ function akh_task_progress_stale_alerts_grouped(): array
                 'preview' => $preview,
                 'priority' => 45,
                 'created_at' => (string) ($meta['last_at'] ?? ''),
+                'alert_day' => $alertDay,
                 'project_name' => $project,
                 'customer_name' => $customer,
                 'count' => 1,
@@ -196,6 +397,7 @@ function akh_task_progress_stale_alerts_grouped(): array
     }
 
     $cached = $out;
+    $cacheGen = $gen;
 
     return $cached;
 }

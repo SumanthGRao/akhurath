@@ -226,11 +226,16 @@
 
   function noticeFingerprint(n) {
     if (!n) return '';
+    var kind = n.kind || '';
+    var taskRef = n.task_id || n.anchor_id || n.task_code || '';
+    if (kind === 'progress_stale') {
+      return [taskRef, kind, n.alert_day || ''].join('|');
+    }
     return [
-      n.task_id || n.anchor_id || '',
+      taskRef,
       n.label || '',
       n.detail || n.preview || '',
-      n.kind || '',
+      kind,
       n.event_id || n.max_id || n.created_at || '',
     ].join('|');
   }

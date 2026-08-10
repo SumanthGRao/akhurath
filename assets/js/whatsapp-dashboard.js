@@ -348,9 +348,14 @@
 
   function waNoticeFingerprint(n) {
     if (!n) return '';
+    var kind = n.kind || '';
+    var taskRef = n.task_code || n.task_id || n.anchor_id || '';
+    if (kind === 'progress_stale') {
+      return [taskRef, kind, n.alert_day || ''].join('|');
+    }
     return [
-      n.task_code || '',
-      n.kind || '',
+      taskRef,
+      kind,
       n.label || '',
       n.preview || '',
       n.created_at || '',
