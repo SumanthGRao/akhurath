@@ -279,7 +279,7 @@ function akh_wa_editor_display_name(string $editorUsername): string
 }
 
 /**
- * Update whatsapp_tasks and append task_updates when editor workflow status changes.
+ * Update whatsapp_tasks and append task_updates when editor workflow status changes or a progress note is saved.
  *
  * @param array<string, mixed> $studioTask
  */
@@ -301,7 +301,7 @@ function akh_whatsapp_record_task_status_update(
 
     $comment = trim($comment);
     if ($comment === '' || mb_strlen($comment) > 2000) {
-        akh_whatsapp_task_sync_set_error('A status note is required when changing workflow status.');
+        akh_whatsapp_task_sync_set_error('A status note is required to record workflow updates.');
 
         return false;
     }

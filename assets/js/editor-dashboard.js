@@ -1281,9 +1281,8 @@
       function sync() {
         if (!select || !commentField || !commentInput) return;
         var needs = select.value !== currentStatus;
-        commentField.hidden = !needs;
+        commentField.hidden = false;
         commentInput.required = needs;
-        if (!needs) commentInput.value = '';
       }
       if (select) {
         select.addEventListener('change', sync);

@@ -2470,7 +2470,8 @@ function akh_task_set_status(
     if ($out === null) {
         return null;
     }
-    if ($prevSt !== $newStatus) {
+    $syncWaStatus = ($prevSt !== $newStatus) || ($statusComment !== '');
+    if ($syncWaStatus) {
         if (!akh_whatsapp_record_task_status_update($out, $newStatus, $editorUsername, $statusComment)) {
             return null;
         }
@@ -2478,7 +2479,7 @@ function akh_task_set_status(
     if (!akh_tasks_save_locked($list)) {
         return null;
     }
-    if ($prevSt !== $newStatus) {
+    if ($syncWaStatus) {
         akh_whatsapp_dispatch_n8n_status_update(
             (string) ($out['id'] ?? $taskId),
             $newStatus,

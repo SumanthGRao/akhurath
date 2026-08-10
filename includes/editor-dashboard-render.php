@@ -506,12 +506,12 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
                       <?php endforeach; ?>
                     </select>
                   </label>
-                  <label class="field field--status-comment" hidden>
-                    <span>Status note <strong>(required when status changes)</strong></span>
+                  <label class="field field--status-comment">
+                    <span>Status note <strong>(required when status changes; optional for progress-only updates)</strong></span>
                     <textarea name="status_comment" rows="2" maxlength="2000" placeholder="e.g. Sent preview for review…"></textarea>
                   </label>
                 </div>
-                <p class="edesk-muted edesk-muted--sm">Status changes sync to WhatsApp history.</p>
+                <p class="edesk-muted edesk-muted--sm">Status changes and progress notes sync to WhatsApp history.</p>
                 <button type="submit" class="btn btn--primary btn--sm">Save changes</button>
               </form>
             </section>
@@ -519,7 +519,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
             <section class="edesk-card edesk-card--progress" aria-label="Recent progress updates">
               <h3 class="edesk-card__title">Progress updates</h3>
               <?php if ($progressUpdates === []): ?>
-                <p class="edesk-muted">No status updates logged yet. Change workflow status with a note to record progress.</p>
+                <p class="edesk-muted">No status updates logged yet. Save a status note to record progress (status change optional).</p>
               <?php else: ?>
                 <?php foreach ($progressUpdates as $update): ?>
                   <article class="edesk-progress-update">
