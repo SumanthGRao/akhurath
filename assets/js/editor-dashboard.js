@@ -255,12 +255,25 @@
       if (!fp || seenNoticeKeys[fp]) return;
       seenNoticeKeys[fp] = true;
       var taskId = normId(n.task_id || n.anchor_id || '');
+      var kind = String(n.kind || '');
+      var label = String(n.label || '');
+      var icon = '🔔';
+      if (label.toLowerCase().indexOf('message') !== -1 || kind === 'whatsapp_message') {
+        icon = '💬';
+      } else if (
+        kind === 'client_preview_approved'
+        || kind === 'client_approved'
+        || kind === 'preview_approved'
+        || label.toLowerCase().indexOf('approved') !== -1
+      ) {
+        icon = '✅';
+      }
       notifyActivity({
         taskId: taskId,
         title: noticePopupTitle(n, taskId || 'Editor desk'),
         label: n.label || 'Update',
         body: noticePopupBody(n, n.label || 'New activity on your task board.'),
-        icon: String(n.label || '').toLowerCase().indexOf('message') !== -1 ? '💬' : '🔔',
+        icon: icon,
         beep: 1,
         tag: 'akh-editor-notice-' + fp,
       });
@@ -690,6 +703,9 @@
         ? '<span class="task-badge task-badge--' + esc(row.status_slug) + '">' + esc(row.status_label) + '</span>'
         : '';
     var soon = row.has_reminder ? '<span class="edesk-list__pill edesk-list__pill--soon">Soon</span>' : '';
+    var approved = row.preview_approved
+      ? '<span class="edesk-list__pill edesk-list__pill--approved">Approved</span>'
+      : '';
     var stale = row.progress_stale
       ? '<span class="edesk-list__pill edesk-list__pill--stale" title="' + esc(row.progress_stale_label || 'Needs progress update') + '">Stale</span>'
       : '';
@@ -746,6 +762,7 @@
       waPill +
       statusBadge +
       soon +
+      approved +
       stale +
       msg +
       '</span></button>'

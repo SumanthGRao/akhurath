@@ -896,6 +896,11 @@ body.page-wa-dashboard .site-footer {
   color: #a33b12;
 }
 
+.wa-alert-pill--approved {
+  background: rgba(31, 122, 79, 0.18);
+  color: #1f7a4f;
+}
+
 .wa-table__row--stale {
   box-shadow: inset 3px 0 0 #c45a2c;
 }

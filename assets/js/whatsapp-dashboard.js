@@ -106,6 +106,9 @@
     if (kind === 'progress_stale') {
       return { className: 'wa-alert-pill wa-alert-pill--stale', label: 'Stale' };
     }
+    if (kind === 'client_preview_approved' || kind === 'client_approved' || kind === 'preview_approved') {
+      return { className: 'wa-alert-pill wa-alert-pill--approved', label: 'Approved' };
+    }
     return { className: 'wa-alert-pill', label: 'Update' };
   }
 
@@ -442,12 +445,27 @@
       seenNoticeKeys[fp] = true;
       var code = String(n.task_code || '');
       var kind = String(n.kind || '');
+      var kind = String(n.kind || '');
+      var label = String(n.label || '');
+      var icon = '🔔';
+      if (kind === 'whatsapp_message') {
+        icon = '💬';
+      } else if (kind.indexOf('meeting_') === 0) {
+        icon = '📅';
+      } else if (
+        kind === 'client_preview_approved'
+        || kind === 'client_approved'
+        || kind === 'preview_approved'
+        || label.toLowerCase().indexOf('approved') !== -1
+      ) {
+        icon = '✅';
+      }
       notifyWaActivity({
         taskCode: code,
         title: waNoticeTitle(n, code || 'Task update'),
         label: n.label || 'Update',
         body: waNoticeBody(n, n.label || 'New update on the WhatsApp board.'),
-        icon: kind === 'whatsapp_message' ? '💬' : kind.indexOf('meeting_') === 0 ? '📅' : '🔔',
+        icon: icon,
         beep: 1,
         tag: 'wa-notice-' + fp,
       });
@@ -927,7 +945,14 @@
 
     var alert = alertForTask(t);
     if (alert && t.task_code) {
-      ackNotifications(t.task_code).catch(function () {});
+      var alertKind = String(alert.kind || '');
+      if (
+        alertKind !== 'client_preview_approved'
+        && alertKind !== 'client_approved'
+        && alertKind !== 'preview_approved'
+      ) {
+        ackNotifications(t.task_code).catch(function () {});
+      }
     }
   }
 

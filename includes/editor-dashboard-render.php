@@ -148,6 +148,11 @@ function akh_editor_task_view_model(
     $meetingAlertUnread = is_array($taskAlert)
         && str_starts_with((string) ($taskAlert['kind'] ?? ''), 'meeting_');
     $meetingUnread = $hasReminder || $meetingAlertUnread;
+    $previewApproved = is_array($taskAlert)
+        && (
+            akh_task_notification_is_preview_approval_kind((string) ($taskAlert['kind'] ?? ''))
+            || str_contains(strtolower((string) ($taskAlert['preview'] ?? '')), 'approved')
+        );
     $fromWhatsapp = (string) ($t['edit_type'] ?? '') === 'studio_admin'
         || strtolower(trim((string) ($t['client_username'] ?? ''))) === 'whatsapp';
     $classes = ['edesk-list__item', 'ticket--st-' . $stSlug];
@@ -215,6 +220,7 @@ function akh_editor_task_view_model(
         'ack_new' => $unseenNew,
         'ack_editor' => $notify && $section === 'mine',
         'ack_meeting' => $meetingUnread,
+        'preview_approved' => $previewApproved,
     ];
 }
 
@@ -359,6 +365,9 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
         <?php endif; ?>
         <?php if ($vm['has_reminder']): ?>
           <span class="edesk-list__pill edesk-list__pill--soon">Soon</span>
+        <?php endif; ?>
+        <?php if (!empty($vm['preview_approved'])): ?>
+          <span class="edesk-list__pill edesk-list__pill--approved">Approved</span>
         <?php endif; ?>
         <?php if (!empty($progressMeta['stale'])): ?>
           <span class="edesk-list__pill edesk-list__pill--stale" title="<?php echo h((string) ($progressMeta['label'] ?? 'Needs progress update')); ?>">Stale</span>
@@ -577,7 +586,12 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
               </article>
             <?php endif; ?>
             <?php foreach ($notificationUpdates as $update): ?>
-              <article class="edesk-update edesk-update--alert edesk-update--notification">
+              <?php
+              $updateKind = (string) ($update['kind'] ?? '');
+              $isApproved = !empty($update['is_preview_approved'])
+                  || akh_task_notification_is_preview_approval_kind($updateKind);
+              ?>
+              <article class="edesk-update edesk-update--alert<?php echo $isApproved ? ' edesk-update--approved' : ' edesk-update--notification'; ?>">
                 <p class="edesk-update__label"><?php echo h((string) ($update['label'] ?? 'Client update')); ?></p>
                 <div class="edesk-prose"><?php echo nl2br(h((string) ($update['body'] ?? ''))); ?></div>
                 <?php if (trim((string) ($update['created_at'] ?? '')) !== ''): ?>

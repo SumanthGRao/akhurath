@@ -186,6 +186,7 @@ function akh_editor_desk_list_row_json(array $vm): array
         'unseen_new' => (bool) $vm['unseen_new'],
         'has_reminder' => (bool) $vm['has_reminder'],
         'meeting_unread' => (bool) ($vm['meeting_unread'] ?? false),
+        'preview_approved' => (bool) ($vm['preview_approved'] ?? false),
         'priority' => $priority,
         'ack_new' => (bool) $vm['ack_new'],
         'ack_editor' => (bool) $vm['ack_editor'],

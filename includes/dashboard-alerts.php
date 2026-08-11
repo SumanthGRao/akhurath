@@ -11,6 +11,9 @@ function akh_dashboard_alert_priority(string $kind): int
     return match ($kind) {
         'meeting_reminder' => 100,
         'meeting_request' => 90,
+        'client_preview_approved' => 75,
+        'client_approved' => 75,
+        'preview_approved' => 75,
         'whatsapp_message' => 60,
         default => 50,
     };
@@ -162,6 +165,13 @@ function akh_dashboard_alerts_for_editor(string $editorUsername): array
         }
     }
 
+    foreach (akh_task_notification_pending_alerts_for_editor($editorUsername) as $taskId => $alert) {
+        $out[$taskId] = akh_dashboard_merge_alert(
+            $out[$taskId] ?? null,
+            akh_dashboard_normalize_alert_row($alert)
+        );
+    }
+
     foreach (akh_meeting_request_pending_alerts_for_editor($editorUsername) as $taskId => $alert) {
         $out[$taskId] = akh_dashboard_merge_alert($out[$taskId] ?? null, $alert);
     }
@@ -281,6 +291,9 @@ function akh_dashboard_alert_kind_label(array $alert): string
     }
     if ($kind === 'progress_stale') {
         return 'Needs update';
+    }
+    if (akh_task_notification_is_preview_approval_kind($kind)) {
+        return 'Preview approved';
     }
 
     return akh_task_notification_kind_label($kind);

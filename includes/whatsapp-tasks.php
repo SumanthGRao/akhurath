@@ -385,6 +385,19 @@ function akh_wa_task_update(int $id, array $fields): array
         return ['ok' => false, 'error' => 'Update failed.'];
     }
 
+    if (array_key_exists('status', $fields)) {
+        $prevWaStatus = strtolower(trim((string) ($existing['status'] ?? '')));
+        $nextWaStatus = strtolower(trim((string) ($task['status'] ?? '')));
+        if ($prevWaStatus === 'preview_sent' && $nextWaStatus !== 'preview_sent') {
+            require_once __DIR__ . '/task-notification-events.php';
+            akh_task_notification_clear_preview_approvals_if_status_changed(
+                (string) ($task['task_code'] ?? ''),
+                'preview_sent',
+                $nextWaStatus
+            );
+        }
+    }
+
     $syncErr = akh_wa_sync_to_studio($task);
     if ($syncErr !== null && akh_wa_task_has_assigned_editor($task)) {
         return ['ok' => false, 'error' => 'Saved in WhatsApp tasks, but editor board sync failed: ' . $syncErr, 'task' => $task];

@@ -166,6 +166,22 @@ if (is_file($migrationNotifyStatus) && akh_ensure_table_exists($pdo, $schema, 't
     }
 }
 
+$migrationNotifyPreview = AKH_ROOT . '/sql/migrations/013_task_notification_preview_approved.sql';
+if (is_file($migrationNotifyPreview) && akh_ensure_table_exists($pdo, $schema, 'task_notification_events')) {
+    $col = $pdo->query(
+        "SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = " . $pdo->quote($schema) . " AND TABLE_NAME = 'task_notification_events' AND COLUMN_NAME = 'event_kind'"
+    );
+    $type = $col !== false ? strtolower((string) $col->fetchColumn()) : '';
+    if ($type !== '' && !str_contains($type, 'varchar')) {
+        echo "Applying sql/migrations/013_task_notification_preview_approved.sql ...\n";
+        $sqlPreview = file_get_contents($migrationNotifyPreview);
+        if (is_string($sqlPreview) && trim($sqlPreview) !== '') {
+            $pdo->exec($sqlPreview);
+        }
+    }
+}
+
 $migrationWaMessages = AKH_ROOT . '/sql/migrations/010_whatsapp_messages.sql';
 if (is_file($migrationWaMessages) && !akh_ensure_table_exists($pdo, $schema, 'whatsapp_messages')) {
     echo "Applying sql/migrations/010_whatsapp_messages.sql ...\n";

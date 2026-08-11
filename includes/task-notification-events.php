@@ -75,7 +75,88 @@ function akh_task_notification_has_column(string $column): bool
 /** @return list<string> */
 function akh_task_notification_client_kinds(): array
 {
-    return ['client_feedback', 'client_update', 'client_message', 'client_status_request'];
+    return [
+        'client_feedback',
+        'client_update',
+        'client_message',
+        'client_status_request',
+        'client_preview_approved',
+        'client_approved',
+        'preview_approved',
+    ];
+}
+
+/** @return list<string> */
+function akh_task_notification_preview_approval_kinds(): array
+{
+    return ['client_preview_approved', 'client_approved', 'preview_approved'];
+}
+
+function akh_task_notification_is_preview_approval_kind(string $kind): bool
+{
+    return in_array(strtolower(trim($kind)), akh_task_notification_preview_approval_kinds(), true);
+}
+
+/**
+ * @param array<string, mixed> $row
+ */
+function akh_task_notification_row_is_preview_approval(array $row): bool
+{
+    $kind = strtolower(trim((string) ($row['event_kind'] ?? $row['kind'] ?? '')));
+    if (akh_task_notification_is_preview_approval_kind($kind)) {
+        return true;
+    }
+
+    $body = strtolower(trim(akh_task_notification_row_body($row)));
+    if ($body === '') {
+        return false;
+    }
+
+    return str_contains($body, 'approved')
+        && (str_contains($body, 'preview') || str_contains($body, 'preview sent'));
+}
+
+function akh_task_notification_task_is_preview_sent(string $taskCode): bool
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    if ($taskCode === '') {
+        return false;
+    }
+
+    $studio = akh_task_by_id($taskCode);
+    if (is_array($studio) && strtolower(trim((string) ($studio['status'] ?? ''))) === 'preview_sent') {
+        return true;
+    }
+
+    if (!function_exists('akh_wa_task_by_code')) {
+        require_once __DIR__ . '/whatsapp-tasks.php';
+    }
+    $wa = akh_wa_task_by_code($taskCode);
+    if (is_array($wa) && strtolower(trim((string) ($wa['status'] ?? ''))) === 'preview_sent') {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * @param array<string, mixed> $row
+ */
+function akh_task_notification_row_should_surface(array $row): bool
+{
+    if (!akh_task_notification_row_is_pending($row)) {
+        return false;
+    }
+
+    if (!akh_task_notification_row_is_preview_approval($row)) {
+        return true;
+    }
+
+    $ref = akh_task_notification_row_task_ref($row);
+
+    return $ref !== '' && akh_task_notification_task_is_preview_sent($ref);
 }
 
 function akh_task_notification_table_exists(): bool
@@ -437,7 +518,7 @@ function akh_task_notification_pending_rows(?string $taskId = null): array
         require_once __DIR__ . '/tasks.php';
         $out = [];
         foreach ($bridgeRows as $row) {
-            if (!is_array($row) || !akh_task_notification_row_is_pending($row)) {
+            if (!is_array($row) || !akh_task_notification_row_should_surface($row)) {
                 continue;
             }
             $ref = akh_task_notification_row_task_ref($row);
@@ -508,7 +589,13 @@ function akh_task_notification_pending_rows(?string $taskId = null): array
         $st->execute($params);
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
 
-        return is_array($rows) ? $rows : [];
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        return array_values(array_filter($rows, static function (array $row): bool {
+            return akh_task_notification_row_should_surface($row);
+        }));
     } catch (Throwable $e) {
         error_log('akh_task_notification_pending_rows: ' . $e->getMessage() . ' SQL: ' . $sql);
 
@@ -516,7 +603,55 @@ function akh_task_notification_pending_rows(?string $taskId = null): array
     }
 }
 
-function akh_task_notification_mark_task_read(string $taskId): void
+/**
+ * @return array{sql: string, params: list<mixed>}|null
+ */
+function akh_task_notification_preview_approval_match_sql(): ?array
+{
+    $parts = [];
+    $params = [];
+
+    if (akh_task_notification_has_column('event_kind')) {
+        $kinds = akh_task_notification_preview_approval_kinds();
+        $placeholders = implode(',', array_fill(0, count($kinds), '?'));
+        $parts[] = "event_kind IN ({$placeholders})";
+        foreach ($kinds as $kind) {
+            $params[] = $kind;
+        }
+    }
+
+    foreach (['body', 'message', 'comment', 'notification'] as $col) {
+        if (!akh_task_notification_has_column($col)) {
+            continue;
+        }
+        $parts[] = "(LOWER({$col}) LIKE '%approved%' AND (LOWER({$col}) LIKE '%preview%' OR LOWER({$col}) LIKE '%preview sent%'))";
+    }
+
+    if ($parts === []) {
+        return null;
+    }
+
+    return ['sql' => '(' . implode(' OR ', $parts) . ')', 'params' => $params];
+}
+
+/**
+ * @return array{sql: string, params: list<mixed>}|null
+ */
+function akh_task_notification_kind_filter_sql(bool $previewApprovalsOnly): ?array
+{
+    $match = akh_task_notification_preview_approval_match_sql();
+    if ($match === null) {
+        return null;
+    }
+
+    if ($previewApprovalsOnly) {
+        return $match;
+    }
+
+    return ['sql' => 'NOT ' . $match['sql'], 'params' => $match['params']];
+}
+
+function akh_task_notification_mark_rows_read(string $taskId, bool $previewApprovalsOnly): void
 {
     if (!akh_task_notification_table_exists()) {
         return;
@@ -536,18 +671,40 @@ function akh_task_notification_mark_task_read(string $taskId): void
 
     $setSql = akh_task_notification_mark_columns_sql();
     if ($setSql === '') {
-        error_log('akh_task_notification_mark_task_read: no read columns on task_notification_events');
+        error_log('akh_task_notification_mark_rows_read: no read columns on task_notification_events');
 
         return;
     }
 
-    try {
-        $sql = "UPDATE task_notification_events SET {$setSql} WHERE {$match['sql']} AND ({$pending['sql']})";
-        $st = akh_task_notification_pdo()->prepare($sql);
-        $st->execute(array_merge($match['params'], $pending['params']));
-    } catch (Throwable $e) {
-        error_log('akh_task_notification_mark_task_read: ' . $e->getMessage());
+    $where = [$match['sql'], '(' . $pending['sql'] . ')'];
+    $params = array_merge($match['params'], $pending['params']);
+    $kindFilter = akh_task_notification_kind_filter_sql($previewApprovalsOnly);
+    if ($kindFilter !== null) {
+        $where[] = '(' . $kindFilter['sql'] . ')';
+        foreach ($kindFilter['params'] as $p) {
+            $params[] = $p;
+        }
+    } elseif ($previewApprovalsOnly) {
+        return;
     }
+
+    try {
+        $sql = "UPDATE task_notification_events SET {$setSql} WHERE " . implode(' AND ', $where);
+        $st = akh_task_notification_pdo()->prepare($sql);
+        $st->execute($params);
+    } catch (Throwable $e) {
+        error_log('akh_task_notification_mark_rows_read: ' . $e->getMessage());
+    }
+}
+
+function akh_task_notification_mark_task_read(string $taskId): void
+{
+    akh_task_notification_mark_rows_read($taskId, false);
+}
+
+function akh_task_notification_mark_preview_approvals_read(string $taskId): void
+{
+    akh_task_notification_mark_rows_read($taskId, true);
 }
 
 function akh_task_notification_mark_all_read(): void
@@ -564,13 +721,34 @@ function akh_task_notification_mark_all_read(): void
         return;
     }
 
+    $where = ['(' . $pending['sql'] . ')'];
+    $params = $pending['params'];
+    $kindFilter = akh_task_notification_kind_filter_sql(false);
+    if ($kindFilter !== null) {
+        $where[] = '(' . $kindFilter['sql'] . ')';
+        foreach ($kindFilter['params'] as $p) {
+            $params[] = $p;
+        }
+    }
+
     try {
-        $sql = "UPDATE task_notification_events SET {$setSql} WHERE {$pending['sql']}";
+        $sql = "UPDATE task_notification_events SET {$setSql} WHERE " . implode(' AND ', $where);
         $st = akh_task_notification_pdo()->prepare($sql);
-        $st->execute($pending['params']);
+        $st->execute($params);
     } catch (Throwable $e) {
         error_log('akh_task_notification_mark_all_read: ' . $e->getMessage());
     }
+}
+
+function akh_task_notification_clear_preview_approvals_if_status_changed(string $taskCode, string $previousStatus, string $newStatus): void
+{
+    $prev = strtolower(trim($previousStatus));
+    $next = strtolower(trim($newStatus));
+    if ($prev !== 'preview_sent' || $next === 'preview_sent') {
+        return;
+    }
+
+    akh_task_notification_mark_preview_approvals_read($taskCode);
 }
 
 /**
@@ -595,7 +773,13 @@ function akh_task_notification_pending_alerts_grouped(): array
             $preview = mb_substr($preview, 0, 119) . '…';
         }
         $kind = (string) ($row['event_kind'] ?? 'client_update');
+        if (akh_task_notification_row_is_preview_approval($row)) {
+            $kind = akh_task_notification_is_preview_approval_kind($kind)
+                ? $kind
+                : 'client_preview_approved';
+        }
         $created = (string) ($row['created_at'] ?? '');
+        $priority = akh_task_notification_is_preview_approval_kind($kind) ? 75 : 50;
         if (!isset($out[$tid])) {
             $out[$tid] = [
                 'count' => 0,
@@ -603,6 +787,7 @@ function akh_task_notification_pending_alerts_grouped(): array
                 'preview' => $preview,
                 'kind' => $kind,
                 'created_at' => $created,
+                'priority' => $priority,
             ];
         }
         $out[$tid]['count']++;
@@ -611,6 +796,7 @@ function akh_task_notification_pending_alerts_grouped(): array
             $out[$tid]['preview'] = $preview;
             $out[$tid]['kind'] = $kind;
             $out[$tid]['created_at'] = $created;
+            $out[$tid]['priority'] = max((int) ($out[$tid]['priority'] ?? 0), $priority);
         }
     }
 
@@ -693,6 +879,9 @@ function akh_task_notification_kind_label(string $kind): string
         'client_update' => 'Client updated task',
         'client_message' => 'Client message',
         'client_status_request' => 'Client update request',
+        'client_preview_approved' => 'Preview approved',
+        'client_approved' => 'Preview approved',
+        'preview_approved' => 'Preview approved',
         'studio_new' => 'New task',
     ];
 
@@ -716,6 +905,11 @@ function akh_task_notification_panel_updates(string $taskId, ?array $taskAlert =
             $body = 'Client update';
         }
         $kind = (string) ($row['event_kind'] ?? $row['kind'] ?? 'client_update');
+        if (akh_task_notification_row_is_preview_approval($row)) {
+            $kind = akh_task_notification_is_preview_approval_kind($kind)
+                ? $kind
+                : 'client_preview_approved';
+        }
         $created = (string) ($row['created_at'] ?? '');
         $key = $kind . '|' . $body . '|' . $created;
         if (isset($seen[$key])) {
@@ -727,6 +921,7 @@ function akh_task_notification_panel_updates(string $taskId, ?array $taskAlert =
             'label' => akh_task_notification_kind_label($kind),
             'body' => $body,
             'created_at' => akh_format_datetime_site_short($created),
+            'is_preview_approved' => akh_task_notification_is_preview_approval_kind($kind),
         ];
     }
 

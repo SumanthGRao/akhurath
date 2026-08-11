@@ -2488,6 +2488,10 @@ function akh_task_set_status(
             $editorUsername
         );
     }
+    if ($prevSt === 'preview_sent' && $newStatus !== 'preview_sent') {
+        require_once __DIR__ . '/task-notification-events.php';
+        akh_task_notification_clear_preview_approvals_if_status_changed($taskId, $prevSt, $newStatus);
+    }
     if (akh_task_is_bundle_child($out)) {
         $pid = trim((string) ($out['parent_task_id'] ?? ''));
         if ($pid !== '') {

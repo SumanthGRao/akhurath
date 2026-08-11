@@ -15,6 +15,7 @@ function akh_db_apply_runtime_patches(PDO $pdo): void
     $done = true;
 
     akh_db_patch_task_notification_status($pdo);
+    akh_db_patch_task_notification_event_kind($pdo);
     akh_db_patch_meeting_requests_table($pdo);
     akh_db_patch_meeting_requests_dashboard_read($pdo);
 }
@@ -56,6 +57,38 @@ function akh_db_patch_task_notification_status(PDO $pdo): void
         );
     } catch (Throwable $e) {
         error_log('akh_db_patch_task_notification_status: ' . $e->getMessage());
+    }
+}
+
+function akh_db_patch_task_notification_event_kind(PDO $pdo): void
+{
+    try {
+        $schema = (string) $pdo->query('SELECT DATABASE()')->fetchColumn();
+        if ($schema === '') {
+            return;
+        }
+
+        $tbl = $pdo->query("SHOW TABLES LIKE 'task_notification_events'");
+        if ($tbl === false || $tbl->fetch(PDO::FETCH_NUM) === false) {
+            return;
+        }
+
+        $col = $pdo->prepare(
+            'SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1'
+        );
+        $col->execute([$schema, 'task_notification_events', 'event_kind']);
+        $type = strtolower((string) ($col->fetchColumn() ?: ''));
+        if ($type === '' || str_contains($type, 'varchar')) {
+            return;
+        }
+
+        $pdo->exec(
+            "ALTER TABLE task_notification_events
+             MODIFY COLUMN event_kind VARCHAR(64) NOT NULL DEFAULT 'client_update'"
+        );
+    } catch (Throwable $e) {
+        error_log('akh_db_patch_task_notification_event_kind: ' . $e->getMessage());
     }
 }
 
