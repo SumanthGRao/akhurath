@@ -1,0 +1,1414 @@
+<?php
+
+declare(strict_types=1);
+
+/** @var array<string, int>|null */
+$GLOBALS['akh_wa_message_acks_cache'] = null;
+
+/** @var array<string, bool>|null */
+$GLOBALS['akh_wa_message_columns_cache'] = null;
+
+function akh_wa_messages_column_exists(string $column): bool
+{
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        return in_array($column, [
+            'id', 'phone', 'task_code', 'direction', 'sender', 'message', 'status', 'created_at',
+            'customer_name', 'editor_name', 'media_url', 'filename', 'media_type', 'mediaType',
+            'type', 'mimetype', 'mime_type', 'url', 'file_path', 'path', 'file_name', 'fileName',
+        ], true);
+    }
+
+    if (!akh_wa_messages_table_exists()) {
+        return false;
+    }
+    if (!is_array($GLOBALS['akh_wa_message_columns_cache'])) {
+        $GLOBALS['akh_wa_message_columns_cache'] = [];
+        try {
+            $schema = akh_db()->query('SELECT DATABASE()')->fetchColumn();
+            if (!is_string($schema) || $schema === '') {
+                return false;
+            }
+            $st = akh_db()->prepare(
+                'SELECT COLUMN_NAME FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?'
+            );
+            $st->execute([$schema, 'whatsapp_messages']);
+            while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $name = (string) ($row['COLUMN_NAME'] ?? '');
+                if ($name !== '') {
+                    $GLOBALS['akh_wa_message_columns_cache'][$name] = true;
+                }
+            }
+        } catch (Throwable) {
+            $GLOBALS['akh_wa_message_columns_cache'] = [];
+        }
+    }
+
+    return ($GLOBALS['akh_wa_message_columns_cache'][$column] ?? false) === true;
+}
+
+function akh_wa_messages_select_columns(): string
+{
+    $cols = ['id', 'phone', 'task_code', 'direction', 'sender', 'message', 'status', 'created_at'];
+    if (akh_wa_messages_column_exists('customer_name')) {
+        $cols[] = 'customer_name';
+    }
+    if (akh_wa_messages_column_exists('editor_name')) {
+        $cols[] = 'editor_name';
+    }
+    if (akh_wa_messages_column_exists('media_url')) {
+        $cols[] = 'media_url';
+    }
+    if (akh_wa_messages_column_exists('filename')) {
+        $cols[] = 'filename';
+    }
+    if (akh_wa_messages_column_exists('media_type')) {
+        $cols[] = 'media_type';
+    }
+
+    return implode(', ', $cols);
+}
+
+function akh_wa_message_editor_display_name(string $editorUsername): string
+{
+    $editorUsername = strtolower(trim($editorUsername));
+    if ($editorUsername === '') {
+        return 'Editor';
+    }
+
+    return ucfirst($editorUsername);
+}
+
+function akh_wa_message_customer_name_for_task(string $taskCode): string
+{
+    require_once __DIR__ . '/tasks.php';
+    require_once __DIR__ . '/whatsapp-tasks.php';
+
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    if ($taskCode === '') {
+        return '';
+    }
+
+    $wa = akh_wa_task_by_code($taskCode);
+    if (is_array($wa)) {
+        $name = trim((string) ($wa['customer_name'] ?? ''));
+        if ($name !== '') {
+            return $name;
+        }
+    }
+
+    $t = akh_task_by_id($taskCode);
+    if (!is_array($t)) {
+        return '';
+    }
+
+    $title = trim((string) ($t['title'] ?? ''));
+    if ($title !== '') {
+        return $title;
+    }
+
+    $client = trim((string) ($t['client_username'] ?? ''));
+    if ($client !== '' && strtolower($client) !== 'whatsapp') {
+        return $client;
+    }
+
+    return '';
+}
+
+function akh_wa_message_phone_for_task(string $taskCode): string
+{
+    require_once __DIR__ . '/whatsapp-tasks.php';
+
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    if ($taskCode === '') {
+        return '';
+    }
+
+    $wa = akh_wa_task_by_code($taskCode);
+    if (is_array($wa)) {
+        $phone = trim((string) ($wa['phone'] ?? ''));
+        if ($phone !== '') {
+            return $phone;
+        }
+    }
+
+    if (akh_wa_messages_table_exists()) {
+        if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+            $rows = akh_wa_messages_list_for_task($taskCode, 1);
+            for ($i = count($rows) - 1; $i >= 0; $i--) {
+                $phone = trim((string) ($rows[$i]['phone'] ?? ''));
+                if ($phone !== '') {
+                    return $phone;
+                }
+            }
+        } else {
+            $match = akh_wa_message_task_match_clause($taskCode);
+            if ($match['sql'] !== '0') {
+                try {
+                    $sql = "SELECT phone FROM whatsapp_messages
+                            WHERE {$match['sql']} AND TRIM(COALESCE(phone, '')) <> ''
+                            ORDER BY id DESC LIMIT 1";
+                    $st = akh_db()->prepare($sql);
+                    $st->execute($match['params']);
+                    $phone = $st->fetchColumn();
+                    if (is_string($phone) && trim($phone) !== '') {
+                        return trim($phone);
+                    }
+                } catch (Throwable $e) {
+                    error_log('akh_wa_message_phone_for_task: ' . $e->getMessage());
+                }
+            }
+        }
+    }
+
+    return '';
+}
+
+function akh_wa_message_direction_is_outbound(string $direction): bool
+{
+    $direction = strtolower(trim($direction));
+
+    return $direction === 'outbound' || $direction === 'outgoing';
+}
+
+/**
+ * @param array<string, mixed> $fields
+ */
+function akh_wa_message_insert(array $fields): ?int
+{
+    if (!akh_wa_messages_table_exists()) {
+        return null;
+    }
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        return null;
+    }
+
+    if (!akh_db_is_pdo()) {
+        return null;
+    }
+
+    $taskCode = akh_task_normalize_id(trim((string) ($fields['task_code'] ?? '')));
+    $message = trim((string) ($fields['message'] ?? ''));
+    if ($taskCode === '' || $message === '') {
+        return null;
+    }
+
+    $direction = strtolower(trim((string) ($fields['direction'] ?? 'outbound')));
+    if (!in_array($direction, ['incoming', 'outgoing', 'outbound'], true)) {
+        $direction = 'outbound';
+    }
+    $sender = strtolower(trim((string) ($fields['sender'] ?? 'editor')));
+    if (!in_array($sender, ['client', 'editor', 'system'], true)) {
+        $sender = 'editor';
+    }
+    $status = strtolower(trim((string) ($fields['status'] ?? 'pending')));
+    if ($status === '') {
+        $status = $direction === 'incoming' ? 'received' : 'pending';
+    }
+
+    // Store the message creation time explicitly in IST (Asia/Kolkata).
+    // This avoids relying on the shared hosting / database server timezone.
+    $createdAt = (new DateTime(
+        'now',
+        new DateTimeZone('Asia/Kolkata')
+    ))->format('Y-m-d H:i:s');
+
+    $cols = [
+        'phone',
+        'task_code',
+        'direction',
+        'sender',
+        'message',
+        'status',
+        'created_at',
+    ];
+
+    $vals = [
+        trim((string) ($fields['phone'] ?? '')),
+        $taskCode,
+        $direction,
+        $sender,
+        $message,
+        $status,
+        $createdAt,
+    ];
+    if (akh_wa_messages_column_exists('customer_name')) {
+        $cols[] = 'customer_name';
+        $vals[] = trim((string) ($fields['customer_name'] ?? ''));
+    }
+    if (akh_wa_messages_column_exists('editor_name')) {
+        $cols[] = 'editor_name';
+        $vals[] = trim((string) ($fields['editor_name'] ?? ''));
+    }
+
+    $placeholders = implode(', ', array_fill(0, count($cols), '?'));
+
+    try {
+        $sql = 'INSERT INTO whatsapp_messages (' . implode(', ', $cols) . ') VALUES (' . $placeholders . ')';
+        $st = akh_db()->prepare($sql);
+        $st->execute($vals);
+        $id = (int) akh_db()->lastInsertId();
+        if ($id < 1) {
+            return null;
+        }
+
+        return $id;
+    } catch (Throwable $e) {
+        error_log('akh_wa_message_insert: ' . $e->getMessage());
+
+        return null;
+    }
+}
+
+/**
+ * Step 2 — POST exact JSON payload to n8n after a successful editor outbound insert.
+ */
+function akh_wa_message_n8n_webhook_url(): string
+{
+    $default = 'https://n8n.akhurathstudio.com/webhook/ada421c4-2607-4b06-990b-51d0c704dd9c';
+    if (defined('AKH_N8N_WA_MESSAGE_WEBHOOK_URL')) {
+        $configured = trim((string) AKH_N8N_WA_MESSAGE_WEBHOOK_URL);
+        if ($configured !== '') {
+            return $configured;
+        }
+    }
+
+    return $default;
+}
+
+/**
+ * Step 2 — POST exact JSON payload to n8n after a successful editor outbound insert.
+ */
+function akh_wa_message_dispatch_n8n_editor_outbound(
+    int $messageId,
+    string $phone,
+    string $taskCode,
+    string $message,
+    string $chatAction = ''
+): void {
+    $url = akh_wa_message_n8n_webhook_url();
+    if ($url === '' || !str_starts_with($url, 'http')) {
+        error_log('akh_n8n_webhook: skipped — invalid URL');
+
+        return;
+    }
+
+    $body = [
+        'message_id' => $messageId,
+        'phone' => $phone,
+        'task_code' => $taskCode,
+        'message' => $message,
+    ];
+    $chatAction = trim($chatAction);
+    if ($chatAction !== '') {
+        $body['chat_action'] = $chatAction;
+    }
+
+    $payload = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!is_string($payload)) {
+        error_log('akh_n8n_webhook: skipped — could not encode JSON payload');
+
+        return;
+    }
+
+    try {
+        if (!function_exists('curl_init')) {
+            error_log('akh_n8n_webhook: cURL extension is not available');
+
+            return;
+        }
+        $ch = curl_init($url);
+        if ($ch === false) {
+            error_log('akh_n8n_webhook: curl_init failed for URL ' . $url);
+
+            return;
+        }
+
+        error_log('akh_n8n_webhook: POST ' . $url . ' payload=' . $payload);
+
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 2,
+            CURLOPT_CONNECTTIMEOUT => 2,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
+        ]);
+
+        $response = curl_exec($ch);
+        $errno = curl_errno($ch);
+        $error = curl_error($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($errno !== 0) {
+            error_log('akh_n8n_webhook: cURL errno=' . $errno . ' error=' . $error);
+
+            return;
+        }
+
+        if ($httpCode < 200 || $httpCode >= 300) {
+            error_log(
+                'akh_n8n_webhook: HTTP status=' . $httpCode
+                . ' response=' . mb_substr((string) $response, 0, 500)
+            );
+
+            return;
+        }
+
+        error_log('akh_n8n_webhook: OK HTTP status=' . $httpCode);
+    } catch (Throwable $e) {
+        error_log('akh_n8n_webhook: exception ' . $e->getMessage());
+    }
+}
+
+/**
+ * Editor outbound message handler (Step 1: insert, Step 2: n8n webhook).
+ *
+ * Phone and task_code are taken from the active editor desk context — the open
+ * task's whatsapp_tasks row (phone) and normalized task id (task_code).
+ *
+ * @return array{ok: true, message_id: int}|array{ok: false, error: string}
+ */
+function akh_wa_message_send_editor_outbound(
+    string $taskCode,
+    string $phone,
+    string $messageText,
+    string $editorUsername = '',
+    string $chatAction = ''
+): array {
+    require_once __DIR__ . '/tasks.php';
+
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    $phone = trim($phone);
+    $messageText = trim($messageText);
+    $editorUsername = strtolower(trim($editorUsername));
+
+    if ($taskCode === '') {
+        return ['ok' => false, 'error' => 'Task code is required.'];
+    }
+    if ($messageText === '' || mb_strlen($messageText) > 2000) {
+        return ['ok' => false, 'error' => 'Message must be between 1 and 2000 characters.'];
+    }
+    if (!akh_wa_messages_table_exists()) {
+        return ['ok' => false, 'error' => 'Message store is not available.'];
+    }
+
+    if ($phone === '') {
+        $phone = akh_wa_message_phone_for_task($taskCode);
+    }
+
+    $customerName = akh_wa_message_customer_name_for_task($taskCode);
+    $editorName = $editorUsername !== ''
+        ? akh_wa_message_editor_display_name($editorUsername)
+        : '';
+
+    $messageId = akh_wa_message_insert([
+        'phone' => $phone,
+        'task_code' => $taskCode,
+        'direction' => 'outbound',
+        'sender' => 'editor',
+        'message' => $messageText,
+        'status' => 'pending',
+        'customer_name' => $customerName,
+        'editor_name' => $editorName,
+    ]);
+
+    if ($messageId === null) {
+        return ['ok' => false, 'error' => 'Could not save message.'];
+    }
+
+    akh_wa_message_dispatch_n8n_editor_outbound($messageId, $phone, $taskCode, $messageText, $chatAction);
+
+    return ['ok' => true, 'message_id' => $messageId];
+}
+
+function akh_wa_message_insert_editor_reply(string $taskCode, string $editorUsername, string $body): ?int
+{
+    $result = akh_wa_message_send_editor_outbound(
+        $taskCode,
+        akh_wa_message_phone_for_task($taskCode),
+        $body,
+        $editorUsername
+    );
+
+    if (($result['ok'] ?? false) !== true) {
+        return null;
+    }
+
+    return (int) ($result['message_id'] ?? 0);
+}
+
+/**
+ * @deprecated Use akh_wa_message_dispatch_n8n_editor_outbound() for editor sends.
+ * @param array<string, mixed> $row
+ */
+function akh_wa_message_dispatch_n8n_webhook(array $row): void
+{
+    $messageId = (int) ($row['id'] ?? 0);
+    if ($messageId < 1) {
+        return;
+    }
+    akh_wa_message_dispatch_n8n_editor_outbound(
+        $messageId,
+        trim((string) ($row['phone'] ?? '')),
+        akh_task_normalize_id(trim((string) ($row['task_code'] ?? ''))),
+        trim((string) ($row['message'] ?? ''))
+    );
+}
+
+function akh_wa_messages_table_exists(): bool
+{
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        if (akh_dashboard_data_whatsapp_messages() !== []) {
+            return true;
+        }
+
+        return function_exists('akh_db_data') && akh_db_data() !== [];
+    }
+
+    if (!function_exists('akh_db') || !akh_db_is_pdo()) {
+        return false;
+    }
+
+    try {
+        $st = akh_db()->query("SHOW TABLES LIKE 'whatsapp_messages'");
+
+        return $st !== false && $st->fetch(PDO::FETCH_NUM) !== false;
+    } catch (Throwable) {
+        return false;
+    }
+}
+
+function akh_wa_message_acks_kv_key(): string
+{
+    return 'whatsapp_message_dashboard_acks';
+}
+
+function akh_wa_message_acks_file(): string
+{
+    return AKH_ROOT . '/data/whatsapp-message-acks.json';
+}
+
+/** @return array<string, int> task_code => last read message id */
+function akh_wa_message_acks_load(): array
+{
+    if (is_array($GLOBALS['akh_wa_message_acks_cache'])) {
+        return $GLOBALS['akh_wa_message_acks_cache'];
+    }
+
+    require_once __DIR__ . '/tasks.php';
+
+    $raw = null;
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        if (function_exists('akh_dashboard_data_app_kv_raw')) {
+            $kvRaw = akh_dashboard_data_app_kv_raw(akh_wa_message_acks_kv_key());
+            if (is_string($kvRaw)) {
+                $raw = $kvRaw;
+            } elseif (is_array($kvRaw)) {
+                try {
+                    $raw = json_encode($kvRaw, JSON_THROW_ON_ERROR);
+                } catch (Throwable) {
+                    $raw = null;
+                }
+            }
+        }
+        if ($raw === null && is_file(akh_wa_message_acks_file())) {
+            $fileRaw = @file_get_contents(akh_wa_message_acks_file());
+            if (is_string($fileRaw) && $fileRaw !== '') {
+                $raw = $fileRaw;
+            }
+        }
+    } else {
+        akh_tasks_require_kv();
+        $raw = akh_kv_get(akh_wa_message_acks_kv_key());
+    }
+
+    $out = [];
+    if ($raw !== null && $raw !== '') {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            foreach ($decoded as $code => $maxId) {
+                $norm = akh_task_normalize_id((string) $code);
+                if ($norm === '') {
+                    continue;
+                }
+                $out[$norm] = max((int) ($out[$norm] ?? 0), (int) $maxId);
+            }
+        }
+    }
+
+    $GLOBALS['akh_wa_message_acks_cache'] = $out;
+
+    return $out;
+}
+
+/**
+ * @param array<string, int> $acks
+ */
+function akh_wa_message_acks_save(array $acks): bool
+{
+    try {
+        $json = json_encode($acks, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    } catch (Throwable) {
+        return false;
+    }
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $path = akh_wa_message_acks_file();
+        $dir = dirname($path);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+
+        return @file_put_contents($path, $json, LOCK_EX) !== false;
+    }
+
+    akh_tasks_require_kv();
+    try {
+        akh_kv_set(akh_wa_message_acks_kv_key(), $json);
+    } catch (Throwable) {
+        return false;
+    }
+
+    return true;
+}
+
+function akh_wa_message_acks_invalidate(): void
+{
+    $GLOBALS['akh_wa_message_acks_cache'] = null;
+}
+
+function akh_wa_message_ack_max_id(string $taskCode): int
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    if ($taskCode === '') {
+        return 0;
+    }
+
+    $acks = akh_wa_message_acks_load();
+
+    return (int) ($acks[$taskCode] ?? 0);
+}
+
+/**
+ * @param array<string, mixed> $row
+ */
+function akh_wa_message_is_client_incoming(array $row): bool
+{
+    $sender = strtolower(trim((string) ($row['sender'] ?? 'client')));
+    if (in_array($sender, ['editor', 'system'], true)) {
+        return false;
+    }
+    $direction = strtolower(trim((string) ($row['direction'] ?? 'incoming')));
+    if ($direction === '') {
+        $direction = 'incoming';
+    }
+    if ($direction === 'outbound') {
+        return false;
+    }
+    if ($direction === 'outgoing' && $sender === 'editor') {
+        return false;
+    }
+
+    return $direction === 'incoming'
+        || ($direction === 'outgoing' && ($sender === '' || $sender === 'client'));
+}
+
+/** SQL fragment: rows that should count as unread client WhatsApp messages. */
+function akh_wa_message_sql_client_incoming_clause(): string
+{
+    return <<<'SQL'
+(
+    LOWER(TRIM(COALESCE(sender, ''))) NOT IN ('editor', 'system')
+    AND LOWER(TRIM(COALESCE(NULLIF(TRIM(direction), ''), 'incoming'))) NOT IN ('outbound')
+    AND NOT (
+        LOWER(TRIM(COALESCE(sender, ''))) = 'editor'
+        AND LOWER(TRIM(COALESCE(NULLIF(TRIM(direction), ''), 'outbound'))) IN ('outbound', 'outgoing')
+    )
+)
+SQL;
+}
+
+/**
+ * @return array{sql: string, params: list<string>}
+ */
+function akh_wa_message_task_match_clause(string $taskCode): array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $variants = akh_task_id_match_variants($taskCode);
+    if ($variants === []) {
+        return ['sql' => '0', 'params' => []];
+    }
+
+    $placeholder = implode(',', array_fill(0, count($variants), '?'));
+
+    return [
+        'sql' => "TRIM(task_code) IN ({$placeholder})",
+        'params' => $variants,
+    ];
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function akh_wa_messages_list_for_task(string $taskCode, int $limit = 300): array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $code = akh_task_normalize_id($taskCode);
+        if ($code === '') {
+            return [];
+        }
+        $out = [];
+        foreach (akh_dashboard_data_whatsapp_messages() as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (!akh_task_ids_match((string) ($row['task_code'] ?? ''), $code)) {
+                continue;
+            }
+            $out[] = $row;
+        }
+
+        usort($out, static function (array $a, array $b): int {
+            $cmp = strcmp((string) ($a['created_at'] ?? ''), (string) ($b['created_at'] ?? ''));
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+
+            return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+        });
+
+        if (count($out) > $limit) {
+            $out = array_slice($out, -$limit);
+        }
+
+        return $out;
+    }
+
+    if (!akh_wa_messages_table_exists() || !akh_db_is_pdo()) {
+        return [];
+    }
+
+    $match = akh_wa_message_task_match_clause($taskCode);
+    if ($match['sql'] === '0') {
+        return [];
+    }
+
+    $limit = max(1, min(500, $limit));
+
+    try {
+        $cols = akh_wa_messages_select_columns();
+        $sql = "SELECT {$cols}
+                FROM whatsapp_messages
+                WHERE {$match['sql']}
+                ORDER BY created_at DESC, id DESC
+                LIMIT {$limit}";
+        $st = akh_db()->prepare($sql);
+        $st->execute($match['params']);
+        $out = [];
+        while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
+            if (is_array($row)) {
+                $out[] = $row;
+            }
+        }
+
+        return array_reverse($out);
+    } catch (Throwable $e) {
+        error_log('akh_wa_messages_list_for_task: ' . $e->getMessage());
+
+        return [];
+    }
+}
+
+function akh_wa_message_task_has_unread(string $taskCode): bool
+{
+    return akh_wa_message_unread_count_for_task($taskCode) > 0;
+}
+
+function akh_wa_message_unread_count_for_task(string $taskCode): int
+{
+    if (!akh_wa_messages_table_exists()) {
+        return 0;
+    }
+
+    $ack = akh_wa_message_ack_max_id($taskCode);
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $count = 0;
+        foreach (akh_wa_messages_list_for_task($taskCode, 500) as $row) {
+            if (!is_array($row) || !akh_wa_message_is_client_incoming($row)) {
+                continue;
+            }
+            if ((int) ($row['id'] ?? 0) <= $ack) {
+                continue;
+            }
+            $count++;
+        }
+
+        return $count;
+    }
+
+    if (!akh_db_is_pdo()) {
+        return 0;
+    }
+
+    $match = akh_wa_message_task_match_clause($taskCode);
+    if ($match['sql'] === '0') {
+        return 0;
+    }
+
+    try {
+        $clause = akh_wa_message_sql_client_incoming_clause();
+        $sql = "SELECT COUNT(*) FROM whatsapp_messages
+                WHERE {$match['sql']}
+                  AND {$clause}
+                  AND id > ?";
+        $params = array_merge($match['params'], [$ack]);
+        $st = akh_db()->prepare($sql);
+        $st->execute($params);
+
+        return (int) $st->fetchColumn();
+    } catch (Throwable $e) {
+        error_log('akh_wa_message_unread_count_for_task: ' . $e->getMessage());
+
+        return 0;
+    }
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function akh_wa_messages_unread_rows(): array
+{
+    if (!akh_wa_messages_table_exists()) {
+        return [];
+    }
+
+    $acks = akh_wa_message_acks_load();
+    $out = [];
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        require_once __DIR__ . '/tasks.php';
+        foreach (akh_dashboard_data_whatsapp_messages() as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+            if ($code === '') {
+                continue;
+            }
+            if (!akh_wa_message_is_client_incoming($row)) {
+                continue;
+            }
+            $ack = (int) ($acks[$code] ?? 0);
+            if ((int) ($row['id'] ?? 0) <= $ack) {
+                continue;
+            }
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    if (!akh_db_is_pdo()) {
+        return [];
+    }
+
+    try {
+        $clause = akh_wa_message_sql_client_incoming_clause();
+        $cols = akh_wa_messages_select_columns();
+        $st = akh_db()->query(
+            "SELECT {$cols}
+             FROM whatsapp_messages
+             WHERE {$clause}
+             ORDER BY id ASC"
+        );
+        if ($st === false) {
+            return [];
+        }
+        while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
+            if (!is_array($row)) {
+                continue;
+            }
+            require_once __DIR__ . '/tasks.php';
+            $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+            if ($code === '') {
+                continue;
+            }
+            if (!akh_wa_message_is_client_incoming($row)) {
+                continue;
+            }
+            $ack = (int) ($acks[$code] ?? 0);
+            if ((int) ($row['id'] ?? 0) <= $ack) {
+                continue;
+            }
+            $out[] = $row;
+        }
+    } catch (Throwable $e) {
+        error_log('akh_wa_messages_unread_rows: ' . $e->getMessage());
+    }
+
+    return $out;
+}
+
+/**
+ * @return array<string, array{count: int, max_id: int, preview: string, kind: string, priority: int, created_at: string}>
+ */
+function akh_wa_messages_pending_alerts_grouped(): array
+{
+    require_once __DIR__ . '/tasks.php';
+    require_once __DIR__ . '/whatsapp-tasks.php';
+
+    $out = [];
+    foreach (akh_wa_messages_unread_rows() as $row) {
+        $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+        if ($code === '') {
+            continue;
+        }
+        $id = (int) ($row['id'] ?? 0);
+        $body = trim((string) ($row['message'] ?? ''));
+        $preview = $body !== '' ? $body : 'New WhatsApp message';
+        if (mb_strlen($preview) > 120) {
+            $preview = mb_substr($preview, 0, 119) . '…';
+        }
+        $created = (string) ($row['created_at'] ?? '');
+        $customerName = trim((string) ($row['customer_name'] ?? ''));
+        if ($customerName === '') {
+            $customerName = trim(akh_wa_message_customer_name_for_task($code));
+        }
+        $projectName = '';
+        $waTask = akh_wa_task_by_code($code);
+        if (is_array($waTask)) {
+            $projectName = trim((string) ($waTask['project_name'] ?? ''));
+        }
+        if (!isset($out[$code])) {
+            $out[$code] = [
+                'count' => 0,
+                'max_id' => $id,
+                'preview' => $preview,
+                'kind' => 'whatsapp_message',
+                'priority' => 60,
+                'created_at' => $created,
+                'customer_name' => $customerName,
+                'project_name' => $projectName,
+            ];
+        }
+        $out[$code]['count']++;
+        if ($id >= (int) ($out[$code]['max_id'] ?? 0)) {
+            $out[$code]['max_id'] = $id;
+            $out[$code]['preview'] = $preview;
+            $out[$code]['created_at'] = $created;
+            if ($customerName !== '') {
+                $out[$code]['customer_name'] = $customerName;
+            }
+            if ($projectName !== '') {
+                $out[$code]['project_name'] = $projectName;
+            }
+        }
+    }
+
+    return $out;
+}
+
+/**
+ * @return array<string, array<string, mixed>>
+ */
+function akh_wa_messages_alerts_for_editor(string $editorUsername): array
+{
+    require_once __DIR__ . '/meeting-requests.php';
+
+    $editorUsername = strtolower(trim($editorUsername));
+    if ($editorUsername === '') {
+        return [];
+    }
+
+    $owned = akh_meeting_request_assigned_task_codes_for_editor($editorUsername);
+    $out = [];
+    foreach (akh_wa_messages_pending_alerts_grouped() as $taskId => $alert) {
+        if (akh_meeting_request_editor_owns_code($owned, $taskId)) {
+            $out[$taskId] = $alert;
+            continue;
+        }
+        require_once __DIR__ . '/tasks.php';
+        $task = akh_task_by_id($taskId);
+        if (is_array($task) && akh_task_editor_pool_eligible($task)) {
+            $out[$taskId] = $alert;
+        }
+    }
+
+    return $out;
+}
+
+function akh_wa_messages_poll_signature(): string
+{
+    if (!akh_wa_messages_table_exists()) {
+        return 'missing';
+    }
+
+    $acks = akh_wa_message_acks_load();
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $rows = akh_dashboard_data_whatsapp_messages();
+        $count = count($rows);
+        $maxId = 0;
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $maxId = max($maxId, (int) ($row['id'] ?? 0));
+        }
+
+        return hash(
+            'sha256',
+            (string) $count
+            . '|' . (string) $maxId
+            . '|' . json_encode($acks, JSON_UNESCAPED_SLASHES)
+        );
+    }
+
+    if (!akh_db_is_pdo()) {
+        return 'missing';
+    }
+
+    try {
+        $row = akh_db()->query(
+            'SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS m FROM whatsapp_messages'
+        )->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row)) {
+            return 'empty';
+        }
+        $acks = akh_wa_message_acks_load();
+
+        return hash(
+            'sha256',
+            (string) ($row['c'] ?? '0')
+            . '|' . (string) ($row['m'] ?? '0')
+            . '|' . json_encode($acks, JSON_UNESCAPED_SLASHES)
+        );
+    } catch (Throwable $e) {
+        error_log('akh_wa_messages_poll_signature: ' . $e->getMessage());
+
+        return 'error';
+    }
+}
+
+function akh_wa_message_mark_task_read(string $taskCode): void
+{
+    if (!akh_wa_messages_table_exists()) {
+        return;
+    }
+
+    require_once __DIR__ . '/tasks.php';
+
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    if ($taskCode === '') {
+        return;
+    }
+
+    $match = akh_wa_message_task_match_clause($taskCode);
+    if ($match['sql'] === '0') {
+        return;
+    }
+
+    $maxId = 0;
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        foreach (akh_wa_messages_list_for_task($taskCode, 500) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $maxId = max($maxId, (int) ($row['id'] ?? 0));
+        }
+    } elseif (akh_db_is_pdo()) {
+        try {
+            $sql = "SELECT COALESCE(MAX(id), 0) FROM whatsapp_messages WHERE {$match['sql']}";
+            $st = akh_db()->prepare($sql);
+            $st->execute($match['params']);
+            $maxId = (int) $st->fetchColumn();
+        } catch (Throwable $e) {
+            error_log('akh_wa_message_mark_task_read: ' . $e->getMessage());
+
+            return;
+        }
+    }
+
+    $acks = akh_wa_message_acks_load();
+    $acks[$taskCode] = max((int) ($acks[$taskCode] ?? 0), $maxId);
+    akh_wa_message_acks_save($acks);
+    akh_wa_message_acks_invalidate();
+}
+
+function akh_wa_message_mark_all_read(): void
+{
+    if (!akh_wa_messages_table_exists()) {
+        return;
+    }
+
+    require_once __DIR__ . '/tasks.php';
+
+    $acks = akh_wa_message_acks_load();
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        foreach (akh_dashboard_data_whatsapp_messages() as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+            if ($code === '') {
+                continue;
+            }
+            $acks[$code] = max((int) ($acks[$code] ?? 0), (int) ($row['id'] ?? 0));
+        }
+    } elseif (akh_db_is_pdo()) {
+        try {
+            $st = akh_db()->query(
+                'SELECT task_code, MAX(id) AS max_id
+                 FROM whatsapp_messages
+                 GROUP BY task_code'
+            );
+            if ($st === false) {
+                return;
+            }
+            while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+                if ($code === '') {
+                    continue;
+                }
+                $acks[$code] = max((int) ($acks[$code] ?? 0), (int) ($row['max_id'] ?? 0));
+            }
+        } catch (Throwable $e) {
+            error_log('akh_wa_message_mark_all_read: ' . $e->getMessage());
+
+            return;
+        }
+    }
+
+    akh_wa_message_acks_save($acks);
+    akh_wa_message_acks_invalidate();
+}
+
+function akh_whatsapp_message_kind_label(): string
+{
+    return 'WhatsApp message';
+}
+
+/**
+ * @param array<string, mixed> $row
+ */
+function akh_wa_message_row_string(array $row, array $keys): string
+{
+    foreach ($keys as $key) {
+        $value = trim((string) ($row[$key] ?? ''));
+        if ($value !== '') {
+            return $value;
+        }
+    }
+
+    return '';
+}
+
+function akh_wa_message_extract_url_from_text(string $text): string
+{
+    if (preg_match('#https?://[^\s<>"\']+#i', $text, $matches) === 1) {
+        return rtrim((string) ($matches[0] ?? ''), '.,);]');
+    }
+
+    return '';
+}
+
+function akh_wa_message_url_looks_like_media_asset(string $url): bool
+{
+    if ($url === '') {
+        return false;
+    }
+    if (str_contains($url, '/chat_media/')) {
+        return true;
+    }
+    $path = (string) parse_url($url, PHP_URL_PATH);
+    if ($path === '') {
+        return false;
+    }
+
+    return (bool) preg_match(
+        '/\.(jpe?g|png|gif|webp|heic|bmp|svg|mp4|webm|mov|m4v|3gp|mkv|avi|mp3|ogg|oga|opus|m4a|wav|aac|amr|pdf)$/i',
+        $path
+    );
+}
+
+function akh_wa_message_normalize_media_kind(string $raw, string $filename, string $url): string
+{
+    $raw = strtolower(trim($raw));
+    if ($raw !== '') {
+        if (
+            str_contains($raw, 'image')
+            || str_contains($raw, 'photo')
+            || in_array($raw, ['sticker', 'picture', 'img'], true)
+        ) {
+            return 'image';
+        }
+        if (str_contains($raw, 'video') || in_array($raw, ['gif', 'animation'], true)) {
+            return 'video';
+        }
+        if (
+            str_contains($raw, 'audio')
+            || str_contains($raw, 'voice')
+            || in_array($raw, ['ptt', 'voice_note', 'opus', 'ogg', 'sound'], true)
+        ) {
+            return 'audio';
+        }
+        if (
+            in_array($raw, ['document', 'file', 'application', 'pdf', 'attachment'], true)
+            || str_contains($raw, 'pdf')
+            || str_contains($raw, 'document')
+        ) {
+            return 'file';
+        }
+    }
+
+    return akh_wa_message_media_kind_from_name($filename !== '' ? $filename : $url);
+}
+
+function akh_wa_message_media_kind_from_name(string $name): string
+{
+    $name = strtolower(trim($name));
+    if ($name === '') {
+        return 'file';
+    }
+    $path = (string) parse_url($name, PHP_URL_PATH);
+    if ($path === '') {
+        $path = $name;
+    }
+    if (preg_match('/\.(jpe?g|png|gif|webp|heic|bmp|svg|sticker)$/i', $path)) {
+        return 'image';
+    }
+    if (preg_match('/\.(mp4|webm|mov|m4v|3gp|mkv|avi)$/i', $path)) {
+        return 'video';
+    }
+    if (preg_match('/\.(mp3|ogg|oga|opus|m4a|wav|aac|amr|caf|mpeg|mpga)$/i', $path)) {
+        return 'audio';
+    }
+    if (preg_match('/(?:^|\/)(ptt|audio|voice)[-_]/i', $path)) {
+        return 'audio';
+    }
+
+    return 'file';
+}
+
+function akh_wa_message_media_mime_type(string $kind, string $filename, string $url): string
+{
+    $probe = strtolower($filename !== '' ? $filename : (string) parse_url($url, PHP_URL_PATH));
+    if (preg_match('/\.jpe?g$/i', $probe)) {
+        return 'image/jpeg';
+    }
+    if (preg_match('/\.png$/i', $probe)) {
+        return 'image/png';
+    }
+    if (preg_match('/\.gif$/i', $probe)) {
+        return 'image/gif';
+    }
+    if (preg_match('/\.webp$/i', $probe)) {
+        return 'image/webp';
+    }
+    if (preg_match('/\.mp4$/i', $probe)) {
+        return 'video/mp4';
+    }
+    if (preg_match('/\.webm$/i', $probe)) {
+        return 'video/webm';
+    }
+    if (preg_match('/\.mov$/i', $probe)) {
+        return 'video/quicktime';
+    }
+    if (preg_match('/\.(ogg|oga|opus)$/i', $probe)) {
+        return 'audio/ogg';
+    }
+    if (preg_match('/\.mp3$/i', $probe)) {
+        return 'audio/mpeg';
+    }
+    if (preg_match('/\.m4a$/i', $probe)) {
+        return 'audio/mp4';
+    }
+    if (preg_match('/\.wav$/i', $probe)) {
+        return 'audio/wav';
+    }
+    if (preg_match('/\.aac$/i', $probe)) {
+        return 'audio/aac';
+    }
+    if (preg_match('/\.amr$/i', $probe)) {
+        return 'audio/amr';
+    }
+    if (preg_match('/\.pdf$/i', $probe)) {
+        return 'application/pdf';
+    }
+
+    return match ($kind) {
+        'image' => 'image/jpeg',
+        'video' => 'video/mp4',
+        'audio' => 'audio/ogg',
+        default => 'application/octet-stream',
+    };
+}
+
+/**
+ * @return array{url: string, filename: string, kind: string, mime: string}
+ */
+function akh_wa_message_media_meta(array $row): array
+{
+    $filename = akh_wa_message_row_string($row, ['filename', 'file_name', 'fileName']);
+    $explicitUrl = akh_wa_message_row_string($row, ['media_url', 'mediaUrl', 'url', 'file_path', 'path']);
+    $message = trim((string) ($row['message'] ?? ''));
+    $url = $explicitUrl;
+
+    if ($url === '' && $message !== '') {
+        $extracted = akh_wa_message_extract_url_from_text($message);
+        if (
+            $extracted !== ''
+            && trim($message) === $extracted
+            && akh_wa_message_url_looks_like_media_asset($extracted)
+        ) {
+            $url = $extracted;
+        }
+    }
+
+    if ($url === '' && $filename !== '' && preg_match('/^[a-zA-Z0-9._-]+$/', $filename)) {
+        $url = '/chat_media/' . $filename;
+    }
+
+    if ($url !== '' && !preg_match('#^https?://#i', $url)) {
+        if (str_starts_with($url, '/')) {
+            $url = function_exists('akh_absolute_url')
+                ? akh_absolute_url(ltrim($url, '/'))
+                : $url;
+        } else {
+            $url = '';
+        }
+    }
+
+    if ($url !== '' && filter_var($url, FILTER_VALIDATE_URL) === false) {
+        $url = '';
+    }
+
+    $rawType = akh_wa_message_row_string($row, ['media_type', 'mediaType', 'type', 'mimetype', 'mime_type']);
+    $kind = akh_wa_message_normalize_media_kind($rawType, $filename, $url);
+    if ($kind === 'file' && $url !== '' && $filename === '') {
+        $filename = basename((string) parse_url($url, PHP_URL_PATH));
+    }
+
+    return [
+        'url' => $url,
+        'filename' => $filename,
+        'kind' => $kind,
+        'mime' => akh_wa_message_media_mime_type($kind, $filename, $url),
+    ];
+}
+
+/**
+ * @param list<array<string, mixed>> $waRows
+ * @return list<array{at: string, role: string, who: string, text: string, source: string, media_url?: string, media_filename?: string, media_kind?: string}>
+ */
+function akh_wa_messages_to_conversation_rows(array $waRows): array
+{
+    $out = [];
+    foreach ($waRows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $sender = strtolower(trim((string) ($row['sender'] ?? 'client')));
+        $direction = strtolower(trim((string) ($row['direction'] ?? 'incoming')));
+        $customerName = trim((string) ($row['customer_name'] ?? ''));
+        $editorName = trim((string) ($row['editor_name'] ?? ''));
+        if ($sender === 'system') {
+            $role = 'system';
+            $who = 'System';
+        } elseif ($sender === 'editor' || (akh_wa_message_direction_is_outbound($direction) && !akh_wa_message_is_client_incoming($row))) {
+            $role = 'editor';
+            $who = $editorName !== '' ? $editorName : 'Editor';
+        } else {
+            $role = 'client';
+            $who = $customerName !== '' ? $customerName : 'Client';
+        }
+        $text = trim((string) ($row['message'] ?? ''));
+        $media = akh_wa_message_media_meta($row);
+        if ($text === '' && $media['url'] === '') {
+            continue;
+        }
+        $entry = [
+            'at' => (string) ($row['created_at'] ?? ''),
+            'role' => $role,
+            'who' => $who,
+            'text' => $text,
+            'source' => 'whatsapp',
+            'wa_id' => (int) ($row['id'] ?? 0),
+        ];
+        if ($media['url'] !== '') {
+            $entry['media_url'] = $media['url'];
+            $entry['media_filename'] = $media['filename'];
+            $entry['media_kind'] = $media['kind'];
+            $entry['media_mime'] = $media['mime'];
+        }
+        $out[] = $entry;
+    }
+
+    return $out;
+}
+
+/**
+ * Portal thread + WhatsApp messages in chronological order.
+ *
+ * @param array<string, mixed> $t
+ * @return list<array{at: string, role: string, who: string, text: string, source: string}>
+ */
+function akh_task_merged_conversation_list(array $t): array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $portal = [];
+    foreach (akh_task_conversation_list($t) as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $role = (string) ($row['role'] ?? 'client');
+        $portal[] = [
+            'at' => (string) ($row['at'] ?? ''),
+            'role' => $role,
+            'who' => (string) ($row['who'] ?? ($role === 'editor' ? 'Editor' : 'Client')),
+            'text' => (string) ($row['text'] ?? ''),
+            'source' => 'portal',
+        ];
+    }
+
+    $tid = akh_task_normalize_id((string) ($t['id'] ?? ''));
+    $wa = $tid !== '' && akh_wa_messages_table_exists()
+        ? akh_wa_messages_to_conversation_rows(akh_wa_messages_list_for_task($tid))
+        : [];
+
+    $merged = array_merge($portal, $wa);
+    usort($merged, static function (array $a, array $b): int {
+        $cmp = strcmp((string) ($a['at'] ?? ''), (string) ($b['at'] ?? ''));
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+        $idA = (int) ($a['wa_id'] ?? 0);
+        $idB = (int) ($b['wa_id'] ?? 0);
+        if ($idA !== $idB) {
+            return $idA <=> $idB;
+        }
+
+        return strcmp((string) ($a['source'] ?? ''), (string) ($b['source'] ?? ''));
+    });
+
+    return $merged;
+}
