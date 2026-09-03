@@ -349,6 +349,47 @@ body.page-wa-dashboard .site-footer {
   border-color: rgba(212, 168, 83, 0.45);
 }
 
+.wa-export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.65rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--wa-line);
+  border-radius: var(--wa-radius);
+  background: rgba(33, 30, 27, 0.65);
+}
+
+.wa-export__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--wa-muted);
+}
+
+.wa-export__label {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.wa-export__field input,
+.wa-export__field select {
+  min-width: 10rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--wa-line);
+  border-radius: 8px;
+  background: var(--wa-bg-card);
+  color: var(--wa-ink);
+  font: inherit;
+}
+
+.wa-export__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
 /* Buttons */
 .wa-btn {
   display: inline-flex;
@@ -427,6 +468,64 @@ body.page-wa-dashboard .site-footer {
   background: rgba(0, 0, 0, 0.2);
   position: sticky;
   top: 0;
+  z-index: 2;
+  vertical-align: bottom;
+}
+
+.wa-th {
+  min-width: 7rem;
+}
+
+.wa-th--actions {
+  min-width: 6.5rem;
+}
+
+.wa-th__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.wa-th__label {
+  font-weight: 600;
+}
+
+.wa-th__sort {
+  flex: 0 0 auto;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid var(--wa-line);
+  border-radius: 6px;
+  background: var(--wa-bg-card);
+  color: var(--wa-muted);
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wa-th__sort:hover,
+.wa-th__sort.is-active {
+  color: var(--wa-accent);
+  border-color: rgba(212, 168, 83, 0.45);
+}
+
+.wa-th__filter {
+  width: 100%;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--wa-line);
+  border-radius: 6px;
+  background: var(--wa-bg-card);
+  color: var(--wa-ink);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.wa-th__filter:focus {
+  outline: none;
+  border-color: rgba(212, 168, 83, 0.45);
 }
 
 .wa-table tbody tr {

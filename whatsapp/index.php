@@ -8,6 +8,7 @@ require_once AKH_ROOT . '/includes/whatsapp-tasks.php';
 require_once AKH_ROOT . '/includes/whatsapp-task-sync.php';
 require_once AKH_ROOT . '/includes/dashboard-alerts.php';
 require_once AKH_ROOT . '/includes/csrf.php';
+require_once AKH_ROOT . '/includes/site-datetime.php';
 
 akh_require_wa_dashboard();
 
@@ -78,6 +79,12 @@ try {
     }
 }
 $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filemtime(AKH_ROOT . '/assets/js/meeting-alerts.js') : '1';
+$exportMonth = (new DateTimeImmutable('now', akh_site_timezone()))->format('Y-m');
+$exportUrl = base_path('whatsapp/export.php');
+$statusLabels = [];
+foreach (akh_wa_task_statuses() as $st) {
+    $statusLabels[$st] = akh_wa_task_status_label($st);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -221,11 +228,29 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
         <input type="search" id="wa-search" placeholder="Search code, project, customer…" value="<?php echo h($fQ); ?>" autocomplete="off" />
       </label>
       <button type="button" class="wa-btn wa-btn--ghost" id="wa-clear-filters">Clear filters</button>
+      <div class="wa-export" aria-label="Export monthly report">
+        <label class="wa-export__field">
+          <span class="wa-export__label">Report month</span>
+          <input type="month" id="wa-export-month" value="<?php echo h($exportMonth); ?>" />
+        </label>
+        <label class="wa-export__field">
+          <span class="wa-export__label">Date by</span>
+          <select id="wa-export-date-field">
+            <option value="created">Assigned / created</option>
+            <option value="updated">Last updated</option>
+          </select>
+        </label>
+        <div class="wa-export__actions">
+          <a class="wa-btn wa-btn--ghost wa-btn--sm" id="wa-export-csv" href="<?php echo h($exportUrl); ?>">CSV</a>
+          <a class="wa-btn wa-btn--ghost wa-btn--sm" id="wa-export-excel" href="<?php echo h($exportUrl); ?>">Excel</a>
+          <a class="wa-btn wa-btn--ghost wa-btn--sm" id="wa-export-pdf" href="<?php echo h($exportUrl); ?>" target="_blank" rel="noopener">PDF</a>
+        </div>
+      </div>
     </section>
 
     <div class="wa-table-wrap" id="wa-table-wrap">
       <table class="wa-table" id="wa-tasks-table">
-        <thead>
+        <thead id="wa-tasks-head">
           <tr>
             <th scope="col">Task ID</th>
             <th scope="col">Customer</th>
@@ -349,19 +374,21 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
       </section>
       <div class="wa-table-wrap" id="wa-closed-table-wrap">
         <table class="wa-table" id="wa-closed-table">
-          <thead>
+          <thead id="wa-closed-head">
             <tr>
               <th scope="col">Task ID</th>
               <th scope="col">Customer</th>
               <th scope="col">Project</th>
               <th scope="col">Type</th>
               <th scope="col">Editor</th>
+              <th scope="col">Assigned</th>
+              <th scope="col">Updated</th>
               <th scope="col">Last progress</th>
               <th scope="col"><span class="visually-hidden">Actions</span></th>
             </tr>
           </thead>
           <tbody id="wa-closed-body">
-            <tr class="wa-table__empty"><td colspan="7">No closed tasks.</td></tr>
+            <tr class="wa-table__empty"><td colspan="9">No closed tasks.</td></tr>
           </tbody>
         </table>
       </div>
@@ -511,6 +538,9 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
         'statuses' => akh_wa_task_statuses(),
         'filterStatus' => $fStatus,
         'filterQ' => $fQ,
+        'exportUrl' => $exportUrl,
+        'exportMonth' => $exportMonth,
+        'statusLabels' => $statusLabels,
         'notifyCount' => (int) ($waNotify['count'] ?? 0),
         'notifySig' => (string) ($waNotify['notify_sig'] ?? ''),
         'alerts' => $waNotify['alerts'] ?? [],

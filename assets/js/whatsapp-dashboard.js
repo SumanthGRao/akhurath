@@ -34,6 +34,36 @@
   var chatTaskCode = '';
   var chatMsgSig = '';
   var chatPollTimer = null;
+  var columnFilters = { tasks: {}, closed: {} };
+  var sortState = {
+    tasks: { column: '', dir: 'desc' },
+    closed: { column: '', dir: 'desc' },
+  };
+  var columnFilterDebounce = null;
+  var statusLabels = cfg.statusLabels || {};
+
+  var TASK_COLUMNS = [
+    { key: 'task_code', label: 'Task ID', filterType: 'text' },
+    { key: 'customer_name', label: 'Customer', filterType: 'text' },
+    { key: 'project_name', label: 'Project', filterType: 'text' },
+    { key: 'task_type', label: 'Type', filterType: 'text' },
+    { key: 'status', label: 'Status', filterType: 'status' },
+    { key: 'assigned_editor_name', label: 'Editor', filterType: 'text' },
+    { key: 'created_at', label: 'Assigned', filterType: 'text', sortField: 'created_at' },
+    { key: 'updated_at', label: 'Updated', filterType: 'text', sortField: 'updated_at' },
+    { key: 'last_progress', label: 'Last progress', filterType: 'text', virtual: true },
+  ];
+
+  var CLOSED_COLUMNS = [
+    { key: 'task_code', label: 'Task ID', filterType: 'text' },
+    { key: 'customer_name', label: 'Customer', filterType: 'text' },
+    { key: 'project_name', label: 'Project', filterType: 'text' },
+    { key: 'task_type', label: 'Type', filterType: 'text' },
+    { key: 'assigned_editor_name', label: 'Editor', filterType: 'text' },
+    { key: 'created_at', label: 'Assigned', filterType: 'text', sortField: 'created_at' },
+    { key: 'updated_at', label: 'Updated', filterType: 'text', sortField: 'updated_at' },
+    { key: 'last_progress', label: 'Last progress', filterType: 'text', virtual: true },
+  ];
 
   var els = {
     body: document.getElementById('wa-tasks-body'),
@@ -77,6 +107,13 @@
     chatMeta: document.getElementById('wa-chat-meta'),
     chatSend: document.getElementById('wa-chat-send'),
     chatEnd: document.getElementById('wa-chat-end'),
+    tasksHead: document.getElementById('wa-tasks-head'),
+    closedHead: document.getElementById('wa-closed-head'),
+    exportMonth: document.getElementById('wa-export-month'),
+    exportDateField: document.getElementById('wa-export-date-field'),
+    exportCsv: document.getElementById('wa-export-csv'),
+    exportExcel: document.getElementById('wa-export-excel'),
+    exportPdf: document.getElementById('wa-export-pdf'),
   };
 
   function normalizeTaskCode(code) {
@@ -601,6 +638,208 @@
     return 'No update yet';
   }
 
+  function taskColumnValue(task, col) {
+    if (!task || !col) return '';
+    if (col.virtual) {
+      if (col.key === 'last_progress') return progressCellLabel(task);
+      return '';
+    }
+    if (col.key === 'status') return String(task.status_label || task.status || '');
+    if (col.key === 'created_at') return String(task.created_at_label || task.created_at || '');
+    if (col.key === 'updated_at') return String(task.updated_at_label || task.updated_at || '');
+    return String(task[col.key] || '');
+  }
+
+  function taskSortFieldValue(task, col) {
+    if (!task || !col) return '';
+    if (col.sortField) return String(task[col.sortField] || '');
+    if (col.key === 'status') return String(task.status || '');
+    return taskColumnValue(task, col);
+  }
+
+  function taskMatchesColumnFilters(task, tableKind) {
+    var filters = columnFilters[tableKind] || {};
+    var columns = tableKind === 'closed' ? CLOSED_COLUMNS : TASK_COLUMNS;
+    for (var i = 0; i < columns.length; i++) {
+      var col = columns[i];
+      var needle = String(filters[col.key] || '').trim();
+      if (!needle) continue;
+      if (col.filterType === 'status') {
+        if (String(task.status || '') !== needle) return false;
+        continue;
+      }
+      if (taskColumnValue(task, col).toLowerCase().indexOf(needle.toLowerCase()) === -1) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function compareTasksByColumn(a, b, col, dir) {
+    var mul = dir === 'asc' ? 1 : -1;
+    var av = taskSortFieldValue(a, col);
+    var bv = taskSortFieldValue(b, col);
+    return av.localeCompare(bv) * mul;
+  }
+
+  function sortIconFor(columnKey, tableKind) {
+    var state = sortState[tableKind] || { column: '', dir: 'desc' };
+    if (state.column !== columnKey) return '↕';
+    return state.dir === 'asc' ? '▲' : '▼';
+  }
+
+  function renderColumnTableHead(tableKind) {
+    var head = tableKind === 'closed' ? els.closedHead : els.tasksHead;
+    if (!head) return;
+    var columns = tableKind === 'closed' ? CLOSED_COLUMNS : TASK_COLUMNS;
+    var filters = columnFilters[tableKind] || {};
+    var state = sortState[tableKind] || { column: '', dir: 'desc' };
+    var html = '<tr>';
+    columns.forEach(function (col) {
+      var sorted = state.column === col.key;
+      var filterVal = escHtml(filters[col.key] || '');
+      var filterHtml = '';
+      if (col.filterType === 'status') {
+        filterHtml = '<select class="wa-th__filter" data-col-filter="' + col.key + '" data-table-kind="' + tableKind + '">';
+        filterHtml += '<option value="">All</option>';
+        (cfg.statuses || []).forEach(function (st) {
+          if (st === 'closed') return;
+          var selected = filters[col.key] === st ? ' selected' : '';
+          var label = statusLabels[st] || st;
+          filterHtml += '<option value="' + escHtml(st) + '"' + selected + '>' + escHtml(label) + '</option>';
+        });
+        filterHtml += '</select>';
+      } else {
+        filterHtml =
+          '<input type="search" class="wa-th__filter" data-col-filter="' +
+          col.key +
+          '" data-table-kind="' +
+          tableKind +
+          '" placeholder="Filter…" value="' +
+          filterVal +
+          '" />';
+      }
+      html +=
+        '<th scope="col" class="wa-th" data-col="' +
+        col.key +
+        '">' +
+        '<div class="wa-th__row">' +
+        '<span class="wa-th__label">' +
+        escHtml(col.label) +
+        '</span>' +
+        '<button type="button" class="wa-th__sort' +
+        (sorted ? ' is-active' : '') +
+        '" data-col-sort="' +
+        col.key +
+        '" data-table-kind="' +
+        tableKind +
+        '" title="Sort column">' +
+        sortIconFor(col.key, tableKind) +
+        '</button>' +
+        '</div>' +
+        filterHtml +
+        '</th>';
+    });
+    html += '<th scope="col" class="wa-th wa-th--actions"><span class="visually-hidden">Actions</span></th></tr>';
+    head.innerHTML = html;
+
+    head.querySelectorAll('[data-col-sort]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var kind = btn.getAttribute('data-table-kind') || 'tasks';
+        var colKey = btn.getAttribute('data-col-sort') || '';
+        if (!sortState[kind]) sortState[kind] = { column: '', dir: 'desc' };
+        if (sortState[kind].column === colKey) {
+          sortState[kind].dir = sortState[kind].dir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortState[kind].column = colKey;
+          sortState[kind].dir = 'asc';
+        }
+        renderColumnTableHead(kind);
+        applyFiltersLocally();
+      });
+    });
+
+    head.querySelectorAll('[data-col-filter]').forEach(function (el) {
+      var eventName = el.tagName === 'SELECT' ? 'change' : 'input';
+      el.addEventListener(eventName, function () {
+        var kind = el.getAttribute('data-table-kind') || 'tasks';
+        var key = el.getAttribute('data-col-filter') || '';
+        if (!columnFilters[kind]) columnFilters[kind] = {};
+        columnFilters[kind][key] = el.value;
+        clearTimeout(columnFilterDebounce);
+        columnFilterDebounce = setTimeout(applyFiltersLocally, 200);
+      });
+    });
+  }
+
+  function findColumnByKey(columns, key) {
+    for (var i = 0; i < columns.length; i++) {
+      if (columns[i].key === key) return columns[i];
+    }
+    return null;
+  }
+
+  function sortTasksWithPriority(list) {
+    list.sort(function (a, b) {
+      var sa = taskSortBoost(a);
+      var sb = taskSortBoost(b);
+      if (sa !== sb) return sb - sa;
+      var pa = alertPriority(sortAlertForTask(a));
+      var pb = alertPriority(sortAlertForTask(b));
+      if (pa !== pb) return pb - pa;
+      var aa = sortAlertForTask(a) ? 1 : 0;
+      var ab = sortAlertForTask(b) ? 1 : 0;
+      if (aa !== ab) return ab - aa;
+      if (aa && ab) {
+        var ta = sortAlertForTask(a);
+        var tb = sortAlertForTask(b);
+        var cmp = String(tb.created_at || '').localeCompare(String(ta.created_at || ''));
+        if (cmp !== 0) return cmp;
+      }
+      var createdCmp = String(b.created_at || '').localeCompare(String(a.created_at || ''));
+      if (createdCmp !== 0) return createdCmp;
+      return String(b.updated_at).localeCompare(String(a.updated_at));
+    });
+    return list;
+  }
+
+  function sortTasksByColumn(list, tableKind) {
+    var state = sortState[tableKind] || { column: '', dir: 'desc' };
+    if (!state.column) return list;
+    var columns = tableKind === 'closed' ? CLOSED_COLUMNS : TASK_COLUMNS;
+    var col = findColumnByKey(columns, state.column);
+    if (!col) return list;
+    list.sort(function (a, b) {
+      return compareTasksByColumn(a, b, col, state.dir);
+    });
+    return list;
+  }
+
+  function updateExportLinks() {
+    if (!cfg.exportUrl) return;
+    var monthVal = els.exportMonth ? els.exportMonth.value : cfg.exportMonth || '';
+    var fieldVal = els.exportDateField ? els.exportDateField.value : 'created';
+    if (!monthVal || monthVal.indexOf('-') === -1) return;
+    var parts = monthVal.split('-');
+    var qs =
+      '?year=' +
+      encodeURIComponent(parts[0]) +
+      '&month=' +
+      encodeURIComponent(parts[1]) +
+      '&field=' +
+      encodeURIComponent(fieldVal) +
+      '&format=';
+    if (els.exportCsv) els.exportCsv.href = cfg.exportUrl + qs + 'csv';
+    if (els.exportExcel) els.exportExcel.href = cfg.exportUrl + qs + 'excel';
+    if (els.exportPdf) els.exportPdf.href = cfg.exportUrl + qs + 'pdf';
+  }
+
+  function resetColumnFilters(tableKind) {
+    columnFilters[tableKind] = {};
+    sortState[tableKind] = { column: '', dir: 'desc' };
+    renderColumnTableHead(tableKind);
+  }
+
   function renderProgressUpdatesHtml(task) {
     var updates = (task && task.recent_updates) || [];
     if (!updates.length) {
@@ -725,7 +964,7 @@
   function renderClosedTable(tasks) {
     if (!els.closedBody) return;
     if (!tasks || tasks.length === 0) {
-      els.closedBody.innerHTML = '<tr class="wa-table__empty"><td colspan="7">No closed tasks.</td></tr>';
+      els.closedBody.innerHTML = '<tr class="wa-table__empty"><td colspan="9">No closed tasks.</td></tr>';
       return;
     }
     els.closedBody.innerHTML = tasks
@@ -749,6 +988,12 @@
           '</td>' +
           '<td>' +
           editor +
+          '</td>' +
+          '<td class="wa-cell-muted">' +
+          escHtml(t.created_at_label || t.created_at || '—') +
+          '</td>' +
+          '<td class="wa-cell-muted">' +
+          escHtml(t.updated_at_label || t.updated_at || '—') +
           '</td>' +
           '<td class="wa-cell-muted">' +
           escHtml(progressCellLabel(t)) +
@@ -805,9 +1050,14 @@
       var closedList = Object.keys(tasksById).map(function (id) {
         return tasksById[id];
       });
-      closedList.sort(function (a, b) {
-        return String(b.updated_at).localeCompare(String(a.updated_at));
-      });
+      var closedState = sortState.closed || { column: '', dir: 'desc' };
+      if (closedState.column) {
+        sortTasksByColumn(closedList, 'closed');
+      } else {
+        closedList.sort(function (a, b) {
+          return String(b.updated_at).localeCompare(String(a.updated_at));
+        });
+      }
       var cq = closedQ.toLowerCase().trim();
       if (cq) {
         closedList = closedList.filter(function (t) {
@@ -815,35 +1065,25 @@
           return hay.indexOf(cq) !== -1;
         });
       }
+      closedList = closedList.filter(function (t) {
+        return taskMatchesColumnFilters(t, 'closed');
+      });
       renderClosedTable(closedList);
       return;
     }
 
     var list = Object.keys(tasksById).map(function (id) { return tasksById[id]; });
-    list.sort(function (a, b) {
-      var sa = taskSortBoost(a);
-      var sb = taskSortBoost(b);
-      if (sa !== sb) return sb - sa;
-      var pa = alertPriority(sortAlertForTask(a));
-      var pb = alertPriority(sortAlertForTask(b));
-      if (pa !== pb) return pb - pa;
-      var aa = sortAlertForTask(a) ? 1 : 0;
-      var ab = sortAlertForTask(b) ? 1 : 0;
-      if (aa !== ab) return ab - aa;
-      if (aa && ab) {
-        var ta = sortAlertForTask(a);
-        var tb = sortAlertForTask(b);
-        var cmp = String(tb.created_at || '').localeCompare(String(ta.created_at || ''));
-        if (cmp !== 0) return cmp;
-      }
-      var createdCmp = String(b.created_at || '').localeCompare(String(a.created_at || ''));
-      if (createdCmp !== 0) return createdCmp;
-      return String(b.updated_at).localeCompare(String(a.updated_at));
-    });
+    var tasksState = sortState.tasks || { column: '', dir: 'desc' };
+    if (tasksState.column) {
+      sortTasksByColumn(list, 'tasks');
+    } else {
+      sortTasksWithPriority(list);
+    }
 
     var q = filterQ.toLowerCase().trim();
     var filtered = list.filter(function (t) {
       if (filterStatus && t.status !== filterStatus) return false;
+      if (!taskMatchesColumnFilters(t, 'tasks')) return false;
       if (!q) return true;
       var hay = [
         t.task_code, t.customer_name, t.project_name, t.task_type,
@@ -1267,9 +1507,19 @@
         document.querySelectorAll('[data-wa-filter-status]').forEach(function (b) {
           b.classList.remove('is-active');
         });
+        resetColumnFilters('tasks');
+        resetColumnFilters('closed');
         loadTasks(false);
       });
     }
+
+    if (els.exportMonth) {
+      els.exportMonth.addEventListener('change', updateExportLinks);
+    }
+    if (els.exportDateField) {
+      els.exportDateField.addEventListener('change', updateExportLinks);
+    }
+    updateExportLinks();
 
     if (els.refreshNow) {
       els.refreshNow.addEventListener('click', function () {
@@ -1284,6 +1534,15 @@
           openChat(chatBtn.getAttribute('data-wa-chat'));
           return;
         }
+        var btn = ev.target.closest('[data-wa-edit]');
+        if (!btn) return;
+        var id = parseInt(btn.getAttribute('data-wa-edit'), 10);
+        if (id) openEdit(id);
+      });
+    }
+
+    if (els.closedBody) {
+      els.closedBody.addEventListener('click', function (ev) {
         var btn = ev.target.closest('[data-wa-edit]');
         if (!btn) return;
         var id = parseInt(btn.getAttribute('data-wa-edit'), 10);
@@ -1411,6 +1670,8 @@
     reminderList = cfg.reminders;
   }
   rebuildReminderTasks(cfg.reminders || []);
+  renderColumnTableHead('tasks');
+  renderColumnTableHead('closed');
   indexTasks(cfg.tasks || []);
   if (cfg.alerts) {
     clientAlerts = cfg.alerts;
