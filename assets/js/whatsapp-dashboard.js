@@ -117,8 +117,16 @@
     return typeof alert.priority === 'number' ? alert.priority : 0;
   }
 
-  function taskSortBoost(task) {
+  function sortAlertForTask(task) {
     var alert = alertForTask(task);
+    if (alert && String(alert.kind || '') === 'progress_stale') {
+      return null;
+    }
+    return alert;
+  }
+
+  function taskSortBoost(task) {
+    var alert = sortAlertForTask(task);
     var kind = alert ? String(alert.kind || '') : '';
     if (kind === 'whatsapp_message') return 1000;
     if (
@@ -816,18 +824,20 @@
       var sa = taskSortBoost(a);
       var sb = taskSortBoost(b);
       if (sa !== sb) return sb - sa;
-      var pa = alertPriority(alertForTask(a));
-      var pb = alertPriority(alertForTask(b));
+      var pa = alertPriority(sortAlertForTask(a));
+      var pb = alertPriority(sortAlertForTask(b));
       if (pa !== pb) return pb - pa;
-      var aa = alertForTask(a) ? 1 : 0;
-      var ab = alertForTask(b) ? 1 : 0;
+      var aa = sortAlertForTask(a) ? 1 : 0;
+      var ab = sortAlertForTask(b) ? 1 : 0;
       if (aa !== ab) return ab - aa;
       if (aa && ab) {
-        var ta = alertForTask(a);
-        var tb = alertForTask(b);
+        var ta = sortAlertForTask(a);
+        var tb = sortAlertForTask(b);
         var cmp = String(tb.created_at || '').localeCompare(String(ta.created_at || ''));
         if (cmp !== 0) return cmp;
       }
+      var createdCmp = String(b.created_at || '').localeCompare(String(a.created_at || ''));
+      if (createdCmp !== 0) return createdCmp;
       return String(b.updated_at).localeCompare(String(a.updated_at));
     });
 

@@ -100,6 +100,9 @@ function akh_dashboard_unread_alerts_grouped(): array
                 if (!is_array($alert)) {
                     continue;
                 }
+                if ((string) ($alert['kind'] ?? '') === 'progress_stale') {
+                    continue;
+                }
                 $normalized = akh_dashboard_normalize_alert_row($alert);
                 $normalized['priority'] = (int) ($alert['priority'] ?? akh_dashboard_alert_priority((string) ($normalized['kind'] ?? '')));
                 $merged[$code] = $normalized;

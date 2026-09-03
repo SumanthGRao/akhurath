@@ -241,13 +241,19 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
         </thead>
         <tbody id="wa-tasks-body">
           <?php if ($tasksJson === []): ?>
-            <tr class="wa-table__empty"><td colspan="8">No tasks yet — they will appear here when WhatsApp automation creates them.</td></tr>
+            <tr class="wa-table__empty"><td colspan="10">No tasks yet — they will appear here when WhatsApp automation creates them.</td></tr>
           <?php else: ?>
             <?php
             $waAlerts = $dbError === '' ? ($waNotify['alerts'] ?? []) : [];
             foreach ($tasksJson as $t):
               $alert = akh_dashboard_alert_for_code($waAlerts, (string) ($t['task_code'] ?? ''));
+              if ($alert && (string) ($alert['kind'] ?? '') === 'progress_stale') {
+                  $alert = null;
+              }
               $rowClass = $alert ? ' wa-table__row--unread' : '';
+              if (!empty($t['progress_stale'])) {
+                  $rowClass .= ' wa-table__row--stale';
+              }
               $pillClass = 'wa-alert-pill';
               $pillLabel = 'Update';
               if ($alert) {
@@ -258,11 +264,25 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
                 } elseif ($kind === 'meeting_reminder') {
                   $pillClass .= ' wa-alert-pill--reminder';
                   $pillLabel = 'Soon';
+                } elseif ($kind === 'whatsapp_message') {
+                  $pillClass .= ' wa-alert-pill--message';
+                  $pillLabel = 'Message';
+                } elseif (in_array($kind, ['client_preview_approved', 'client_approved', 'preview_approved'], true)) {
+                  $pillClass .= ' wa-alert-pill--approved';
+                  $pillLabel = 'Approved';
                 }
               }
               $alertBadge = $alert
                   ? '<span class="' . h($pillClass) . '" title="' . h((string) ($alert['preview'] ?? 'Alert')) . '">' . h($pillLabel) . '</span> '
                   : '';
+              $createdLabel = trim((string) ($t['created_at_label'] ?? ''));
+              if ($createdLabel === '') {
+                  $createdLabel = trim((string) ($t['created_at'] ?? ''));
+              }
+              $updatedLabel = trim((string) ($t['updated_at_label'] ?? ''));
+              if ($updatedLabel === '') {
+                  $updatedLabel = trim((string) ($t['updated_at'] ?? ''));
+              }
               ?>
               <tr class="wa-table__row<?php echo $rowClass; ?>" data-task-id="<?php echo (int) $t['id']; ?>">
                 <td><?php echo $alertBadge; ?><code class="wa-code"><?php echo h((string) $t['task_code']); ?></code></td>
@@ -273,6 +293,8 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
                 <td><?php echo h((string) $t['task_type']); ?></td>
                 <td><span class="wa-badge wa-badge--<?php echo h((string) $t['status']); ?>"><?php echo h((string) $t['status_label']); ?></span></td>
                 <td><?php echo h((string) ($t['assigned_editor_name'] !== '' ? $t['assigned_editor_name'] : '—')); ?></td>
+                <td class="wa-cell-muted"><?php echo h($createdLabel !== '' ? $createdLabel : '—'); ?></td>
+                <td class="wa-cell-muted"><?php echo h($updatedLabel !== '' ? $updatedLabel : '—'); ?></td>
                 <td class="wa-cell-muted"><?php
                   $recentUpdates = akh_task_status_updates_for_display((string) ($t['task_code'] ?? ''), 1);
                   if ($recentUpdates !== []) {
@@ -284,7 +306,7 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
                       echo 'No update yet';
                   }
                 ?></td>
-                <td><button type="button" class="wa-btn wa-btn--sm wa-btn--edit" data-wa-edit="<?php echo (int) $t['id']; ?>">Edit</button></td>
+                <td class="wa-table__actions"><button type="button" class="wa-btn wa-btn--sm wa-btn--edit" data-wa-edit="<?php echo (int) $t['id']; ?>">Edit</button></td>
               </tr>
             <?php endforeach; ?>
           <?php endif; ?>

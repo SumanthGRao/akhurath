@@ -139,6 +139,71 @@ function akh_wa_tasks_list(array $filters = []): array
 }
 
 /**
+ * Dashboard alerts that affect WA board ordering — stale tasks are highlight-only.
+ *
+ * @param ?array<string, mixed> $alert
+ * @return ?array<string, mixed>
+ */
+function akh_wa_task_dashboard_sort_alert(?array $alert): ?array
+{
+    if (!is_array($alert)) {
+        return null;
+    }
+    if ((string) ($alert['kind'] ?? '') === 'progress_stale') {
+        return null;
+    }
+
+    return $alert;
+}
+
+/** @param array<string, mixed> $row */
+function akh_wa_task_dashboard_sort_boost(array $row, ?array $alert): int
+{
+    $alert = akh_wa_task_dashboard_sort_alert($alert);
+    $kind = is_array($alert) ? (string) ($alert['kind'] ?? '') : '';
+    if ($kind === 'whatsapp_message') {
+        return 1000;
+    }
+    if (in_array($kind, ['client_preview_approved', 'client_approved', 'preview_approved'], true)) {
+        return 950;
+    }
+    $status = strtolower(trim((string) ($row['status'] ?? '')));
+    if ($kind === 'studio_new' || $status === 'new') {
+        return 900;
+    }
+    if (is_array($alert)) {
+        return 100 + (int) ($alert['priority'] ?? akh_dashboard_alert_priority($kind));
+    }
+
+    return 0;
+}
+
+/**
+ * @param array<string, array<string, mixed>> $alerts
+ * @return ?array<string, mixed>
+ */
+function akh_wa_task_dashboard_alert_lookup(array $alerts, string $taskCode): ?array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $code = akh_task_normalize_id($taskCode);
+    if ($code === '') {
+        return null;
+    }
+    $alert = $alerts[$code] ?? null;
+    if (!is_array($alert)) {
+        foreach ($alerts as $key => $candidate) {
+            if (is_string($key) && akh_task_ids_match($key, $code) && is_array($candidate)) {
+                $alert = $candidate;
+                break;
+            }
+        }
+    }
+
+    return akh_wa_task_dashboard_sort_alert(is_array($alert) ? $alert : null);
+}
+
+/**
  * @param list<array<string, mixed>> $rows
  * @return list<array<string, mixed>>
  */
@@ -151,20 +216,34 @@ function akh_wa_tasks_sort_with_alerts(array $rows): array
     usort($rows, static function (array $a, array $b) use ($alerts): int {
         $ca = akh_task_normalize_id((string) ($a['task_code'] ?? ''));
         $cb = akh_task_normalize_id((string) ($b['task_code'] ?? ''));
-        $aa = $alerts[$ca] ?? null;
-        $ab = $alerts[$cb] ?? null;
+        $aa = akh_wa_task_dashboard_alert_lookup($alerts, $ca);
+        $ab = akh_wa_task_dashboard_alert_lookup($alerts, $cb);
+        $sa = akh_wa_task_dashboard_sort_boost($a, $aa);
+        $sb = akh_wa_task_dashboard_sort_boost($b, $ab);
+        if ($sa !== $sb) {
+            return $sb <=> $sa;
+        }
         $pa = is_array($aa) ? (int) ($aa['priority'] ?? 0) : 0;
         $pb = is_array($ab) ? (int) ($ab['priority'] ?? 0) : 0;
         if ($pa !== $pb) {
             return $pb <=> $pa;
         }
-        if ($pa > 0 && $pb > 0) {
+        $hasA = is_array($aa) ? 1 : 0;
+        $hasB = is_array($ab) ? 1 : 0;
+        if ($hasA !== $hasB) {
+            return $hasB <=> $hasA;
+        }
+        if ($hasA > 0 && $hasB > 0) {
             $ta = (string) ($aa['created_at'] ?? '');
             $tb = (string) ($ab['created_at'] ?? '');
             $cmp = strcmp($tb, $ta);
             if ($cmp !== 0) {
                 return $cmp;
             }
+        }
+        $createdCmp = strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? ''));
+        if ($createdCmp !== 0) {
+            return $createdCmp;
         }
 
         return strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
