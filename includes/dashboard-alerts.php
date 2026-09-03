@@ -119,11 +119,6 @@ function akh_dashboard_unread_alerts_grouped(): array
         foreach (akh_wa_messages_pending_alerts_grouped() as $code => $alert) {
             $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $alert);
         }
-
-        require_once __DIR__ . '/whatsapp-task-sync.php';
-        foreach (akh_task_progress_stale_alerts_grouped() as $code => $alert) {
-            $merged[$code] = akh_dashboard_merge_alert($merged[$code] ?? null, $alert);
-        }
     } finally {
         $building = false;
     }
@@ -181,15 +176,11 @@ function akh_dashboard_alerts_for_editor(string $editorUsername): array
 
 function akh_dashboard_alerts_poll_signature(): string
 {
-    require_once __DIR__ . '/whatsapp-task-sync.php';
-
     return hash(
         'sha256',
         akh_task_notification_poll_signature()
         . '|' . akh_meeting_request_poll_signature()
         . '|' . akh_wa_messages_poll_signature()
-        . '|' . hash('sha256', json_encode(array_keys(akh_task_progress_stale_alerts_grouped())) ?: '[]')
-        . '|' . akh_task_progress_stale_poll_signature()
     );
 }
 

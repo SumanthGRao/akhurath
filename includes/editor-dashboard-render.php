@@ -370,7 +370,7 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
           <span class="edesk-list__pill edesk-list__pill--approved">Approved</span>
         <?php endif; ?>
         <?php if (!empty($progressMeta['stale'])): ?>
-          <span class="edesk-list__pill edesk-list__pill--stale" title="<?php echo h((string) ($progressMeta['label'] ?? 'Needs progress update')); ?>">Stale</span>
+          <span class="edesk-list__pill edesk-list__pill--stale" title="<?php echo h((string) ($progressMeta['label'] ?? 'Needs progress update')); ?>">Need update</span>
         <?php endif; ?>
         <?php
         $waUnread = akh_wa_message_unread_count_for_task((string) ($vm['tid_norm'] ?? $tid));

@@ -150,11 +150,6 @@
       var body = String(rem.body || '');
       if (tier === '5') {
         showJoinModal(rem);
-      } else if (tier === '15') {
-        playChime(1);
-        tryOsNotify(title, body || 'Meeting in about 15 minutes.', 'akh-meet-' + id + '-' + tier);
-      } else if (tier === '30') {
-        tryOsNotify(title, body || 'Meeting in about 30 minutes.', 'akh-meet-' + id + '-' + tier);
       }
     });
   }

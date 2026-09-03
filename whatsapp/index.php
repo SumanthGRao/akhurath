@@ -233,6 +233,8 @@ $meetJsVer = is_file(AKH_ROOT . '/assets/js/meeting-alerts.js') ? (string) filem
             <th scope="col">Type</th>
             <th scope="col">Status</th>
             <th scope="col">Editor</th>
+            <th scope="col">Assigned</th>
+            <th scope="col">Updated</th>
             <th scope="col">Last progress</th>
             <th scope="col"><span class="visually-hidden">Actions</span></th>
           </tr>

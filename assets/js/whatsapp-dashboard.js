@@ -117,6 +117,22 @@
     return typeof alert.priority === 'number' ? alert.priority : 0;
   }
 
+  function taskSortBoost(task) {
+    var alert = alertForTask(task);
+    var kind = alert ? String(alert.kind || '') : '';
+    if (kind === 'whatsapp_message') return 1000;
+    if (
+      kind === 'client_preview_approved'
+      || kind === 'client_approved'
+      || kind === 'preview_approved'
+    ) {
+      return 950;
+    }
+    if (kind === 'studio_new' || String(task.status || '') === 'new') return 900;
+    if (alert) return 100 + alertPriority(alert);
+    return 0;
+  }
+
   function taskNumericId(code) {
     var s = String(code || '').trim().toUpperCase();
     var m = s.match(/^AS_?0*(\d+)$/);
@@ -176,7 +192,7 @@
     reminderTasks = {};
     (reminders || []).forEach(function (rem) {
       var mins = parseInt(rem.minutes_until, 10);
-      if (isNaN(mins) || mins > 30) return;
+      if (isNaN(mins) || mins > 5) return;
       var code = normalizeTaskCode(rem.task_code);
       if (code) reminderTasks[code] = true;
     });
@@ -445,7 +461,7 @@
       seenNoticeKeys[fp] = true;
       var code = String(n.task_code || '');
       var kind = String(n.kind || '');
-      var kind = String(n.kind || '');
+      if (kind === 'progress_stale') return;
       var label = String(n.label || '');
       var icon = '🔔';
       if (kind === 'whatsapp_message') {
@@ -612,7 +628,7 @@
     if (!els.body) return;
 
     if (!tasks || tasks.length === 0) {
-      els.body.innerHTML = '<tr class="wa-table__empty"><td colspan="8">No tasks match your filters.</td></tr>';
+      els.body.innerHTML = '<tr class="wa-table__empty"><td colspan="10">No tasks match your filters.</td></tr>';
       return;
     }
 
@@ -633,9 +649,6 @@
       var alertBadge = alert
         ? '<span class="' + pill.className + '" title="' + escHtml(alert.preview || pill.label) + '">' + escHtml(pill.label) + '</span> '
         : '';
-      var staleBadge = t.progress_stale && !alert
-        ? '<span class="wa-alert-pill wa-alert-pill--stale" title="' + escHtml(t.progress_stale_label || 'Needs progress update') + '">Stale</span> '
-        : '';
       var showChat =
         t.can_chat ||
         (t.unread_messages && t.unread_messages > 0) ||
@@ -649,12 +662,14 @@
         : '';
       return (
         '<tr class="wa-table__row' + rowClass + '" data-task-id="' + t.id + '">' +
-        '<td>' + alertBadge + staleBadge + '<code class="wa-code">' + escHtml(t.task_code) + '</code></td>' +
+        '<td>' + alertBadge + '<code class="wa-code">' + escHtml(t.task_code) + '</code></td>' +
         '<td><span class="wa-cell-main">' + escHtml(t.customer_name || '—') + '</span></td>' +
         '<td>' + escHtml(t.project_name || '—') + '</td>' +
         '<td>' + escHtml(t.task_type || '—') + '</td>' +
         '<td><span class="wa-badge wa-badge--' + escHtml(t.status) + '">' + escHtml(t.status_label) + '</span></td>' +
         '<td>' + editor + '</td>' +
+        '<td class="wa-cell-muted">' + escHtml(t.created_at_label || t.created_at || '—') + '</td>' +
+        '<td class="wa-cell-muted">' + escHtml(t.updated_at_label || t.updated_at || '—') + '</td>' +
         '<td class="wa-cell-muted">' + escHtml(progressCellLabel(t)) + '</td>' +
         '<td class="wa-table__actions">' + chatBtn +
         '<button type="button" class="wa-btn wa-btn--sm wa-btn--edit" data-wa-edit="' + t.id + '">Edit</button></td>' +
@@ -798,6 +813,9 @@
 
     var list = Object.keys(tasksById).map(function (id) { return tasksById[id]; });
     list.sort(function (a, b) {
+      var sa = taskSortBoost(a);
+      var sb = taskSortBoost(b);
+      if (sa !== sb) return sb - sa;
       var pa = alertPriority(alertForTask(a));
       var pb = alertPriority(alertForTask(b));
       if (pa !== pb) return pb - pa;

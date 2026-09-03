@@ -251,11 +251,12 @@
   function alertFreshNotices(notices) {
     if (!deskAlertReady) return;
     (notices || []).forEach(function (n) {
+      var kind = String(n.kind || '');
+      if (kind === 'progress_stale') return;
       var fp = noticeFingerprint(n);
       if (!fp || seenNoticeKeys[fp]) return;
       seenNoticeKeys[fp] = true;
       var taskId = normId(n.task_id || n.anchor_id || '');
-      var kind = String(n.kind || '');
       var label = String(n.label || '');
       var icon = '🔔';
       if (label.toLowerCase().indexOf('message') !== -1 || kind === 'whatsapp_message') {
@@ -707,7 +708,7 @@
       ? '<span class="edesk-list__pill edesk-list__pill--approved">Approved</span>'
       : '';
     var stale = row.progress_stale
-      ? '<span class="edesk-list__pill edesk-list__pill--stale" title="' + esc(row.progress_stale_label || 'Needs progress update') + '">Stale</span>'
+      ? '<span class="edesk-list__pill edesk-list__pill--stale" title="' + esc(row.progress_stale_label || 'Needs progress update') + '">Need update</span>'
       : '';
     var listAt = listAtForRow(row);
     var unreadMsgs = unreadMsgCount(row);

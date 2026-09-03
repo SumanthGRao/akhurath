@@ -621,16 +621,11 @@ function akh_meeting_request_upcoming_reminders(): array
         }
         $seconds = $start->getTimestamp() - $now->getTimestamp();
         $minutes = (int) ceil($seconds / 60);
-        if ($minutes > 30 || $minutes < 1) {
+        if ($minutes > 5 || $minutes < 1) {
             continue;
         }
 
         $tier = '5';
-        if ($minutes > 15) {
-            $tier = '30';
-        } elseif ($minutes > 5) {
-            $tier = '15';
-        }
 
         $code = (string) ($row['task_code'] ?? '');
         if ($code === '') {
@@ -640,11 +635,7 @@ function akh_meeting_request_upcoming_reminders(): array
         $project = trim((string) ($row['project_name'] ?? ''));
         $title = $project !== '' ? $project : ($customer !== '' ? $customer : $code);
         $meetLink = trim((string) ($row['meet_link'] ?? ''));
-        $body = match ($tier) {
-            '5' => "Meeting {$code} starts in {$minutes} min — join now.",
-            '15' => "Meeting {$code} starts in {$minutes} min.",
-            default => "Meeting {$code} starts in {$minutes} min.",
-        };
+        $body = "Meeting {$code} starts in {$minutes} min — join now.";
 
         $out[] = [
             'id' => (int) ($row['id'] ?? 0),
@@ -869,15 +860,6 @@ function akh_meeting_request_pending_alerts_for_editor(string $editorUsername): 
             $out[$taskId] = $alert;
         }
     }
-    foreach (akh_meeting_request_reminder_alert_highlights() as $taskId => $alert) {
-        if (!akh_meeting_request_editor_owns_code($owned, $taskId)) {
-            continue;
-        }
-        if (!isset($out[$taskId]) || (int) ($alert['priority'] ?? 0) >= (int) ($out[$taskId]['priority'] ?? 0)) {
-            $out[$taskId] = $alert;
-        }
-    }
-
     return $out;
 }
 
@@ -897,7 +879,7 @@ function akh_meeting_request_poll_signature(): string
         $reminders = akh_meeting_request_upcoming_reminders();
         $remSig = [];
         foreach ($reminders as $r) {
-            $remSig[] = (string) ($r['id'] ?? '') . ':' . (string) ($r['tier'] ?? '') . ':' . (string) ($r['minutes_until'] ?? '');
+            $remSig[] = (string) ($r['id'] ?? '') . ':' . (string) ($r['tier'] ?? '');
         }
         sort($remSig);
         $ackSig = md5(json_encode(akh_meeting_request_wa_ack_codes(), JSON_UNESCAPED_SLASHES) ?: '');
