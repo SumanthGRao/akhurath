@@ -4,5 +4,4 @@
   RewriteRule ^packages/?$ packages.php [L,QSA]
   RewriteRule ^privacy-policy/?$ privacy-policy.php [L,QSA]
   RewriteRule ^paste/?$ paste.php [L,QSA]
-  RewriteRule ^paste/([a-zA-Z0-9]+)/?$ paste.php?id=$1 [L,QSA]
 </IfModule>

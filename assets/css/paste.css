@@ -198,6 +198,10 @@ button {
   color: #2f6b3f;
 }
 
+.paste-status.is-syncing {
+  color: var(--muted);
+}
+
 .paste-status.is-error {
   color: #9b2c2c;
 }

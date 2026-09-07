@@ -6,20 +6,22 @@
   var statusEl = document.getElementById('paste-status');
   var copyBtn = document.getElementById('paste-copy');
   var clearBtn = document.getElementById('paste-clear');
-  var shareBtn = document.getElementById('paste-share');
 
-  if (!area || !countEl || !statusEl || !copyBtn || !clearBtn || !shareBtn) {
+  if (!area || !countEl || !statusEl || !copyBtn || !clearBtn) {
     return;
   }
 
-  var storageKey = 'akhurath-paste-draft';
   var maxBytes = Number(area.getAttribute('data-max-bytes') || '100000');
-  var saveUrl = area.getAttribute('data-save-url') || '';
-  var initialLoaded = area.getAttribute('data-initial-loaded') === '1';
+  var apiUrl = area.getAttribute('data-api-url') || '';
+  var syncedUpdated = Number(area.getAttribute('data-updated') || '0');
+  var saveTimer = null;
+  var pollTimer = null;
+  var isFocused = false;
+  var isSaving = false;
 
   function setStatus(message, type) {
     statusEl.textContent = message || '';
-    statusEl.classList.remove('is-success', 'is-error');
+    statusEl.classList.remove('is-success', 'is-error', 'is-syncing');
     if (type) {
       statusEl.classList.add('is-' + type);
     }
@@ -28,33 +30,6 @@
   function updateCount() {
     var length = area.value.length;
     countEl.textContent = length.toLocaleString() + ' characters';
-    shareBtn.disabled = length === 0 || length > maxBytes;
-  }
-
-  function saveDraft() {
-    try {
-      if (area.value.trim() === '') {
-        localStorage.removeItem(storageKey);
-      } else {
-        localStorage.setItem(storageKey, area.value);
-      }
-    } catch (err) {
-      /* ignore storage errors */
-    }
-  }
-
-  function restoreDraft() {
-    if (initialLoaded || area.value.trim() !== '') {
-      return;
-    }
-    try {
-      var draft = localStorage.getItem(storageKey);
-      if (draft) {
-        area.value = draft;
-      }
-    } catch (err) {
-      /* ignore storage errors */
-    }
   }
 
   function copyText(text) {
@@ -81,55 +56,78 @@
     });
   }
 
-  area.addEventListener('input', function () {
-    updateCount();
-    saveDraft();
-    setStatus('');
-  });
-
-  copyBtn.addEventListener('click', function () {
-    if (area.value === '') {
-      setStatus('Nothing to copy yet.', 'error');
+  function applyRemote(content, updated) {
+    if (updated <= syncedUpdated) {
       return;
     }
 
-    copyText(area.value)
-      .then(function () {
-        setStatus('Copied to clipboard.', 'success');
+    area.value = content;
+    syncedUpdated = updated;
+    updateCount();
+    setStatus('Updated from another device.', 'success');
+    window.setTimeout(function () {
+      if (!isSaving) {
+        setStatus('Synced', 'success');
+      }
+    }, 1800);
+  }
+
+  function fetchClipboard() {
+    if (!apiUrl) {
+      return Promise.resolve(null);
+    }
+
+    return fetch(apiUrl, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    })
+      .then(function (response) {
+        return response.json().then(function (payload) {
+          if (!response.ok) {
+            throw payload;
+          }
+          return payload;
+        });
       })
       .catch(function () {
-        setStatus('Could not copy. Select the text and copy manually.', 'error');
+        return null;
       });
-  });
+  }
 
-  clearBtn.addEventListener('click', function () {
-    area.value = '';
-    updateCount();
-    saveDraft();
-    setStatus('Cleared.', 'success');
-    area.focus();
-  });
-
-  shareBtn.addEventListener('click', function () {
-    if (!saveUrl) {
-      setStatus('Sharing is unavailable right now.', 'error');
+  function pollClipboard() {
+    if (isFocused || isSaving) {
       return;
     }
 
-    if (area.value.trim() === '') {
-      setStatus('Add some text before sharing.', 'error');
+    fetchClipboard().then(function (payload) {
+      if (!payload || typeof payload.updated !== 'number') {
+        return;
+      }
+
+      if (payload.updated > syncedUpdated && payload.content !== area.value) {
+        applyRemote(String(payload.content || ''), payload.updated);
+      } else if (!isSaving) {
+        setStatus('Synced', 'success');
+      }
+    });
+  }
+
+  function pushClipboard() {
+    if (!apiUrl) {
+      setStatus('Sync is unavailable right now.', 'error');
       return;
     }
 
     if (area.value.length > maxBytes) {
-      setStatus('Text is too long to share.', 'error');
+      setStatus('Text is too long.', 'error');
       return;
     }
 
-    shareBtn.disabled = true;
-    setStatus('Creating share link…');
+    isSaving = true;
+    setStatus('Saving…', 'syncing');
 
-    fetch(saveUrl, {
+    fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -146,38 +144,78 @@
         });
       })
       .then(function (payload) {
-        if (!payload || !payload.url) {
+        if (!payload || typeof payload.updated !== 'number') {
           throw { error: 'save_failed' };
         }
 
-        return copyText(payload.url).then(function () {
-          setStatus('Share link copied. It works once and expires in 24 hours.', 'success');
-        });
+        syncedUpdated = payload.updated;
+        setStatus('Synced', 'success');
       })
       .catch(function (err) {
         var code = err && err.error ? err.error : 'save_failed';
-        if (code === 'empty') {
-          setStatus('Add some text before sharing.', 'error');
-        } else if (code === 'too_large') {
-          setStatus('Text is too long to share.', 'error');
+        if (code === 'too_large') {
+          setStatus('Text is too long.', 'error');
         } else {
-          setStatus('Could not create a share link. Please try again.', 'error');
+          setStatus('Could not save. Will retry shortly.', 'error');
         }
       })
       .finally(function () {
-        updateCount();
+        isSaving = false;
+      });
+  }
+
+  function scheduleSave() {
+    window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(pushClipboard, 450);
+  }
+
+  area.addEventListener('input', function () {
+    updateCount();
+    scheduleSave();
+  });
+
+  area.addEventListener('focus', function () {
+    isFocused = true;
+  });
+
+  area.addEventListener('blur', function () {
+    isFocused = false;
+    pollClipboard();
+  });
+
+  copyBtn.addEventListener('click', function () {
+    if (area.value === '') {
+      setStatus('Nothing to copy yet.', 'error');
+      return;
+    }
+
+    copyText(area.value)
+      .then(function () {
+        setStatus('Copied to clipboard.', 'success');
+        window.setTimeout(function () {
+          if (!isSaving) {
+            setStatus('Synced', 'success');
+          }
+        }, 1800);
+      })
+      .catch(function () {
+        setStatus('Could not copy. Select the text and copy manually.', 'error');
       });
   });
 
-  restoreDraft();
-  updateCount();
+  clearBtn.addEventListener('click', function () {
+    area.value = '';
+    updateCount();
+    window.clearTimeout(saveTimer);
+    pushClipboard();
+    area.focus();
+  });
 
-  if (initialLoaded) {
-    setStatus('Shared text loaded. This link has now been used.', 'success');
-    try {
-      localStorage.removeItem(storageKey);
-    } catch (err) {
-      /* ignore */
-    }
-  }
+  updateCount();
+  setStatus('Synced', 'success');
+  pollTimer = window.setInterval(pollClipboard, 2000);
+  window.addEventListener('beforeunload', function () {
+    window.clearInterval(pollTimer);
+    window.clearTimeout(saveTimer);
+  });
 })();
