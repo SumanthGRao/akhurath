@@ -1335,6 +1335,7 @@ function akh_wa_task_can_chat(array $row): bool
 /** @return array<string, mixed> */
 function akh_wa_task_row_for_json(array $row, array $editors): array
 {
+    require_once __DIR__ . '/tasks.php';
     require_once __DIR__ . '/whatsapp-task-sync.php';
 
     $editorId = isset($row['assigned_editor']) && $row['assigned_editor'] !== null && $row['assigned_editor'] !== ''

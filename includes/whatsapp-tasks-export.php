@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/whatsapp-tasks.php';
 require_once __DIR__ . '/whatsapp-task-sync.php';
 require_once __DIR__ . '/site-datetime.php';
+require_once __DIR__ . '/tasks.php';
 
 /**
  * @return array{0: DateTimeImmutable, 1: DateTimeImmutable}
@@ -36,6 +37,36 @@ function akh_wa_tasks_list_for_export(int $year, int $month, string $dateField =
 
     $column = akh_wa_tasks_export_normalize_date_field($dateField);
     [$start, $end] = akh_wa_tasks_export_month_range($year, $month);
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $out = [];
+        foreach (akh_dashboard_data_whatsapp_tasks() as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $raw = (string) ($row[$column] ?? '');
+            $dt = akh_parse_datetime_to_site($raw);
+            if ($dt === null || $dt < $start || $dt >= $end) {
+                continue;
+            }
+            $out[] = $row;
+        }
+
+        usort($out, static function (array $a, array $b) use ($column): int {
+            $cmp = strcmp((string) ($b[$column] ?? ''), (string) ($a[$column] ?? ''));
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+
+            return ((int) ($b['id'] ?? 0)) <=> ((int) ($a['id'] ?? 0));
+        });
+
+        return $out;
+    }
+
+    if (!function_exists('akh_db') || !akh_db_is_pdo()) {
+        return [];
+    }
 
     try {
         $sql = 'SELECT * FROM whatsapp_tasks WHERE ' . $column . ' >= ? AND ' . $column . ' < ? ORDER BY ' . $column . ' DESC, id DESC';
