@@ -5,7 +5,6 @@ declare(strict_types=1);
 require_once __DIR__ . '/whatsapp-tasks.php';
 require_once __DIR__ . '/whatsapp-task-sync.php';
 require_once __DIR__ . '/site-datetime.php';
-require_once __DIR__ . '/tasks.php';
 
 /**
  * @return array{0: DateTimeImmutable, 1: DateTimeImmutable}
@@ -86,6 +85,62 @@ function akh_wa_tasks_list_for_export(int $year, int $month, string $dateField =
 }
 
 /**
+ * Build one export row from raw task data (no message/chat lookups).
+ *
+ * @param array<string, mixed> $row
+ * @param array<int, string> $editors
+ * @return array<string, string>
+ */
+function akh_wa_tasks_export_row_from_task(array $row, array $editors): array
+{
+    $editorId = isset($row['assigned_editor']) && $row['assigned_editor'] !== null && $row['assigned_editor'] !== ''
+        ? (int) $row['assigned_editor']
+        : null;
+    $editorName = ($editorId !== null && isset($editors[$editorId])) ? $editors[$editorId] : '';
+    if ($editorName === '') {
+        $editorName = trim((string) ($row['assigned_editor_username'] ?? ''));
+    }
+
+    $status = (string) ($row['status'] ?? 'new');
+    $taskCode = trim((string) ($row['task_code'] ?? ''));
+
+    $progress = '';
+    try {
+        $updates = akh_task_status_updates_for_display($taskCode, 1);
+        if ($updates !== []) {
+            $latest = $updates[0];
+            $progress = trim((string) ($latest['status'] ?? '') . ' · ' . (string) ($latest['created_at_label'] ?? ''), ' ·');
+        } elseif (($lastAt = akh_task_last_progress_at($taskCode)) !== '') {
+            $progress = akh_format_relative_time_site($lastAt);
+        }
+    } catch (Throwable $e) {
+        error_log('akh_wa_tasks_export_row_from_task progress: ' . $e->getMessage());
+    }
+
+    $createdLabel = akh_format_datetime_site_short((string) ($row['created_at'] ?? ''));
+    if ($createdLabel === '') {
+        $createdLabel = trim((string) ($row['created_at'] ?? ''));
+    }
+    $updatedLabel = akh_format_datetime_site_short((string) ($row['updated_at'] ?? ''));
+    if ($updatedLabel === '') {
+        $updatedLabel = trim((string) ($row['updated_at'] ?? ''));
+    }
+
+    return [
+        'task_code' => $taskCode,
+        'customer_name' => (string) ($row['customer_name'] ?? ''),
+        'project_name' => (string) ($row['project_name'] ?? ''),
+        'task_type' => (string) ($row['task_type'] ?? ''),
+        'status' => akh_wa_task_status_label($status),
+        'editor' => $editorName,
+        'phone' => (string) ($row['phone'] ?? ''),
+        'created_at' => $createdLabel !== '' ? $createdLabel : '—',
+        'updated_at' => $updatedLabel !== '' ? $updatedLabel : '—',
+        'last_progress' => $progress !== '' ? $progress : 'No update yet',
+    ];
+}
+
+/**
  * @return list<array<string, string>>
  */
 function akh_wa_tasks_export_rows(int $year, int $month, string $dateField = 'created'): array
@@ -97,38 +152,11 @@ function akh_wa_tasks_export_rows(int $year, int $month, string $dateField = 'cr
         if (!is_array($row)) {
             continue;
         }
-        $json = akh_wa_task_row_for_json($row, $editors);
-        $taskCode = (string) ($json['task_code'] ?? '');
-        $progress = '';
-        $updates = akh_task_status_updates_for_display($taskCode, 1);
-        if ($updates !== []) {
-            $latest = $updates[0];
-            $progress = trim((string) ($latest['status'] ?? '') . ' · ' . (string) ($latest['created_at_label'] ?? ''), ' ·');
-        } elseif (trim((string) ($json['last_progress_label'] ?? '')) !== '') {
-            $progress = (string) $json['last_progress_label'];
+        try {
+            $out[] = akh_wa_tasks_export_row_from_task($row, $editors);
+        } catch (Throwable $e) {
+            error_log('akh_wa_tasks_export_rows row: ' . $e->getMessage());
         }
-
-        $createdLabel = trim((string) ($json['created_at_label'] ?? ''));
-        if ($createdLabel === '') {
-            $createdLabel = trim((string) ($json['created_at'] ?? ''));
-        }
-        $updatedLabel = trim((string) ($json['updated_at_label'] ?? ''));
-        if ($updatedLabel === '') {
-            $updatedLabel = trim((string) ($json['updated_at'] ?? ''));
-        }
-
-        $out[] = [
-            'task_code' => $taskCode,
-            'customer_name' => (string) ($json['customer_name'] ?? ''),
-            'project_name' => (string) ($json['project_name'] ?? ''),
-            'task_type' => (string) ($json['task_type'] ?? ''),
-            'status' => (string) ($json['status_label'] ?? ''),
-            'editor' => (string) ($json['assigned_editor_name'] ?? ''),
-            'phone' => (string) ($json['phone'] ?? ''),
-            'created_at' => $createdLabel !== '' ? $createdLabel : '—',
-            'updated_at' => $updatedLabel !== '' ? $updatedLabel : '—',
-            'last_progress' => $progress !== '' ? $progress : 'No update yet',
-        ];
     }
 
     return $out;

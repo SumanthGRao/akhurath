@@ -8,6 +8,8 @@ require_once AKH_ROOT . '/includes/whatsapp-tasks-export.php';
 
 akh_require_wa_dashboard();
 
+@set_time_limit(120);
+
 try {
     $year = (int) ($_GET['year'] ?? 0);
     $month = (int) ($_GET['month'] ?? 0);
@@ -32,8 +34,10 @@ try {
 
     akh_wa_tasks_export_csv($year, $month, $dateField);
 } catch (Throwable $e) {
-    error_log('whatsapp/export.php: ' . $e->getMessage());
-    http_response_code(500);
-    header('Content-Type: text/plain; charset=utf-8');
+    error_log('whatsapp/export.php: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: text/plain; charset=utf-8');
+    }
     echo 'Export failed. Please try again or contact support.';
 }
