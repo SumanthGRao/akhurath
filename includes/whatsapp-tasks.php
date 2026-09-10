@@ -34,6 +34,35 @@ function akh_wa_task_normalize_status(string $status): ?string
     return in_array($key, akh_wa_task_statuses(), true) ? $key : null;
 }
 
+/**
+ * Format timestamps from the WhatsApp task source for display only.
+ *
+ * The source stores its MySQL-style timestamps in UTC without an offset.
+ * Treating those values as IST would display them five and a half hours early.
+ */
+function akh_wa_task_format_datetime_ist(string $raw): string
+{
+    $raw = trim($raw);
+    if ($raw === '') {
+        return '';
+    }
+
+    try {
+        $ist = new DateTimeZone('Asia/Kolkata');
+        if (ctype_digit($raw)) {
+            $dt = new DateTimeImmutable('@' . $raw);
+        } elseif (preg_match('/(?:Z|[+-]\d{2}:?\d{2})$/i', $raw) === 1) {
+            $dt = new DateTimeImmutable($raw);
+        } else {
+            $dt = new DateTimeImmutable($raw, new DateTimeZone('UTC'));
+        }
+
+        return $dt->setTimezone($ist)->format('M j, g:i A \\I\\S\\T');
+    } catch (Throwable) {
+        return $raw;
+    }
+}
+
 function akh_wa_tasks_table_exists(): bool
 {
     if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
@@ -1377,9 +1406,9 @@ function akh_wa_task_row_for_json(array $row, array $editors): array
         'unread_messages' => $unreadMessages,
         'can_chat' => akh_wa_task_can_chat($row),
         'created_at' => (string) ($row['created_at'] ?? ''),
-        'created_at_label' => akh_format_datetime_site_short((string) ($row['created_at'] ?? '')),
+        'created_at_label' => akh_wa_task_format_datetime_ist((string) ($row['created_at'] ?? '')),
         'updated_at' => (string) ($row['updated_at'] ?? ''),
-        'updated_at_label' => akh_format_datetime_site_short((string) ($row['updated_at'] ?? '')),
+        'updated_at_label' => akh_wa_task_format_datetime_ist((string) ($row['updated_at'] ?? '')),
         'recent_updates' => $recentUpdates,
         'progress_stale' => (bool) ($progressMeta['stale'] ?? false),
         'progress_stale_label' => (string) ($progressMeta['label'] ?? ''),
