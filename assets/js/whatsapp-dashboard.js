@@ -1196,7 +1196,7 @@
       var phoneLine = t.phone ? ' · Phone ' + t.phone : '';
       var progressLine = t.progress_stale ? ' · ' + (t.progress_stale_label || 'Needs progress update') : '';
       els.editMeta.textContent =
-        'Created ' + (t.created_at || '—') + ' · Updated ' + (t.updated_at || '—') + phoneLine + progressLine;
+        'Created ' + (t.created_at_label || t.created_at || '—') + ' · Updated ' + (t.updated_at_label || t.updated_at || '—') + phoneLine + progressLine;
     }
     var progressHost = document.getElementById('wa-edit-progress');
     if (progressHost) {
