@@ -770,18 +770,126 @@
     );
   }
 
+  function compareDeskRows(a, b) {
+    var pa = typeof a.priority === 'number' ? a.priority : 0;
+    var pb = typeof b.priority === 'number' ? b.priority : 0;
+    if (pa !== pb) return pb - pa;
+    var ta = listAtForRow(a);
+    var tb = listAtForRow(b);
+    var cmp = String(tb).localeCompare(String(ta));
+    if (cmp !== 0) return cmp;
+    if (a.section === 'pool' || b.section === 'pool') {
+      var ua = String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+      if (ua !== 0) return ua;
+    }
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  }
+
   function sortDeskRows(rows) {
-    return (rows || []).slice().sort(function (a, b) {
-      var pa = typeof a.priority === 'number' ? a.priority : 0;
-      var pb = typeof b.priority === 'number' ? b.priority : 0;
-      if (pa !== pb) return pb - pa;
-      var aa = pa > 0 ? 1 : 0;
-      var ab = pb > 0 ? 1 : 0;
-      if (aa !== ab) return ab - aa;
-      var ta = listAtForRow(a);
-      var tb = listAtForRow(b);
-      return String(tb).localeCompare(String(ta));
+    return (rows || []).slice().sort(compareDeskRows);
+  }
+
+  function deskRowDisplayKey(row) {
+    if (!row) return '';
+    return [
+      row.id,
+      row.section || '',
+      row.priority || 0,
+      listAtForRow(row),
+      row.updated_at || '',
+      row.status_slug || '',
+      row.title || '',
+      row.client || '',
+      row.notify ? 1 : 0,
+      row.unseen_new ? 1 : 0,
+      row.has_reminder ? 1 : 0,
+      row.meeting_unread ? 1 : 0,
+      row.preview_approved ? 1 : 0,
+      row.progress_stale ? 1 : 0,
+      unreadMsgCount(row),
+      row.from_whatsapp ? 1 : 0,
+      row.show_type ? 1 : 0,
+      row.type_label || '',
+      row.customer_tone || '',
+    ].join('\x1e');
+  }
+
+  function deskSectionDisplayKey(rows) {
+    return sortDeskRows(rows || [])
+      .map(deskRowDisplayKey)
+      .join('\n');
+  }
+
+  function meetingsDisplayKey(meetings) {
+    return (meetings || [])
+      .map(function (m) {
+        return [
+          m.task_code || '',
+          m.when_label || m.start_time || '',
+          m.customer_name || '',
+          m.project_name || '',
+          m.is_unread ? 1 : 0,
+          typeof m.minutes_until === 'number' ? m.minutes_until : '',
+          m.meet_link || '',
+        ].join('\x1e');
+      })
+      .join('\n');
+  }
+
+  var lastDeskListKeys = { pool: '', mine: '', closed: '', meetings: '' };
+
+  function replaceListItem(el, row, selected) {
+    if (!el || !row) return null;
+    var wrap = document.createElement('div');
+    wrap.innerHTML = listItemHtml(row, selected);
+    var next = wrap.firstElementChild;
+    if (!next) return null;
+    el.parentNode.replaceChild(next, el);
+    return next;
+  }
+
+  function syncListSection(section, rows, preserveSelection) {
+    var listEl = lists[section];
+    if (!listEl) return;
+    rows = sortDeskRows(rows || []);
+    var displayKey = deskSectionDisplayKey(rows);
+    if (displayKey === lastDeskListKeys[section]) return;
+    lastDeskListKeys[section] = displayKey;
+
+    if (!rows.length) {
+      renderList(section, rows, preserveSelection);
+      return;
+    }
+
+    var existing = qsa('.edesk-list__item', listEl);
+    var existingIds = existing.map(function (el) {
+      return normId(el.getAttribute('data-task-id') || '');
     });
+    var sortedIds = rows.map(function (row) {
+      return normId(row.id);
+    });
+    var sameOrder =
+      existingIds.length === sortedIds.length &&
+      existingIds.every(function (id, idx) {
+        return id === sortedIds[idx];
+      });
+
+    if (!sameOrder || existing.length === 0) {
+      renderList(section, rows, preserveSelection);
+      return;
+    }
+
+    rows.forEach(function (row) {
+      rowCache[row.id] = row;
+      var el = existing.find(function (item) {
+        return normId(item.getAttribute('data-task-id') || '') === normId(row.id);
+      });
+      if (!el) return;
+      var sel = preserveSelection && normId(row.id) === normId(activeTaskId);
+      replaceListItem(el, row, sel);
+    });
+    bindListClicks(listEl);
+    applyListFilters();
   }
 
   function renderList(section, rows, preserveSelection) {
@@ -802,6 +910,7 @@
       html += listItemHtml(row, sel);
     });
     listEl.innerHTML = html;
+    lastDeskListKeys[section] = deskSectionDisplayKey(rows);
     bindListClicks(listEl);
     applyListFilters();
   }
@@ -1507,6 +1616,9 @@
   function renderMeetingsList(meetings) {
     var listEl = lists.meetings;
     if (!listEl) return;
+    var meetingKey = meetingsDisplayKey(meetings);
+    if (meetingKey === lastDeskListKeys.meetings) return;
+    lastDeskListKeys.meetings = meetingKey;
     if (!meetings || meetings.length === 0) {
       listEl.innerHTML = '<p class="edesk-list__empty">No upcoming meetings scheduled.</p>';
       return;
@@ -1522,9 +1634,9 @@
   function applyDeskLists(desk, preserveSelection, skipPanelRefresh) {
     if (!desk) return;
     var prevActive = preserveSelection && activeTaskId ? snapshotTaskRow(activeTaskId) : null;
-    renderList('pool', desk.pool || [], preserveSelection);
-    renderList('mine', desk.mine || [], preserveSelection);
-    renderList('closed', desk.closed || [], preserveSelection);
+    syncListSection('pool', desk.pool || [], preserveSelection);
+    syncListSection('mine', desk.mine || [], preserveSelection);
+    syncListSection('closed', desk.closed || [], preserveSelection);
     renderMeetingsList(desk.meetings || []);
     updateTabBadges(
       desk.pool_count || (desk.pool || []).length,

@@ -40,8 +40,12 @@ function akh_editor_desk_board_context(string $editorUsername): array
         if ($cmp !== 0) {
             return $cmp;
         }
+        $cmp = strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
+        if ($cmp !== 0) {
+            return $cmp;
+        }
 
-        return strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
+        return strcmp((string) ($a['id'] ?? ''), (string) ($b['id'] ?? ''));
     });
     $mine = array_values(array_filter($all, static function (array $t) use ($editorUsername): bool {
         return strtolower(trim((string) ($t['assigned_editor'] ?? ''))) === $editorUsername;
@@ -90,7 +94,12 @@ function akh_editor_desk_board_context(string $editorUsername): array
         }
     }
     usort($closed, static function (array $a, array $b): int {
-        return strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
+        $cmp = strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+
+        return strcmp((string) ($a['id'] ?? ''), (string) ($b['id'] ?? ''));
     });
     usort($mine, static function (array $a, array $b) use ($dashboardAlerts): int {
         $aid = akh_task_normalize_id((string) ($a['id'] ?? ''));
@@ -110,8 +119,12 @@ function akh_editor_desk_board_context(string $editorUsername): array
                 return $cmp;
             }
         }
+        $cmp = strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
+        if ($cmp !== 0) {
+            return $cmp;
+        }
 
-        return strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
+        return strcmp((string) ($a['id'] ?? ''), (string) ($b['id'] ?? ''));
     });
 
     $seenNew = akh_task_editor_seen_load()[$editorUsername] ?? [];
