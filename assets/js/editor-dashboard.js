@@ -350,6 +350,13 @@
             : section === 'closed'
               ? closedCount || 0
               : meetingsCount || 0;
+      if (typeof n !== 'number' || n < 0 || !Number.isFinite(n)) {
+        n = 0;
+      }
+      var badges = tab.querySelectorAll('.edesk-tab__badge');
+      for (var i = 1; i < badges.length; i++) {
+        badges[i].remove();
+      }
       var badge = tab.querySelector('.edesk-tab__badge');
       if (n > 0) {
         if (!badge) {
@@ -707,9 +714,6 @@
     var approved = row.preview_approved
       ? '<span class="edesk-list__pill edesk-list__pill--approved">Approved</span>'
       : '';
-    var stale = row.progress_stale
-      ? '<span class="edesk-list__pill edesk-list__pill--stale" title="' + esc(row.progress_stale_label || 'Needs progress update') + '">Need update</span>'
-      : '';
     var listAt = listAtForRow(row);
     var unreadMsgs = unreadMsgCount(row);
     var msg = unreadMsgs > 0 ? '<span class="edesk-list__msgs">' + unreadMsgs + ' msg</span>' : '';
@@ -764,7 +768,6 @@
       statusBadge +
       soon +
       approved +
-      stale +
       msg +
       '</span></button>'
     );
@@ -785,8 +788,18 @@
     return String(a.id || '').localeCompare(String(b.id || ''));
   }
 
+  function dedupeDeskRows(rows) {
+    var seen = {};
+    return (rows || []).filter(function (row) {
+      var id = normId(row && row.id);
+      if (!id || seen[id]) return false;
+      seen[id] = true;
+      return true;
+    });
+  }
+
   function sortDeskRows(rows) {
-    return (rows || []).slice().sort(compareDeskRows);
+    return dedupeDeskRows(rows).sort(compareDeskRows);
   }
 
   function deskRowDisplayKey(row) {
@@ -805,7 +818,6 @@
       row.has_reminder ? 1 : 0,
       row.meeting_unread ? 1 : 0,
       row.preview_approved ? 1 : 0,
-      row.progress_stale ? 1 : 0,
       unreadMsgCount(row),
       row.from_whatsapp ? 1 : 0,
       row.show_type ? 1 : 0,
@@ -873,8 +885,13 @@
       existingIds.every(function (id, idx) {
         return id === sortedIds[idx];
       });
+    var sameIdSet =
+      sortedIds.length === existingIds.length &&
+      sortedIds.every(function (id) {
+        return existingIds.indexOf(id) !== -1;
+      });
 
-    if (!sameOrder || existing.length === 0) {
+    if (!sameOrder || !sameIdSet || existing.length === 0) {
       renderList(section, rows, preserveSelection);
       return;
     }
@@ -888,7 +905,6 @@
       var sel = preserveSelection && normId(row.id) === normId(activeTaskId);
       replaceListItem(el, row, sel);
     });
-    bindListClicks(listEl);
     applyListFilters();
   }
 
@@ -911,16 +927,7 @@
     });
     listEl.innerHTML = html;
     lastDeskListKeys[section] = deskSectionDisplayKey(rows);
-    bindListClicks(listEl);
     applyListFilters();
-  }
-
-  function bindListClicks(container) {
-    qsa('.edesk-list__item', container).forEach(function (item) {
-      item.addEventListener('click', function () {
-        selectTask(item.getAttribute('data-task-id') || '');
-      });
-    });
   }
 
   function applyListFilters() {
@@ -1672,11 +1679,15 @@
     syncListSection('mine', desk.mine || [], preserveSelection);
     syncListSection('closed', desk.closed || [], preserveSelection);
     renderMeetingsList(desk.meetings || []);
+    var poolRows = desk.pool || [];
+    var mineRows = desk.mine || [];
+    var closedRows = desk.closed || [];
+    var meetingRows = desk.meetings || [];
     updateTabBadges(
-      desk.pool_count || (desk.pool || []).length,
-      desk.mine_count || (desk.mine || []).length,
-      (desk.meetings || []).length,
-      desk.closed_count || (desk.closed || []).length
+      typeof desk.pool_count === 'number' ? desk.pool_count : poolRows.length,
+      typeof desk.mine_count === 'number' ? desk.mine_count : mineRows.length,
+      meetingRows.length,
+      typeof desk.closed_count === 'number' ? desk.closed_count : closedRows.length
     );
     refreshRelativeTimes();
     if (skipPanelRefresh || !preserveSelection || !activeTaskId || !prevActive) return;
@@ -1839,7 +1850,15 @@
     }
   });
 
-  bindListClicks(root);
+  root.addEventListener('click', function (e) {
+    var target = e.target;
+    if (!target || !target.closest) return;
+    var item = target.closest('.edesk-list__item');
+    if (!item || !root.contains(item)) return;
+    if (target.closest('.edesk-meeting-read, .edesk-meetings-list__jump')) return;
+    selectTask(item.getAttribute('data-task-id') || '');
+  });
+
   bindStatusForms(root);
   qsa('.edesk-panel', root).forEach(bindPanelInteractions);
   bindAjaxForms();

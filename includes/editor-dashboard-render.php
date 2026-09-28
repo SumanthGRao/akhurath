@@ -297,7 +297,6 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
     $listAt = $section === 'pool'
         ? (string) (($t['created_at'] ?? '') !== '' ? $t['created_at'] : ($t['updated_at'] ?? ''))
         : (string) (($t['updated_at'] ?? '') !== '' ? $t['updated_at'] : ($t['created_at'] ?? ''));
-    $progressMeta = akh_task_progress_update_meta($t);
     $typeLabel = (string) ($vm['type_label'] ?? '');
     $customerLabel = (string) ($vm['customer_label'] ?? akh_editor_task_customer_display_name($t));
     $statusLabel = akh_task_status_label($st);
@@ -369,9 +368,6 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
         <?php if (!empty($vm['preview_approved'])): ?>
           <span class="edesk-list__pill edesk-list__pill--approved">Approved</span>
         <?php endif; ?>
-        <?php if (!empty($progressMeta['stale'])): ?>
-          <span class="edesk-list__pill edesk-list__pill--stale" title="<?php echo h((string) ($progressMeta['label'] ?? 'Needs progress update')); ?>">Need update</span>
-        <?php endif; ?>
         <?php
         $waUnread = akh_wa_message_unread_count_for_task((string) ($vm['tid_norm'] ?? $tid));
         if ($waUnread > 0):
@@ -404,7 +400,6 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
     $driveLinks = akh_wa_split_http_urls((string) ($t['drive_link'] ?? ''));
     $referenceLink = trim((string) ($t['reference_link'] ?? ''));
     $progressUpdates = akh_task_status_updates_for_display($tid, 2);
-    $progressMeta = akh_task_progress_update_meta($t);
     $notificationUpdates = akh_task_notification_panel_updates($tid, is_array($taskAlert) ? $taskAlert : null);
     $meetingAlert = is_array($taskAlert) && str_starts_with((string) ($taskAlert['kind'] ?? ''), 'meeting_')
         ? $taskAlert
@@ -458,12 +453,6 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
             ><?php echo h(akh_task_status_label($o)); ?></button>
           <?php endforeach; ?>
         </nav>
-      <?php endif; ?>
-
-      <?php if (!empty($progressMeta['stale'])): ?>
-        <p class="edesk-banner edesk-banner--warn" role="status">
-          <?php echo h((string) ($progressMeta['label'] !== '' ? $progressMeta['label'] : 'This task needs a progress update.')); ?>
-        </p>
       <?php endif; ?>
 
       <div class="edesk-panel__grid">

@@ -5,7 +5,28 @@ declare(strict_types=1);
 require_once __DIR__ . '/editor-dashboard-render.php';
 require_once __DIR__ . '/whatsapp-messages.php';
 require_once __DIR__ . '/site-datetime.php';
-require_once __DIR__ . '/whatsapp-task-sync.php';
+/**
+ * @param list<array<string, mixed>> $tasks
+ * @return list<array<string, mixed>>
+ */
+function akh_editor_desk_dedupe_tasks_by_id(array $tasks): array
+{
+    $out = [];
+    $seen = [];
+    foreach ($tasks as $t) {
+        if (!is_array($t)) {
+            continue;
+        }
+        $nid = akh_task_normalize_id((string) ($t['id'] ?? ''));
+        if ($nid === '' || isset($seen[$nid])) {
+            continue;
+        }
+        $seen[$nid] = true;
+        $out[] = $t;
+    }
+
+    return $out;
+}
 
 /**
  * Build the same board slices as editor/dashboard.php for API + live sync.
@@ -127,6 +148,10 @@ function akh_editor_desk_board_context(string $editorUsername): array
         return strcmp((string) ($a['id'] ?? ''), (string) ($b['id'] ?? ''));
     });
 
+    $mine = akh_editor_desk_dedupe_tasks_by_id($mine);
+    $closed = akh_editor_desk_dedupe_tasks_by_id($closed);
+    $newTasks = akh_editor_desk_dedupe_tasks_by_id($newTasks);
+
     $seenNew = akh_task_editor_seen_load()[$editorUsername] ?? [];
     $editorMeetingRows = akh_meeting_request_scheduled_for_editor($editorUsername);
     $editorReminderCodes = [];
@@ -167,7 +192,6 @@ function akh_editor_desk_list_row_json(array $vm): array
     }
 
     $displayAtRaw = (string) (($t['updated_at'] ?? '') !== '' ? $t['updated_at'] : ($t['created_at'] ?? ''));
-    $progressMeta = akh_task_progress_update_meta($t);
 
     return [
         'id' => (string) $vm['tid'],
@@ -193,8 +217,6 @@ function akh_editor_desk_list_row_json(array $vm): array
         'created_at' => akh_datetime_to_iso8601((string) ($t['created_at'] ?? '')),
         'display_at' => akh_datetime_to_iso8601($displayAtRaw),
         'list_at' => akh_datetime_to_iso8601($listAt),
-        'progress_stale' => (bool) ($progressMeta['stale'] ?? false),
-        'progress_stale_label' => (string) ($progressMeta['label'] ?? ''),
         'notify' => (bool) $vm['notify'],
         'unseen_new' => (bool) $vm['unseen_new'],
         'has_reminder' => (bool) $vm['has_reminder'],
