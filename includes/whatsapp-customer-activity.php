@@ -670,7 +670,7 @@ function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 
         'last_at_label' => '',
     ];
 
-    $templateHint = 'Use an approved WhatsApp template instead of a free-form message.';
+    $templateHint = 'Send an approved WhatsApp Business template to contact this customer.';
 
     if (!akh_wa_customer_activity_table_exists() || !akh_wa_customer_activity_editor_inbound_columns_ready()) {
         return $disabled;
@@ -713,7 +713,7 @@ function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 
         return [
             'enabled' => true,
             'state' => 'idle',
-            'message' => 'No recent customer WhatsApp activity',
+            'message' => 'No recent inbound WhatsApp activity from this customer',
             'detail' => $templateHint,
             'last_at_iso' => '',
             'last_at_label' => '',
@@ -725,7 +725,7 @@ function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 
         return [
             'enabled' => true,
             'state' => 'active',
-            'message' => 'Customer is active — last seen within the last ' . $windowHours . ' hours',
+            'message' => 'Customer is active on WhatsApp — last inbound message within the last ' . $windowHours . ' hours',
             'detail' => '',
             'last_at_iso' => $lastAt->format(DateTimeInterface::ATOM),
             'last_at_label' => $lastLabel,
@@ -735,7 +735,7 @@ function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 
     return [
         'enabled' => true,
         'state' => 'idle',
-        'message' => 'Customer has not been active in the last ' . $windowHours . ' hours',
+        'message' => 'No inbound WhatsApp activity from this customer in the last ' . $windowHours . ' hours',
         'detail' => $templateHint,
         'last_at_iso' => $lastAt->format(DateTimeInterface::ATOM),
         'last_at_label' => $lastLabel,
