@@ -229,6 +229,15 @@ if (akh_ensure_table_exists($pdo, $schema, 'whatsapp_messages')) {
     }
 }
 
+$migrationInvoices = AKH_ROOT . '/sql/migrations/014_invoices_and_completed_tasks.sql';
+if (is_file($migrationInvoices) && !akh_ensure_table_exists($pdo, $schema, 'invoices')) {
+    echo "Applying sql/migrations/014_invoices_and_completed_tasks.sql ...\n";
+    $sqlInv = file_get_contents($migrationInvoices);
+    if (is_string($sqlInv) && trim($sqlInv) !== '') {
+        $pdo->exec($sqlInv);
+    }
+}
+
 echo "Schema patches are up to date.\n";
 
 if (!$migrateCustomers && !$migrateEditors) {

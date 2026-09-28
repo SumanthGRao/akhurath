@@ -183,6 +183,17 @@ const AKH_N8N_TASK_STATUS_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook/
 const AKH_TASK_PROGRESS_STALE_HOURS = 48;
 
 /**
+ * Admin invoicing (PDF + email). Requires MySQL tables from sql/migrations/014_invoices_and_completed_tasks.sql.
+ * Billable work is tracked in completed_tasks (synced from delivered/closed studio tasks, or inserted by future jobs).
+ */
+const AKH_INVOICE_STUDIO_LEGAL_NAME = SITE_NAME;
+const AKH_INVOICE_STUDIO_ADDRESS = "Akhurath Studio\nYour street address\nCity, State — PIN";
+const AKH_INVOICE_GSTIN = '';
+/** Tax in basis points (1800 = 18% GST). Set 0 if tax is not shown. */
+const AKH_INVOICE_DEFAULT_TAX_BPS = 0;
+const AKH_INVOICE_DUE_DAYS = 15;
+
+/**
  * Customer portal: web UI for your NAS / drive (Synology Drive, Nextcloud, etc.).
  * After login, the dashboard links here — users sign in on YOUR drive with the
  * credentials you create on the NAS (same username if you sync accounts, or separate).

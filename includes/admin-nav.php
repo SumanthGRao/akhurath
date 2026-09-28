@@ -15,6 +15,7 @@ if (AKH_EDITOR_ATTENDANCE_ENABLED) {
 $items = [
     'index.php' => 'Overview',
     'tasks.php' => 'Tasks',
+    'invoices.php' => 'Invoices',
     'attendance.php' => 'Attendance',
     'dashboard-access.php' => 'Access',
     'account.php' => 'Account',

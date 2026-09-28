@@ -788,6 +788,13 @@ require_once AKH_ROOT . '/includes/header.php';
       </div>
 
       <p class="portal-foot">
+        <?php
+        require_once AKH_ROOT . '/includes/invoices.php';
+        if (akh_invoices_schema_ready()):
+            ?>
+        <a class="text-link" href="<?php echo h(base_path('customer/invoices.php')); ?>">Invoices</a>
+        ·
+        <?php endif; ?>
         <a class="text-link" href="<?php echo h(base_path('customer/logout.php')); ?>">Sign out</a>
         ·
         <a class="text-link" href="<?php echo h(base_path('index.php')); ?>">Website home</a>

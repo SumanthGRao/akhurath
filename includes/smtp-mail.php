@@ -5,9 +5,10 @@ declare(strict_types=1);
 /**
  * Minimal SMTP client for Hostinger and similar hosts (AUTH LOGIN, SSL or STARTTLS).
  *
+ * @param list<array{filename: string, mimetype: string, body: string}>|null $attachments
  * @return array{ok: bool, error: string}
  */
-function akh_smtp_send(string $to, string $subject, string $plainBody): array
+function akh_smtp_send(string $to, string $subject, string $plainBody, ?array $attachments = null): array
 {
     if (!AKH_SMTP_ENABLED) {
         return ['ok' => false, 'error' => 'SMTP is disabled in includes/config.php.'];
@@ -156,15 +157,62 @@ function akh_smtp_send(string $to, string $subject, string $plainBody): array
     $body = str_replace("\n", "\r\n", $body);
     $body = preg_replace('/^\./m', '..', $body) ?? $body;
 
-    $headers = [
-        'From: ' . $fromHeader,
-        'To: <' . $to . '>',
-        'Subject: ' . $subEnc,
-        'MIME-Version: 1.0',
-        'Content-Type: text/plain; charset=UTF-8',
-        'Content-Transfer-Encoding: 8bit',
-    ];
-    $message = implode("\r\n", $headers) . "\r\n\r\n" . $body . "\r\n.";
+    $attachList = [];
+    if (is_array($attachments)) {
+        foreach ($attachments as $att) {
+            if (!is_array($att)) {
+                continue;
+            }
+            $fn = trim((string) ($att['filename'] ?? ''));
+            $mime = trim((string) ($att['mimetype'] ?? 'application/octet-stream'));
+            $bin = (string) ($att['body'] ?? '');
+            if ($fn === '' || $bin === '') {
+                continue;
+            }
+            $attachList[] = [
+                'filename' => $fn,
+                'mimetype' => $mime !== '' ? $mime : 'application/octet-stream',
+                'body' => $bin,
+            ];
+        }
+    }
+
+    if ($attachList === []) {
+        $headers = [
+            'From: ' . $fromHeader,
+            'To: <' . $to . '>',
+            'Subject: ' . $subEnc,
+            'MIME-Version: 1.0',
+            'Content-Type: text/plain; charset=UTF-8',
+            'Content-Transfer-Encoding: 8bit',
+        ];
+        $message = implode("\r\n", $headers) . "\r\n\r\n" . $body . "\r\n.";
+    } else {
+        $boundary = 'akh_' . bin2hex(random_bytes(12));
+        $headers = [
+            'From: ' . $fromHeader,
+            'To: <' . $to . '>',
+            'Subject: ' . $subEnc,
+            'MIME-Version: 1.0',
+            'Content-Type: multipart/mixed; boundary="' . $boundary . '"',
+        ];
+        $parts = [];
+        $parts[] = '--' . $boundary;
+        $parts[] = 'Content-Type: text/plain; charset=UTF-8';
+        $parts[] = 'Content-Transfer-Encoding: 8bit';
+        $parts[] = '';
+        $parts[] = $body;
+        foreach ($attachList as $att) {
+            $parts[] = '--' . $boundary;
+            $parts[] = 'Content-Type: ' . $att['mimetype'] . '; name="' . addcslashes($att['filename'], '"\\') . '"';
+            $parts[] = 'Content-Transfer-Encoding: base64';
+            $parts[] = 'Content-Disposition: attachment; filename="' . addcslashes($att['filename'], '"\\') . '"';
+            $parts[] = '';
+            $parts[] = rtrim(chunk_split(base64_encode($att['body']), 76, "\r\n"));
+        }
+        $parts[] = '--' . $boundary . '--';
+        $message = implode("\r\n", $headers) . "\r\n\r\n" . implode("\r\n", $parts) . "\r\n.";
+    }
     fwrite($fp, $message . "\r\n");
 
     if (($e = $expect([250])) !== null) {

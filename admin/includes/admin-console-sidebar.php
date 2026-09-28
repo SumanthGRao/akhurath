@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * @var string $adminConsoleActive One of: tasks, create, clients, editors.
+ * @var string $adminConsoleActive One of: tasks, create, clients, editors, invoices.
  *            Use '' on Overview, Attendance, Access, Account, etc. (no console link marked active).
  */
 
@@ -18,6 +18,7 @@ $active = $adminConsoleActive ?? '';
       <a class="admin-console-dd__link<?php echo $active === 'create' ? ' is-active' : ''; ?>" href="<?php echo h($adminBase . 'tasks.php?view=create'); ?>">Create task</a>
       <a class="admin-console-dd__link<?php echo $active === 'clients' ? ' is-active' : ''; ?>" href="<?php echo h($adminBase . 'clients.php'); ?>">Clients</a>
       <a class="admin-console-dd__link<?php echo $active === 'editors' ? ' is-active' : ''; ?>" href="<?php echo h($adminBase . 'editors.php'); ?>">Editors</a>
+      <a class="admin-console-dd__link<?php echo $active === 'invoices' ? ' is-active' : ''; ?>" href="<?php echo h($adminBase . 'invoices.php'); ?>">Invoices</a>
     </nav>
   </div>
 </details>
