@@ -76,7 +76,7 @@ function akh_wa_customer_activity_columns(): array
         ];
     }
     $taskCol = null;
-    foreach (['task_code', 'studio_task_id', 'task_id'] as $candidate) {
+    foreach (['task_code', 'whatsapp_task_code', 'studio_task_id', 'studio_task_code', 'task_id', 'task', 'code'] as $candidate) {
         if (akh_wa_customer_activity_column_exists($candidate)) {
             $taskCol = $candidate;
             break;
@@ -312,10 +312,14 @@ function akh_wa_customer_activity_row_phone_values(array $row): array
  */
 function akh_wa_customer_activity_row_matches_phone(array $row, array $expectedDigits): bool
 {
+    $storedPhones = akh_wa_customer_activity_row_phone_values($row);
+    if ($storedPhones === []) {
+        return true;
+    }
     if ($expectedDigits === []) {
         return true;
     }
-    foreach (akh_wa_customer_activity_row_phone_values($row) as $stored) {
+    foreach ($storedPhones as $stored) {
         foreach ($expectedDigits as $expected) {
             if (akh_wa_customer_activity_phone_digits_match($stored, $expected)) {
                 return true;
@@ -324,6 +328,32 @@ function akh_wa_customer_activity_row_matches_phone(array $row, array $expectedD
     }
 
     return false;
+}
+
+/**
+ * Task-linked phones from the portal plus digits stored on activity rows for this task.
+ *
+ * @param list<array<string, mixed>> $rows
+ * @param list<string> $taskVariants
+ * @return list<string>
+ */
+function akh_wa_customer_activity_expected_phone_digits(array $task, array $rows, array $taskVariants, ?string $taskCol): array
+{
+    $phones = akh_wa_customer_activity_phones_for_task($task);
+    foreach ($rows as $row) {
+        if (!is_array($row) || !akh_wa_customer_activity_row_matches_task($row, $taskVariants, $taskCol)) {
+            continue;
+        }
+        foreach (akh_wa_customer_activity_row_phone_values($row) as $stored) {
+            foreach (akh_wa_customer_activity_phone_digit_variants($stored) as $variant) {
+                if (!in_array($variant, $phones, true)) {
+                    $phones[] = $variant;
+                }
+            }
+        }
+    }
+
+    return $phones;
 }
 
 /**
@@ -374,8 +404,22 @@ function akh_wa_customer_activity_row_is_customer_event(array $row): bool
  */
 function akh_wa_customer_activity_row_latest_at(array $row): ?DateTimeImmutable
 {
+    $available = akh_wa_customer_activity_timestamp_columns();
+    $preferred = [];
+    foreach (['activity_at', 'last_active_at', 'created_at', 'last_seen', 'active_at', 'occurred_at', 'event_at'] as $col) {
+        if (in_array($col, $available, true)) {
+            $preferred[] = $col;
+        }
+    }
+    if ($preferred === []) {
+        $preferred = array_values(array_filter($available, static fn (string $c): bool => $c !== 'updated_at'));
+    }
+    if ($preferred === []) {
+        $preferred = $available;
+    }
+
     $latest = null;
-    foreach (akh_wa_customer_activity_timestamp_columns() as $col) {
+    foreach ($preferred as $col) {
         if (!isset($row[$col]) || trim((string) $row[$col]) === '') {
             continue;
         }
@@ -527,20 +571,7 @@ function akh_wa_customer_activity_last_at_from_db(array $task): ?DateTimeImmutab
 
     $phoneDigits = akh_wa_customer_activity_phones_for_task($task);
     $rows = akh_wa_customer_activity_fetch_candidate_rows($taskVariants, $phoneDigits, $taskCol);
-    if ($phoneDigits === [] && $rows !== []) {
-        foreach ($rows as $row) {
-            if (!is_array($row)) {
-                continue;
-            }
-            foreach (akh_wa_customer_activity_row_phone_values($row) as $stored) {
-                foreach (akh_wa_customer_activity_phone_digit_variants($stored) as $variant) {
-                    if (!in_array($variant, $phoneDigits, true)) {
-                        $phoneDigits[] = $variant;
-                    }
-                }
-            }
-        }
-    }
+    $phoneDigits = akh_wa_customer_activity_expected_phone_digits($task, $rows, $taskVariants, $taskCol);
 
     $lastAt = null;
     foreach ($rows as $row) {
@@ -618,16 +649,12 @@ function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 
 
     $lastAt = akh_wa_customer_activity_last_at_from_db($task);
 
-    $phones = akh_wa_customer_activity_phones_for_task($task);
-    $phoneHint = $phones !== [] ? substr($phones[0], -4) : '';
-    $phoneDetail = $phoneHint !== '' ? 'WhatsApp number ending ····' . $phoneHint : '';
-
     if ($lastAt === null) {
         return [
             'enabled' => true,
             'state' => 'idle',
             'message' => 'Customer has not been active in the last ' . $windowHours . ' hours',
-            'detail' => $phoneDetail,
+            'detail' => '',
             'last_at_iso' => '',
             'last_at_label' => '',
         ];
@@ -639,8 +666,8 @@ function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 
         return [
             'enabled' => true,
             'state' => 'active',
-            'message' => 'Customer is active — last seen within ' . $windowHours . ' hours',
-            'detail' => $phoneDetail !== '' ? $phoneDetail . ' · Last activity ' . $lastLabel : 'Last activity ' . $lastLabel,
+            'message' => 'Customer is active — last seen within the last ' . $windowHours . ' hours',
+            'detail' => '',
             'last_at_iso' => $lastAt->format(DateTimeInterface::ATOM),
             'last_at_label' => $lastLabel,
         ];
@@ -650,7 +677,7 @@ function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 
         'enabled' => true,
         'state' => 'idle',
         'message' => 'Customer has not been active in the last ' . $windowHours . ' hours',
-        'detail' => $phoneDetail !== '' ? $phoneDetail . ' · Last activity ' . $lastLabel : 'Last activity ' . $lastLabel,
+        'detail' => '',
         'last_at_iso' => $lastAt->format(DateTimeInterface::ATOM),
         'last_at_label' => $lastLabel,
     ];
