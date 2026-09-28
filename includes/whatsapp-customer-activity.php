@@ -118,6 +118,7 @@ function akh_wa_customer_activity_record(
     $cols = akh_wa_customer_activity_columns();
     $taskCol = $cols['task'];
     $phoneCol = akh_wa_customer_activity_primary_phone_column();
+    require_once __DIR__ . '/whatsapp-contacts.php';
     $rawPhones = akh_whatsapp_phones_for_task_code($taskCode);
     $resolvedPhone = $rawPhones[0] ?? '';
     if ($taskCol === null && ($phoneCol === null || $resolvedPhone === '')) {
@@ -488,7 +489,111 @@ function akh_wa_customer_activity_sql_phone_predicate(string $column, array $dig
 }
 
 /**
- * Last customer activity from whatsapp_customer_activity (phone only; phone resolved via WA tasks/contacts).
+ * SQL expression: digits-only phone from a column name (for parameterized WHERE).
+ */
+function akh_wa_customer_activity_sql_digits_expr(string $column): string
+{
+    return 'REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(`' . $column . '`, \'\'), \'+\', \'\'), \' \', \'\'), \'-\', \'\'), \'(\', \'\'), \')\', \'\')';
+}
+
+function akh_wa_customer_activity_editor_inbound_columns_ready(): bool
+{
+    return akh_wa_customer_activity_column_exists('phone')
+        && akh_wa_customer_activity_column_exists('activity_type')
+        && akh_wa_customer_activity_column_exists('whatsapp_timestamp');
+}
+
+/**
+ * Authoritative WhatsApp number for a studio task (whatsapp_tasks.phone only).
+ */
+function akh_wa_customer_activity_task_phone_from_wa_tasks(string $taskCode): string
+{
+    require_once __DIR__ . '/whatsapp-tasks.php';
+    $code = akh_task_normalize_id(trim($taskCode));
+    if ($code === '') {
+        return '';
+    }
+    $wa = akh_wa_task_by_code($code);
+    if (!is_array($wa)) {
+        return '';
+    }
+
+    return trim((string) ($wa['phone'] ?? ''));
+}
+
+/**
+ * Latest inbound customer WhatsApp touch for a task phone (activity table only).
+ *
+ * @return array{last_at: ?DateTimeImmutable, match_count: int}
+ */
+function akh_wa_customer_activity_last_inbound_whatsapp_for_phone(string $taskPhoneRaw): array
+{
+    $empty = ['last_at' => null, 'match_count' => 0];
+    if (!akh_wa_customer_activity_table_exists() || !akh_wa_customer_activity_editor_inbound_columns_ready()) {
+        return $empty;
+    }
+
+    $digits = akh_wa_customer_activity_digits($taskPhoneRaw);
+    if ($digits === '') {
+        return $empty;
+    }
+
+    $phoneExpr = akh_wa_customer_activity_sql_digits_expr('phone');
+    $predicates = [$phoneExpr . ' = ?'];
+    $params = [$digits];
+    if (strlen($digits) >= 10) {
+        $tail = substr($digits, -10);
+        if ($tail !== false && $tail !== '') {
+            $predicates[] = 'RIGHT(' . $phoneExpr . ', 10) = ?';
+            $params[] = $tail;
+        }
+    }
+
+    $sql = 'SELECT MAX(`whatsapp_timestamp`) AS last_activity, COUNT(*) AS row_count
+            FROM whatsapp_customer_activity
+            WHERE `activity_type` = ?
+              AND (' . implode(' OR ', $predicates) . ')';
+    $params = array_merge(['inbound_message'], $params);
+
+    try {
+        $st = akh_db()->prepare($sql);
+        $st->execute($params);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row)) {
+            return $empty;
+        }
+        $matchCount = (int) ($row['row_count'] ?? 0);
+        $rawLast = $row['last_activity'] ?? null;
+        if ($matchCount < 1 || $rawLast === null || trim((string) $rawLast) === '') {
+            return ['last_at' => null, 'match_count' => $matchCount];
+        }
+        $lastAt = akh_wa_customer_activity_parse_dt((string) $rawLast);
+        if ($lastAt === null) {
+            return ['last_at' => null, 'match_count' => $matchCount];
+        }
+
+        return ['last_at' => $lastAt, 'match_count' => $matchCount];
+    } catch (\Throwable $e) {
+        error_log('akh_wa_customer_activity_last_inbound_whatsapp_for_phone: ' . $e->getMessage());
+
+        return $empty;
+    }
+}
+
+/**
+ * @param array<string, mixed> $debug
+ */
+function akh_wa_customer_activity_log_editor_status_debug(string $taskCode, array $debug): void
+{
+    $code = akh_task_normalize_id(trim($taskCode));
+    if ($code === '' || !akh_task_ids_match($code, 'AS0237')) {
+        return;
+    }
+    error_log('akh_wa_customer_activity editor_status AS0237: ' . json_encode($debug, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+}
+
+/**
+ * Last customer activity from whatsapp_customer_activity (legacy; not used for editor 24h banner).
  *
  * @param array<string, mixed> $task
  */
@@ -565,7 +670,9 @@ function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 
         'last_at_label' => '',
     ];
 
-    if (!akh_wa_customer_activity_table_exists()) {
+    $templateHint = 'Use an approved WhatsApp template instead of a free-form message.';
+
+    if (!akh_wa_customer_activity_table_exists() || !akh_wa_customer_activity_editor_inbound_columns_ready()) {
         return $disabled;
     }
 
@@ -579,21 +686,41 @@ function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 
     $now = new DateTimeImmutable('now', $tz);
     $cutoff = $now->modify('-' . $windowHours . ' hours');
 
-    $lastAt = akh_wa_customer_activity_last_at_from_db($task);
+    $taskPhone = akh_wa_customer_activity_task_phone_from_wa_tasks($code);
+    $normalizedPhone = akh_wa_customer_activity_digits($taskPhone);
+
+    $inbound = akh_wa_customer_activity_last_inbound_whatsapp_for_phone($taskPhone);
+    $lastAt = $inbound['last_at'];
+    $matchCount = $inbound['match_count'];
+
+    $active = $lastAt !== null && $lastAt->getTimestamp() >= $cutoff->getTimestamp();
+    $state = $active ? 'active' : 'idle';
+
+    akh_wa_customer_activity_log_editor_status_debug($code, [
+        'task_code' => $code,
+        'task_phone' => $taskPhone,
+        'normalized_phone' => $normalizedPhone,
+        'matching_activity_rows' => $matchCount,
+        'latest_whatsapp_timestamp' => $lastAt !== null ? $lastAt->format('Y-m-d H:i:s') : null,
+        'current_time' => $now->format('Y-m-d H:i:s'),
+        'current_timezone' => $tz->getName(),
+        'cutoff_24h' => $cutoff->format('Y-m-d H:i:s'),
+        'active' => $active,
+        'state' => $state,
+    ]);
 
     if ($lastAt === null) {
         return [
             'enabled' => true,
             'state' => 'idle',
-            'message' => 'Customer has not been active in the last ' . $windowHours . ' hours',
-            'detail' => '',
+            'message' => 'No recent customer WhatsApp activity',
+            'detail' => $templateHint,
             'last_at_iso' => '',
             'last_at_label' => '',
         ];
     }
 
     $lastLabel = akh_format_datetime_site_short($lastAt->format('Y-m-d H:i:s'));
-    $active = $lastAt->getTimestamp() >= $cutoff->getTimestamp();
     if ($active) {
         return [
             'enabled' => true,
@@ -609,7 +736,7 @@ function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 
         'enabled' => true,
         'state' => 'idle',
         'message' => 'Customer has not been active in the last ' . $windowHours . ' hours',
-        'detail' => '',
+        'detail' => $templateHint,
         'last_at_iso' => $lastAt->format(DateTimeInterface::ATOM),
         'last_at_label' => $lastLabel,
     ];
