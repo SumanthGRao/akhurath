@@ -160,7 +160,7 @@ function akh_wa_customer_activity_record(
 function akh_wa_customer_activity_timestamp_columns(): array
 {
     $out = [];
-    foreach (['activity_at', 'last_active_at', 'updated_at', 'created_at'] as $candidate) {
+    foreach (['activity_at', 'last_active_at', 'last_seen', 'active_at', 'occurred_at', 'event_at', 'created_at', 'updated_at'] as $candidate) {
         if (akh_wa_customer_activity_column_exists($candidate)) {
             $out[] = $candidate;
         }
@@ -233,16 +233,20 @@ function akh_wa_customer_activity_phones_for_task(array $task): array
     require_once __DIR__ . '/whatsapp-messages.php';
     require_once __DIR__ . '/whatsapp-tasks.php';
 
-    foreach ([akh_wa_message_phone_for_task($code)] as $p) {
-        foreach (akh_wa_customer_activity_phone_digit_variants($p) as $variant) {
-            if (!in_array($variant, $phones, true)) {
-                $phones[] = $variant;
+    $rawPhones = [akh_wa_message_phone_for_task($code)];
+    $wa = akh_wa_task_by_code($code);
+    if (is_array($wa)) {
+        $rawPhones[] = (string) ($wa['phone'] ?? '');
+    }
+    if (akh_wa_messages_table_exists()) {
+        foreach (akh_wa_messages_list_for_task($code, 50) as $msg) {
+            if (is_array($msg)) {
+                $rawPhones[] = (string) ($msg['phone'] ?? '');
             }
         }
     }
-    $wa = akh_wa_task_by_code($code);
-    if (is_array($wa)) {
-        foreach (akh_wa_customer_activity_phone_digit_variants((string) ($wa['phone'] ?? '')) as $variant) {
+    foreach ($rawPhones as $p) {
+        foreach (akh_wa_customer_activity_phone_digit_variants($p) as $variant) {
             if (!in_array($variant, $phones, true)) {
                 $phones[] = $variant;
             }
@@ -252,9 +256,204 @@ function akh_wa_customer_activity_phones_for_task(array $task): array
     return $phones;
 }
 
+function akh_wa_customer_activity_phone_digits_match(string $stored, string $expected): bool
+{
+    $a = akh_wa_customer_activity_digits($stored);
+    $b = akh_wa_customer_activity_digits($expected);
+    if ($a === '' || $b === '') {
+        return false;
+    }
+    if ($a === $b) {
+        return true;
+    }
+    if (strlen($a) >= 10 && strlen($b) >= 10) {
+        return substr($a, -10) === substr($b, -10);
+    }
+
+    return false;
+}
+
+/**
+ * @param array<string, mixed> $row
+ * @return list<string>
+ */
+function akh_wa_customer_activity_row_phone_values(array $row): array
+{
+    $values = [];
+    foreach ($row as $key => $value) {
+        if (!is_string($key)) {
+            continue;
+        }
+        $k = strtolower($key);
+        if (!preg_match('/phone|mobile|whatsapp|wa_/', $k)) {
+            continue;
+        }
+        $v = trim((string) $value);
+        if ($v !== '') {
+            $values[] = $v;
+        }
+    }
+    foreach (['client_username', 'customer_username', 'username', 'customer_id'] as $key) {
+        if (!isset($row[$key])) {
+            continue;
+        }
+        $v = trim((string) $row[$key]);
+        if ($v !== '' && akh_wa_customer_activity_digits($v) !== '') {
+            $values[] = $v;
+        }
+    }
+
+    return $values;
+}
+
+/**
+ * @param array<string, mixed> $row
+ * @param list<string> $expectedDigits
+ */
+function akh_wa_customer_activity_row_matches_phone(array $row, array $expectedDigits): bool
+{
+    if ($expectedDigits === []) {
+        return true;
+    }
+    foreach (akh_wa_customer_activity_row_phone_values($row) as $stored) {
+        foreach ($expectedDigits as $expected) {
+            if (akh_wa_customer_activity_phone_digits_match($stored, $expected)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @param array<string, mixed> $row
+ * @param list<string> $taskVariants
+ */
+function akh_wa_customer_activity_row_matches_task(array $row, array $taskVariants, ?string $taskCol): bool
+{
+    if ($taskCol === null || $taskVariants === []) {
+        return true;
+    }
+    $stored = trim((string) ($row[$taskCol] ?? ''));
+    if ($stored === '') {
+        return true;
+    }
+    foreach ($taskVariants as $variant) {
+        if (akh_task_ids_match($stored, $variant)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @param array<string, mixed> $row
+ */
+function akh_wa_customer_activity_row_is_customer_event(array $row): bool
+{
+    foreach (['actor', 'role', 'user_type', 'sender'] as $key) {
+        if (!array_key_exists($key, $row)) {
+            continue;
+        }
+        $value = strtolower(trim((string) $row[$key]));
+        if ($value === '') {
+            continue;
+        }
+        if (in_array($value, ['editor', 'system', 'staff', 'admin'], true)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * @param array<string, mixed> $row
+ */
+function akh_wa_customer_activity_row_latest_at(array $row): ?DateTimeImmutable
+{
+    $latest = null;
+    foreach (akh_wa_customer_activity_timestamp_columns() as $col) {
+        if (!isset($row[$col]) || trim((string) $row[$col]) === '') {
+            continue;
+        }
+        $dt = akh_wa_customer_activity_parse_dt((string) $row[$col]);
+        if ($dt === null) {
+            continue;
+        }
+        if ($latest === null || $dt->getTimestamp() > $latest->getTimestamp()) {
+            $latest = $dt;
+        }
+    }
+
+    return $latest;
+}
+
+/**
+ * @param list<string> $taskVariants
+ * @param list<string> $phoneDigits
+ * @return list<array<string, mixed>>
+ */
+function akh_wa_customer_activity_fetch_candidate_rows(array $taskVariants, array $phoneDigits, ?string $taskCol): array
+{
+    $orParts = [];
+    $params = [];
+
+    if ($taskCol !== null && $taskVariants !== []) {
+        $placeholders = implode(',', array_fill(0, count($taskVariants), '?'));
+        $orParts[] = 'TRIM(COALESCE(`' . $taskCol . '`, \'\')) IN (' . $placeholders . ')';
+        foreach ($taskVariants as $variant) {
+            $params[] = $variant;
+        }
+    }
+
+    $phoneCols = akh_wa_customer_activity_phone_columns();
+    $cols = akh_wa_customer_activity_columns();
+    if ($cols['client'] !== null && !in_array($cols['client'], $phoneCols, true)) {
+        $phoneCols[] = $cols['client'];
+    }
+    if ($phoneDigits !== []) {
+        $phoneOr = [];
+        foreach ($phoneCols as $phoneCol) {
+            $pred = akh_wa_customer_activity_sql_phone_predicate($phoneCol, $phoneDigits);
+            if ($pred['sql'] === '0') {
+                continue;
+            }
+            $phoneOr[] = $pred['sql'];
+            foreach ($pred['params'] as $p) {
+                $params[] = $p;
+            }
+        }
+        if ($phoneOr !== []) {
+            $orParts[] = '(' . implode(' OR ', $phoneOr) . ')';
+        }
+    }
+
+    if ($orParts === []) {
+        return [];
+    }
+
+    $orderCol = akh_wa_customer_activity_column_exists('id') ? 'id' : akh_wa_customer_activity_timestamp_columns()[0];
+    $sql = 'SELECT * FROM whatsapp_customer_activity WHERE (' . implode(' OR ', $orParts) . ') ORDER BY `' . $orderCol . '` DESC LIMIT 250';
+
+    try {
+        $st = akh_db()->prepare($sql);
+        $st->execute($params);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+
+        return is_array($rows) ? $rows : [];
+    } catch (\Throwable $e) {
+        error_log('akh_wa_customer_activity_fetch_candidate_rows: ' . $e->getMessage());
+
+        return [];
+    }
+}
+
 function akh_wa_customer_activity_primary_phone_column(): ?string
 {
-    foreach (['phone', 'customer_phone', 'whatsapp_phone', 'wa_phone', 'mobile'] as $candidate) {
+    foreach (['phone', 'customer_phone', 'phone_number', 'mobile_number', 'whatsapp_phone', 'wa_phone', 'mobile'] as $candidate) {
         if (akh_wa_customer_activity_column_exists($candidate)) {
             return $candidate;
         }
@@ -269,7 +468,7 @@ function akh_wa_customer_activity_primary_phone_column(): ?string
 function akh_wa_customer_activity_phone_columns(): array
 {
     $out = [];
-    foreach (['phone', 'customer_phone', 'whatsapp_phone', 'wa_phone', 'mobile'] as $candidate) {
+    foreach (['phone', 'customer_phone', 'phone_number', 'mobile_number', 'whatsapp_phone', 'wa_phone', 'mobile'] as $candidate) {
         if (akh_wa_customer_activity_column_exists($candidate)) {
             $out[] = $candidate;
         }
@@ -306,99 +505,6 @@ function akh_wa_customer_activity_sql_phone_predicate(string $column, array $dig
 }
 
 /**
- * @param list<string> $taskVariants
- * @param list<string> $phoneDigits
- * @param bool $requireTaskMatch
- * @return DateTimeImmutable|null
- */
-function akh_wa_customer_activity_query_last_at(
-    ?string $taskCol,
-    array $taskVariants,
-    array $phoneDigits,
-    bool $requireTaskMatch
-): ?DateTimeImmutable {
-    $tsCols = akh_wa_customer_activity_timestamp_columns();
-    if ($tsCols === []) {
-        return null;
-    }
-    if ($requireTaskMatch && ($taskCol === null || $taskVariants === [])) {
-        return null;
-    }
-    if ($phoneDigits === []) {
-        return null;
-    }
-
-    $coalesce = array_map(static fn (string $c): string => '`' . $c . '`', $tsCols);
-    $maxExpr = count($coalesce) === 1
-        ? 'MAX(' . $coalesce[0] . ')'
-        : 'MAX(COALESCE(' . implode(', ', $coalesce) . '))';
-
-    $sql = 'SELECT ' . $maxExpr . ' AS last_at FROM whatsapp_customer_activity WHERE ';
-    $where = [];
-    $params = [];
-
-    $phoneCols = akh_wa_customer_activity_phone_columns();
-    $cols = akh_wa_customer_activity_columns();
-    if ($cols['client'] !== null && !in_array($cols['client'], $phoneCols, true)) {
-        $phoneCols[] = $cols['client'];
-    }
-    $phonePredicates = [];
-    foreach ($phoneCols as $phoneCol) {
-        $pred = akh_wa_customer_activity_sql_phone_predicate($phoneCol, $phoneDigits);
-        if ($pred['sql'] !== '0') {
-            $phonePredicates[] = $pred['sql'];
-            foreach ($pred['params'] as $p) {
-                $params[] = $p;
-            }
-        }
-    }
-    if ($phonePredicates === []) {
-        return null;
-    }
-    $where[] = '(' . implode(' OR ', $phonePredicates) . ')';
-
-    if ($taskCol !== null && $taskVariants !== []) {
-        $taskPlaceholders = implode(',', array_fill(0, count($taskVariants), '?'));
-        if ($requireTaskMatch) {
-            $where[] = 'TRIM(COALESCE(`' . $taskCol . '`, \'\')) IN (' . $taskPlaceholders . ')';
-            foreach ($taskVariants as $v) {
-                $params[] = $v;
-            }
-        } else {
-            $where[] = '(TRIM(COALESCE(`' . $taskCol . '`, \'\')) IN (' . $taskPlaceholders . ') OR TRIM(COALESCE(`' . $taskCol . '`, \'\')) = \'\')';
-            foreach ($taskVariants as $v) {
-                $params[] = $v;
-            }
-        }
-    }
-
-    foreach (['actor', 'role', 'user_type', 'sender'] as $actorCol) {
-        if (!akh_wa_customer_activity_column_exists($actorCol)) {
-            continue;
-        }
-        $where[] = '(`' . $actorCol . '` IS NULL OR TRIM(`' . $actorCol . '`) = \'\' OR LOWER(TRIM(`' . $actorCol . '`)) NOT IN (\'editor\', \'system\', \'staff\', \'admin\'))';
-        break;
-    }
-
-    $sql .= implode(' AND ', $where);
-
-    try {
-        $st = akh_db()->prepare($sql);
-        $st->execute($params);
-        $row = $st->fetch(PDO::FETCH_ASSOC);
-        if (!is_array($row) || empty($row['last_at'])) {
-            return null;
-        }
-
-        return akh_wa_customer_activity_parse_dt((string) $row['last_at']);
-    } catch (\Throwable $e) {
-        error_log('akh_wa_customer_activity_query_last_at: ' . $e->getMessage());
-
-        return null;
-    }
-}
-
-/**
  * Last customer activity for this task from whatsapp_customer_activity only (matched by WhatsApp phone).
  *
  * @param array<string, mixed> $task
@@ -408,21 +514,52 @@ function akh_wa_customer_activity_last_at_from_db(array $task): ?DateTimeImmutab
     if (!akh_wa_customer_activity_table_exists()) {
         return null;
     }
+    if (akh_wa_customer_activity_timestamp_columns() === []) {
+        return null;
+    }
     $cols = akh_wa_customer_activity_columns();
     $taskCol = $cols['task'];
     $taskId = trim((string) ($task['id'] ?? ''));
     $taskVariants = akh_task_id_match_variants($taskId);
-    $phoneDigits = akh_wa_customer_activity_phones_for_task($task);
-    if ($phoneDigits === []) {
+    if ($taskVariants === []) {
         return null;
     }
 
-    $lastAt = akh_wa_customer_activity_query_last_at($taskCol, $taskVariants, $phoneDigits, true);
-    if ($lastAt === null) {
-        $lastAt = akh_wa_customer_activity_query_last_at($taskCol, $taskVariants, $phoneDigits, false);
+    $phoneDigits = akh_wa_customer_activity_phones_for_task($task);
+    $rows = akh_wa_customer_activity_fetch_candidate_rows($taskVariants, $phoneDigits, $taskCol);
+    if ($phoneDigits === [] && $rows !== []) {
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            foreach (akh_wa_customer_activity_row_phone_values($row) as $stored) {
+                foreach (akh_wa_customer_activity_phone_digit_variants($stored) as $variant) {
+                    if (!in_array($variant, $phoneDigits, true)) {
+                        $phoneDigits[] = $variant;
+                    }
+                }
+            }
+        }
     }
-    if ($lastAt === null) {
-        $lastAt = akh_wa_customer_activity_query_last_at($taskCol, [], $phoneDigits, false);
+
+    $lastAt = null;
+    foreach ($rows as $row) {
+        if (!is_array($row) || !akh_wa_customer_activity_row_is_customer_event($row)) {
+            continue;
+        }
+        if (!akh_wa_customer_activity_row_matches_task($row, $taskVariants, $taskCol)) {
+            continue;
+        }
+        if (!akh_wa_customer_activity_row_matches_phone($row, $phoneDigits)) {
+            continue;
+        }
+        $rowAt = akh_wa_customer_activity_row_latest_at($row);
+        if ($rowAt === null) {
+            continue;
+        }
+        if ($lastAt === null || $rowAt->getTimestamp() > $lastAt->getTimestamp()) {
+            $lastAt = $rowAt;
+        }
     }
 
     return $lastAt;
