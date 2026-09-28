@@ -74,10 +74,13 @@ function akh_invoice_template_view_model(array $invoice): array
     $taxBps = (int) ($invoice['tax_rate_bps'] ?? 0);
     $taxLabel = $taxBps > 0 ? 'GST (' . number_format($taxBps / 100, 2) . '%)' : 'Tax';
 
+    $projectDescription = trim((string) ($invoice['notes'] ?? ''));
+
     return [
         'profile' => $profile,
         'invoice' => $invoice,
         'lines' => $lines,
+        'project_description' => $projectDescription,
         'bill_name' => $billName,
         'bill_email' => trim((string) ($invoice['client_email'] ?? '')),
         'currency' => $currency,
@@ -163,6 +166,13 @@ function akh_invoice_render_html(array $invoice): string
     </div>
   </section>
 
+  <?php if (trim((string) ($vm['project_description'] ?? '')) !== ''): ?>
+    <section class="inv-doc__project-desc">
+      <h2>Description</h2>
+      <p><?php echo nl2br(h((string) $vm['project_description'])); ?></p>
+    </section>
+  <?php endif; ?>
+
   <table class="inv-doc__services">
     <thead>
       <tr>
@@ -177,7 +187,12 @@ function akh_invoice_render_html(array $invoice): string
       <?php foreach ($vm['lines'] as $row): ?>
         <tr>
           <td><?php echo (int) $row['no']; ?></td>
-          <td class="inv-doc__desc-cell"><?php echo h((string) $row['description']); ?></td>
+          <td class="inv-doc__desc-cell">
+            <?php if (trim((string) ($row['task_code'] ?? '')) !== ''): ?>
+              <span class="inv-doc__task-code"><?php echo h((string) $row['task_code']); ?></span>
+            <?php endif; ?>
+            <?php echo nl2br(h((string) $row['description'])); ?>
+          </td>
           <td><?php echo (int) $row['quantity']; ?></td>
           <td><?php echo h((string) $row['unit_display']); ?></td>
           <td><?php echo h((string) $row['line_display']); ?></td>
@@ -197,13 +212,6 @@ function akh_invoice_render_html(array $invoice): string
   </div>
 
   <p class="inv-doc__words"><strong>Amount in words:</strong> <?php echo h((string) $vm['amount_words']); ?></p>
-
-  <?php if (trim((string) ($inv['notes'] ?? '')) !== ''): ?>
-    <section class="inv-doc__notes">
-      <h2>Notes</h2>
-      <p><?php echo nl2br(h((string) $inv['notes'])); ?></p>
-    </section>
-  <?php endif; ?>
 
   <footer class="inv-doc__footer">
     <?php if ($vm['bank_details'] !== ''): ?>

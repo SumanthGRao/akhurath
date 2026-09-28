@@ -88,6 +88,28 @@
   color: #5c4f44;
 }
 
+.inv-doc__project-desc {
+  margin: 0.75rem 1.5rem 0;
+  padding: 0.75rem 1rem;
+  background: #f8f4ef;
+  border: 1px solid #e8dfd4;
+  border-radius: 6px;
+}
+
+.inv-doc__project-desc h2 {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #5c4030;
+}
+
+.inv-doc__project-desc p {
+  margin: 0;
+  white-space: pre-wrap;
+  color: #1a1410;
+}
+
 .inv-doc__services {
   width: calc(100% - 3rem);
   margin: 0.75rem 1.5rem 0;

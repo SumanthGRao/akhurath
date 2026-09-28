@@ -157,4 +157,73 @@
 
   addRow();
   addRow();
+
+  function namedField(form, name) {
+    if (!form || !name) return null;
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+      return form.querySelector('[name="' + CSS.escape(name) + '"]');
+    }
+    return form.querySelector('[name="' + String(name).replace(/"/g, '\\"') + '"]');
+  }
+
+  function collectLinesPayload() {
+    var payload = [];
+    var form = root.closest('form');
+    if (!form) return payload;
+
+    form.querySelectorAll('input[name^="line_pick["]').forEach(function (cb) {
+      if (!cb.checked) return;
+      var m = /^line_pick\[(.+)\]$/.exec(cb.name || '');
+      if (!m) return;
+      var key = m[1];
+      var amount = parseInr(namedField(form, 'line_amount[' + key + ']')?.value);
+      if (amount <= 0) return;
+      var descEl = namedField(form, 'line_desc[' + key + ']');
+      var desc = String(descEl && descEl.value ? descEl.value : '').trim();
+      if (desc === '') return;
+      payload.push({
+        description: desc,
+        quantity: 1,
+        unit_amount_paise: Math.round(amount * 100),
+        source_kind: String(namedField(form, 'line_source_kind[' + key + ']')?.value || 'manual'),
+        source_ref: String(namedField(form, 'line_source_ref[' + key + ']')?.value || ''),
+        task_code: String(namedField(form, 'line_task_code[' + key + ']')?.value || ''),
+      });
+    });
+
+    if (tbody) {
+      tbody.querySelectorAll('.inv-builder__row').forEach(function (tr) {
+        var qty = parseInt(tr.querySelector('.inv-builder__qty')?.value || '0', 10);
+        if (isNaN(qty) || qty < 1) return;
+        var rate = parseInr(tr.querySelector('.inv-builder__rate')?.value);
+        if (rate <= 0) return;
+        var desc = String(tr.querySelector('.inv-builder__description')?.value || '').trim();
+        var key = String(tr.querySelector('.inv-builder__service')?.value || '');
+        var custom = String(tr.querySelector('.inv-builder__custom-label')?.value || '').trim();
+        if (desc === '') {
+          desc = key === 'custom' ? custom : serviceLabel(key);
+        }
+        if (desc === '') return;
+        payload.push({
+          description: desc,
+          quantity: qty,
+          unit_amount_paise: Math.round(rate * 100),
+          source_kind: 'service',
+          source_ref: key,
+          task_code: '',
+        });
+      });
+    }
+
+    return payload;
+  }
+
+  var form = root.closest('form');
+  if (form) {
+    form.addEventListener('submit', function () {
+      var hidden = document.getElementById('invoice_lines_json');
+      if (!hidden) return;
+      hidden.value = JSON.stringify(collectLinesPayload());
+    });
+  }
 })();

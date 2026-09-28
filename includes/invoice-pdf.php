@@ -69,6 +69,27 @@ function akh_invoice_pdf_wrap_text(string $text, int $maxChars = 52): array
 }
 
 /**
+ * @return list<string>
+ */
+function akh_invoice_pdf_wrap_multiline(string $text, int $maxChars = 48): array
+{
+    $text = trim($text);
+    if ($text === '') {
+        return [];
+    }
+    $out = [];
+    foreach (preg_split('/\r\n|\r|\n/', $text) ?: [] as $paragraph) {
+        $paragraph = trim((string) $paragraph);
+        if ($paragraph === '') {
+            continue;
+        }
+        $out = array_merge($out, akh_invoice_pdf_wrap_text($paragraph, $maxChars));
+    }
+
+    return $out;
+}
+
+/**
  * @param array<string, mixed> $invoice Must include lines[]
  */
 function akh_invoice_pdf_bytes(array $invoice): string
@@ -138,6 +159,19 @@ function akh_invoice_pdf_bytes(array $invoice): string
     }
 
     $y += 62;
+    $projectDesc = trim((string) ($vm['project_description'] ?? ''));
+    if ($projectDesc === '') {
+        $projectDesc = trim((string) ($inv['notes'] ?? ''));
+    }
+    if ($projectDesc !== '') {
+        $pdf->text($left, $y, 'Description', 8, true, AkhInvoicePdfTheme::MUTED_R, AkhInvoicePdfTheme::MUTED_G, AkhInvoicePdfTheme::MUTED_B);
+        $y += 12;
+        foreach (akh_invoice_pdf_wrap_multiline($projectDesc, 90) as $pLine) {
+            $pdf->text($left, $y, $pLine, 9, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
+            $y += 11;
+        }
+        $y += 6;
+    }
     $tableTop = $y;
     $colNo = $left;
     $colDesc = $left + 24;
@@ -154,8 +188,11 @@ function akh_invoice_pdf_bytes(array $invoice): string
     $y = $tableTop + 26;
 
     foreach ($vm['lines'] as $row) {
-        $desc = akh_invoice_line_public_description($row);
-        $descLines = akh_invoice_pdf_wrap_text($desc, 48);
+        $desc = trim((string) ($row['description'] ?? ''));
+        if ($desc === '') {
+            $desc = akh_invoice_line_public_description($row);
+        }
+        $descLines = akh_invoice_pdf_wrap_multiline($desc, 48);
         if ($descLines === []) {
             $descLines = ['Service'];
         }
@@ -195,17 +232,6 @@ function akh_invoice_pdf_bytes(array $invoice): string
     foreach (akh_invoice_pdf_wrap_text((string) $vm['amount_words'], 90) as $wLine) {
         $pdf->text($left, $y, $wLine, 9, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
         $y += 11;
-    }
-
-    $notes = trim((string) ($inv['notes'] ?? ''));
-    if ($notes !== '') {
-        $y += 10;
-        $pdf->text($left, $y, 'Notes', 8, true, AkhInvoicePdfTheme::MUTED_R, AkhInvoicePdfTheme::MUTED_G, AkhInvoicePdfTheme::MUTED_B);
-        $y += 12;
-        foreach (akh_invoice_pdf_wrap_text($notes, 90) as $nLine) {
-            $pdf->text($left, $y, $nLine, 9, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
-            $y += 11;
-        }
     }
 
     $footY = 760.0;

@@ -48,66 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 : (int) $profile['default_tax_bps'];
             $notes = trim((string) ($_POST['notes'] ?? ''));
             $displayName = trim((string) ($_POST['client_display_name'] ?? ''));
-            $lines = [];
-            $picked = $_POST['line_pick'] ?? [];
-            if (!is_array($picked)) {
-                $picked = [];
-            }
-            foreach ($picked as $key => $on) {
-                if ((string) $on !== '1') {
-                    continue;
-                }
-                $key = (string) $key;
-                $desc = trim((string) ($_POST['line_desc'][$key] ?? ''));
-                $amountInr = trim((string) ($_POST['line_amount'][$key] ?? '0'));
-                $sourceKind = trim((string) ($_POST['line_source_kind'][$key] ?? 'manual'));
-                $sourceRef = trim((string) ($_POST['line_source_ref'][$key] ?? ''));
-                $taskCode = trim((string) ($_POST['line_task_code'][$key] ?? ''));
-                $lines[] = [
-                    'description' => $desc,
-                    'quantity' => 1,
-                    'unit_amount_paise' => akh_invoice_inr_to_paise($amountInr),
-                    'source_kind' => $sourceKind,
-                    'source_ref' => $sourceRef,
-                    'task_code' => $taskCode,
-                ];
-            }
-            $svcRows = $_POST['svc'] ?? [];
-            if (is_array($svcRows)) {
-                foreach ($svcRows as $row) {
-                    if (!is_array($row)) {
-                        continue;
-                    }
-                    $key = trim((string) ($row['key'] ?? ''));
-                    $qty = (int) ($row['qty'] ?? 0);
-                    if ($qty < 1) {
-                        continue;
-                    }
-                    $rateInr = trim((string) ($row['rate_inr'] ?? ''));
-                    $unitPaise = akh_invoice_inr_to_paise($rateInr);
-                    if ($unitPaise <= 0) {
-                        continue;
-                    }
-                    $customLabel = trim((string) ($row['custom_label'] ?? ''));
-                    $desc = trim((string) ($row['description'] ?? ''));
-                    if ($desc === '') {
-                        $desc = $key === 'custom' || $key === ''
-                            ? $customLabel
-                            : akh_invoice_service_label($key);
-                    }
-                    if ($desc === '') {
-                        $desc = $customLabel !== '' ? $customLabel : 'Service';
-                    }
-                    $lines[] = [
-                        'description' => $desc,
-                        'quantity' => $qty,
-                        'unit_amount_paise' => $unitPaise,
-                        'source_kind' => 'service',
-                        'source_ref' => $key,
-                        'task_code' => '',
-                    ];
-                }
-            }
+            $lines = akh_invoice_lines_from_create_post($_POST);
             $created = akh_invoice_create($client, $lines, $taxBps, $notes, $displayName, null, null);
             if (!($created['ok'] ?? false)) {
                 $error = (string) ($created['error'] ?? 'Could not create invoice.');
@@ -310,6 +251,7 @@ require_once AKH_ROOT . '/includes/header.php';
           <form method="post" action="" class="portal-form">
             <input type="hidden" name="csrf_token" value="<?php echo h(akh_csrf_token()); ?>" />
             <input type="hidden" name="action" value="create_invoice" />
+            <input type="hidden" name="invoice_lines_json" id="invoice_lines_json" value="" />
             <div class="admin-form-row">
               <label class="field">
                 <span>Bill to</span>
@@ -332,8 +274,8 @@ require_once AKH_ROOT . '/includes/header.php';
               </label>
             </div>
             <label class="field">
-              <span>Notes on invoice (optional)</span>
-              <textarea name="notes" rows="2" maxlength="2000"></textarea>
+              <span>Description (printed on invoice, optional)</span>
+              <textarea name="notes" rows="3" maxlength="2000" placeholder="Project scope, deliverables, or payment context"></textarea>
             </label>
 
             <h3 class="portal-section__title">Completed work (billable)</h3>
@@ -344,7 +286,7 @@ require_once AKH_ROOT . '/includes/header.php';
                 <thead>
                   <tr>
                     <th scope="col">Use</th>
-                    <th scope="col">Task</th>
+                    <th scope="col">Task / description</th>
                     <th scope="col">Client</th>
                     <th scope="col">Completed</th>
                     <th scope="col">Amount (INR)</th>
@@ -358,6 +300,7 @@ require_once AKH_ROOT . '/includes/header.php';
                     if (isset($row['default_amount_paise']) && $row['default_amount_paise'] !== null) {
                         $defaultInr = number_format((int) $row['default_amount_paise'] / 100, 2, '.', '');
                     }
+                    $defaultDesc = akh_invoice_billable_default_description($row);
                     ?>
                     <tr>
                       <td>
@@ -365,11 +308,13 @@ require_once AKH_ROOT . '/includes/header.php';
                       </td>
                       <td>
                         <strong><?php echo h((string) ($row['task_code'] ?? '')); ?></strong>
-                        <input type="hidden" name="line_desc[<?php echo h($key); ?>]" value="<?php echo h((string) ($row['title'] ?? '')); ?>" />
                         <input type="hidden" name="line_source_kind[<?php echo h($key); ?>]" value="<?php echo h((string) ($row['source_kind'] ?? '')); ?>" />
                         <input type="hidden" name="line_source_ref[<?php echo h($key); ?>]" value="<?php echo h($key); ?>" />
                         <input type="hidden" name="line_task_code[<?php echo h($key); ?>]" value="<?php echo h((string) ($row['task_code'] ?? '')); ?>" />
-                        <div class="portal-muted"><?php echo h((string) ($row['title'] ?? '')); ?></div>
+                        <label class="field" style="margin-top:0.35rem">
+                          <span class="visually-hidden">Line description for <?php echo h((string) ($row['task_code'] ?? '')); ?></span>
+                          <textarea name="line_desc[<?php echo h($key); ?>]" rows="2" maxlength="500" class="inv-builder__task-desc" style="width:100%;min-width:12rem"><?php echo h($defaultDesc); ?></textarea>
+                        </label>
                       </td>
                       <td><?php echo h((string) ($row['client_username'] ?? '')); ?></td>
                       <td><?php echo h((string) ($row['completed_at'] ?? '')); ?></td>
@@ -426,7 +371,7 @@ require_once AKH_ROOT . '/includes/header.php';
                   </label>
                 </td>
                 <td>
-                  <input type="text" class="inv-builder__description" name="svc[__IDX__][description]" maxlength="500" placeholder="What you are billing for" style="min-width:12rem" required />
+                  <input type="text" class="inv-builder__description" name="svc[__IDX__][description]" maxlength="500" placeholder="What you are billing for" style="min-width:12rem" />
                 </td>
                 <td><input type="number" class="inv-builder__qty" name="svc[__IDX__][qty]" min="1" max="99" value="1" style="max-width:4rem" /></td>
                 <td><input type="text" class="inv-builder__rate" name="svc[__IDX__][rate_inr]" inputmode="decimal" style="max-width:7rem" /></td>

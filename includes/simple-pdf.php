@@ -153,12 +153,14 @@ final class AkhSimplePdf
         $s = str_replace(['₹', '–', '—'], ['Rs.', '-', '-'], $s);
         if (function_exists('iconv')) {
             $t = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT//IGNORE', $s);
-            if ($t !== false) {
+            if ($t !== false && trim($t) !== '') {
                 return $t;
             }
         }
 
-        return preg_replace('/[^\x20-\x7E]/', '?', $s) ?? $s;
+        $fallback = preg_replace('/[^\x20-\x7E]/u', '?', $s) ?? $s;
+
+        return $fallback !== '' ? $fallback : '—';
     }
 
     private function escapePdfText(string $s): string

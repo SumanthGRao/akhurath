@@ -93,6 +93,175 @@ function akh_invoice_inr_to_paise(string $inr): int
     return max(0, (int) round((float) $s * 100));
 }
 
+/**
+ * Default invoice line description for a billable completed-task row (title + studio task details).
+ */
+function akh_invoice_billable_default_description(array $row): string
+{
+    $title = trim((string) ($row['title'] ?? ''));
+    $code = akh_task_normalize_id((string) ($row['task_code'] ?? ''));
+    $detail = '';
+    if ($code !== '') {
+        foreach (akh_tasks_load() as $t) {
+            if (akh_task_normalize_id((string) ($t['id'] ?? '')) !== $code) {
+                continue;
+            }
+            $detail = trim((string) ($t['description'] ?? ''));
+            break;
+        }
+    }
+    $parts = [];
+    if ($title !== '') {
+        $parts[] = $title;
+    }
+    if ($detail !== '' && $detail !== $title) {
+        $parts[] = $detail;
+    }
+    $out = trim(implode("\n", $parts));
+    if ($out === '' && $code !== '') {
+        return $code;
+    }
+
+    return mb_substr($out, 0, 500);
+}
+
+/**
+ * @param array<string, mixed> $line
+ * @return array<string, mixed>
+ */
+function akh_invoice_normalize_line_row(array $line): array
+{
+    $desc = trim((string) ($line['description'] ?? $line['DESCRIPTION'] ?? ''));
+    $line['source_kind'] = trim((string) ($line['source_kind'] ?? ''));
+    $line['source_ref'] = trim((string) ($line['source_ref'] ?? ''));
+    $line['task_code'] = akh_task_normalize_id((string) ($line['task_code'] ?? ''));
+    if ($desc === '') {
+        if ($line['source_kind'] === 'service' && $line['source_ref'] !== '') {
+            require_once __DIR__ . '/invoice-services.php';
+            $desc = akh_invoice_service_label($line['source_ref']);
+        }
+        if ($desc === '' && $line['task_code'] !== '') {
+            $desc = $line['task_code'];
+        }
+    }
+    $line['description'] = $desc;
+    $line['quantity'] = max(1, (int) ($line['quantity'] ?? 1));
+    $line['unit_amount_paise'] = max(0, (int) ($line['unit_amount_paise'] ?? 0));
+    $line['line_total_paise'] = max(0, (int) ($line['line_total_paise'] ?? 0));
+
+    return $line;
+}
+
+/**
+ * Build line items from the create-invoice POST (prefers JSON snapshot from the builder).
+ *
+ * @return list<array<string, mixed>>
+ */
+function akh_invoice_lines_from_create_post(array $post): array
+{
+    $json = trim((string) ($post['invoice_lines_json'] ?? ''));
+    if ($json !== '') {
+        try {
+            $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            $decoded = null;
+        }
+        if (is_array($decoded)) {
+            $fromJson = [];
+            foreach ($decoded as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $desc = trim((string) ($item['description'] ?? ''));
+                $qty = max(1, (int) ($item['quantity'] ?? 1));
+                $unit = max(0, (int) ($item['unit_amount_paise'] ?? 0));
+                if ($unit <= 0) {
+                    $unit = akh_invoice_inr_to_paise((string) ($item['rate_inr'] ?? ''));
+                }
+                if ($desc === '' || $unit <= 0) {
+                    continue;
+                }
+                $fromJson[] = [
+                    'description' => mb_substr($desc, 0, 500),
+                    'quantity' => $qty,
+                    'unit_amount_paise' => $unit,
+                    'source_kind' => trim((string) ($item['source_kind'] ?? 'manual')),
+                    'source_ref' => trim((string) ($item['source_ref'] ?? '')),
+                    'task_code' => akh_task_normalize_id((string) ($item['task_code'] ?? '')),
+                ];
+            }
+            if ($fromJson !== []) {
+                return $fromJson;
+            }
+        }
+    }
+
+    require_once __DIR__ . '/invoice-services.php';
+
+    $lines = [];
+    $picked = $post['line_pick'] ?? [];
+    if (!is_array($picked)) {
+        $picked = [];
+    }
+    foreach ($picked as $key => $on) {
+        if ((string) $on !== '1') {
+            continue;
+        }
+        $key = (string) $key;
+        $desc = trim((string) ($post['line_desc'][$key] ?? ''));
+        $amountInr = trim((string) ($post['line_amount'][$key] ?? '0'));
+        $unitPaise = akh_invoice_inr_to_paise($amountInr);
+        if ($unitPaise <= 0) {
+            continue;
+        }
+        $lines[] = [
+            'description' => $desc,
+            'quantity' => 1,
+            'unit_amount_paise' => $unitPaise,
+            'source_kind' => trim((string) ($post['line_source_kind'][$key] ?? 'manual')),
+            'source_ref' => trim((string) ($post['line_source_ref'][$key] ?? '')),
+            'task_code' => trim((string) ($post['line_task_code'][$key] ?? '')),
+        ];
+    }
+    $svcRows = $post['svc'] ?? [];
+    if (is_array($svcRows)) {
+        foreach ($svcRows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $key = trim((string) ($row['key'] ?? ''));
+            $qty = (int) ($row['qty'] ?? 0);
+            if ($qty < 1) {
+                continue;
+            }
+            $unitPaise = akh_invoice_inr_to_paise(trim((string) ($row['rate_inr'] ?? '')));
+            if ($unitPaise <= 0) {
+                continue;
+            }
+            $customLabel = trim((string) ($row['custom_label'] ?? ''));
+            $desc = trim((string) ($row['description'] ?? ''));
+            if ($desc === '') {
+                $desc = $key === 'custom' || $key === ''
+                    ? $customLabel
+                    : akh_invoice_service_label($key);
+            }
+            if ($desc === '') {
+                $desc = $customLabel !== '' ? $customLabel : 'Service';
+            }
+            $lines[] = [
+                'description' => $desc,
+                'quantity' => $qty,
+                'unit_amount_paise' => $unitPaise,
+                'source_kind' => 'service',
+                'source_ref' => $key,
+                'task_code' => '',
+            ];
+        }
+    }
+
+    return $lines;
+}
+
 function akh_invoice_studio_profile(): array
 {
     $name = defined('AKH_INVOICE_STUDIO_LEGAL_NAME') ? (string) AKH_INVOICE_STUDIO_LEGAL_NAME : SITE_NAME;
@@ -434,7 +603,13 @@ function akh_invoice_get(int $id, ?string $forClientUsername = null): ?array
         'SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order ASC, id ASC'
     );
     $linesSt->execute([$id]);
-    $row['lines'] = $linesSt->fetchAll(PDO::FETCH_ASSOC);
+    $rawLines = $linesSt->fetchAll(PDO::FETCH_ASSOC);
+    $row['lines'] = [];
+    foreach (is_array($rawLines) ? $rawLines : [] as $line) {
+        if (is_array($line)) {
+            $row['lines'][] = akh_invoice_normalize_line_row($line);
+        }
+    }
 
     return $row;
 }
