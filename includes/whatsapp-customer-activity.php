@@ -5,6 +5,13 @@ declare(strict_types=1);
 require_once __DIR__ . '/tasks.php';
 require_once __DIR__ . '/site-datetime.php';
 
+/** @var array<string, string|null> */
+$akhWaCustomerActivityColumnCache = [
+    'task' => null,
+    'client' => null,
+    'resolved' => '0',
+];
+
 function akh_wa_customer_activity_table_exists(): bool
 {
     if (!function_exists('akh_db_is_pdo') || !akh_db_is_pdo()) {
@@ -30,6 +37,65 @@ function akh_wa_customer_activity_table_exists(): bool
     }
 }
 
+function akh_wa_customer_activity_column_exists(string $column): bool
+{
+    if (!akh_wa_customer_activity_table_exists()) {
+        return false;
+    }
+    try {
+        $name = akh_db()->query('SELECT DATABASE()');
+        if ($name === false) {
+            return false;
+        }
+        $schema = $name->fetchColumn();
+        if (!is_string($schema) || $schema === '') {
+            return false;
+        }
+        $st = akh_db()->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+        );
+        $st->execute([$schema, 'whatsapp_customer_activity', $column]);
+
+        return (int) $st->fetchColumn() >= 1;
+    } catch (\Throwable $e) {
+        return false;
+    }
+}
+
+/**
+ * @return array{task: string|null, client: string|null}
+ */
+function akh_wa_customer_activity_columns(): array
+{
+    global $akhWaCustomerActivityColumnCache;
+    if (($akhWaCustomerActivityColumnCache['resolved'] ?? '0') === '1') {
+        return [
+            'task' => $akhWaCustomerActivityColumnCache['task'],
+            'client' => $akhWaCustomerActivityColumnCache['client'],
+        ];
+    }
+    $taskCol = null;
+    foreach (['task_code', 'studio_task_id', 'task_id'] as $candidate) {
+        if (akh_wa_customer_activity_column_exists($candidate)) {
+            $taskCol = $candidate;
+            break;
+        }
+    }
+    $clientCol = null;
+    foreach (['client_username', 'customer_username', 'username'] as $candidate) {
+        if (akh_wa_customer_activity_column_exists($candidate)) {
+            $clientCol = $candidate;
+            break;
+        }
+    }
+    $akhWaCustomerActivityColumnCache['task'] = $taskCol;
+    $akhWaCustomerActivityColumnCache['client'] = $clientCol;
+    $akhWaCustomerActivityColumnCache['resolved'] = '1';
+
+    return ['task' => $taskCol, 'client' => $clientCol];
+}
+
 /**
  * Log a customer interaction for a task (no-op if table missing or task invalid).
  */
@@ -49,15 +115,91 @@ function akh_wa_customer_activity_record(
     if ($taskCode === '') {
         return;
     }
+    $cols = akh_wa_customer_activity_columns();
+    $taskCol = $cols['task'];
+    if ($taskCol === null) {
+        return;
+    }
     try {
-        $st = akh_db()->prepare(
-            'INSERT INTO whatsapp_customer_activity (task_code, client_username, source, activity_kind)
-             VALUES (?, ?, ?, ?)'
-        );
-        $st->execute([$taskCode, $clientUsername, $source, $activityKind]);
+        $insertCols = [$taskCol];
+        $insertVals = [$taskCode];
+        $clientCol = $cols['client'];
+        if ($clientCol !== null) {
+            $insertCols[] = $clientCol;
+            $insertVals[] = $clientUsername;
+        }
+        if (akh_wa_customer_activity_column_exists('source')) {
+            $insertCols[] = 'source';
+            $insertVals[] = $source;
+        }
+        if (akh_wa_customer_activity_column_exists('activity_kind')) {
+            $insertCols[] = 'activity_kind';
+            $insertVals[] = $activityKind;
+        }
+        $placeholders = implode(', ', array_fill(0, count($insertCols), '?'));
+        $sql = 'INSERT INTO whatsapp_customer_activity (' . implode(', ', $insertCols) . ') VALUES (' . $placeholders . ')';
+        $st = akh_db()->prepare($sql);
+        $st->execute($insertVals);
     } catch (\Throwable $e) {
         error_log('akh_wa_customer_activity_record: ' . $e->getMessage());
     }
+}
+
+/**
+ * @return DateTimeImmutable|null
+ */
+function akh_wa_customer_activity_last_at_from_db(string $taskCode, string $clientUsername): ?DateTimeImmutable
+{
+    if (!akh_wa_customer_activity_table_exists()) {
+        return null;
+    }
+    $cols = akh_wa_customer_activity_columns();
+    $taskCol = $cols['task'];
+    if ($taskCol === null || !akh_wa_customer_activity_column_exists('created_at')) {
+        return null;
+    }
+    $tz = akh_site_timezone();
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    $clientUsername = strtolower(trim($clientUsername));
+    if ($taskCode === '') {
+        return null;
+    }
+    try {
+        $sql = 'SELECT MAX(created_at) AS last_at FROM whatsapp_customer_activity WHERE `' . $taskCol . '` = ?';
+        $params = [$taskCode];
+        $clientCol = $cols['client'];
+        if ($clientCol !== null && $clientUsername !== '') {
+            $sql .= ' AND (`' . $clientCol . '` = ? OR `' . $clientCol . '` = \'\' OR `' . $clientCol . '` IS NULL)';
+            $params[] = $clientUsername;
+        }
+        $st = akh_db()->prepare($sql);
+        $st->execute($params);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row) || empty($row['last_at'])) {
+            return null;
+        }
+
+        return new DateTimeImmutable((string) $row['last_at'], $tz);
+    } catch (\Throwable $e) {
+        error_log('akh_wa_customer_activity_last_at_from_db: ' . $e->getMessage());
+
+        return null;
+    }
+}
+
+/**
+ * @return DateTimeImmutable|null
+ */
+function akh_wa_customer_activity_max_dt(?DateTimeImmutable $a, ?DateTimeImmutable $b): ?DateTimeImmutable
+{
+    if ($a === null) {
+        return $b;
+    }
+    if ($b === null) {
+        return $a;
+    }
+
+    return $a->getTimestamp() >= $b->getTimestamp() ? $a : $b;
 }
 
 /**
@@ -80,8 +222,10 @@ function akh_wa_customer_activity_record_for_task(array $task, string $source, s
  */
 function akh_wa_customer_activity_fallback_last_at(array $task): ?DateTimeImmutable
 {
+    require_once __DIR__ . '/whatsapp-messages.php';
+
     $latest = null;
-    foreach (akh_task_conversation_list($task) as $row) {
+    foreach (akh_task_merged_conversation_list($task) as $row) {
         if (!is_array($row)) {
             continue;
         }
@@ -94,35 +238,9 @@ function akh_wa_customer_activity_fallback_last_at(array $task): ?DateTimeImmuta
         }
         try {
             $dt = new DateTimeImmutable($at);
-            if ($latest === null || $dt > $latest) {
-                $latest = $dt;
-            }
+            $latest = akh_wa_customer_activity_max_dt($latest, $dt);
         } catch (\Throwable $e) {
             continue;
-        }
-    }
-
-    $code = akh_task_normalize_id((string) ($task['id'] ?? ''));
-    if ($code !== '') {
-        require_once __DIR__ . '/whatsapp-messages.php';
-        if (akh_wa_messages_table_exists()) {
-            foreach (akh_wa_messages_list_for_task($code, 80) as $row) {
-                if (!is_array($row) || !akh_wa_message_is_client_incoming($row)) {
-                    continue;
-                }
-                $created = trim((string) ($row['created_at'] ?? ''));
-                if ($created === '') {
-                    continue;
-                }
-                try {
-                    $dt = new DateTimeImmutable($created, akh_site_timezone());
-                    if ($latest === null || $dt > $latest) {
-                        $latest = $dt;
-                    }
-                } catch (\Throwable $e) {
-                    continue;
-                }
-            }
         }
     }
 
@@ -144,7 +262,7 @@ function akh_wa_customer_activity_fallback_last_at(array $task): ?DateTimeImmuta
  */
 function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 24): array
 {
-    $empty = [
+    $disabled = [
         'enabled' => false,
         'state' => 'unknown',
         'message' => '',
@@ -152,14 +270,11 @@ function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 
         'last_at_iso' => '',
         'last_at_label' => '',
     ];
-    if (!akh_wa_customer_activity_table_exists()) {
-        return $empty;
-    }
 
     $code = akh_task_normalize_id((string) ($task['id'] ?? ''));
     $client = strtolower(trim((string) ($task['client_username'] ?? '')));
     if ($code === '') {
-        return $empty;
+        return $disabled;
     }
 
     $windowHours = max(1, min(168, $windowHours));
@@ -167,27 +282,10 @@ function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 
     $now = new DateTimeImmutable('now', $tz);
     $cutoff = $now->modify('-' . $windowHours . ' hours');
 
-    $lastAt = null;
-    try {
-        $sql = 'SELECT MAX(created_at) AS last_at FROM whatsapp_customer_activity WHERE task_code = ?';
-        $params = [$code];
-        if ($client !== '') {
-            $sql .= ' AND client_username = ?';
-            $params[] = $client;
-        }
-        $st = akh_db()->prepare($sql);
-        $st->execute($params);
-        $row = $st->fetch(PDO::FETCH_ASSOC);
-        if (is_array($row) && !empty($row['last_at'])) {
-            $lastAt = new DateTimeImmutable((string) $row['last_at'], $tz);
-        }
-    } catch (\Throwable $e) {
-        error_log('akh_wa_customer_activity_editor_status: ' . $e->getMessage());
-    }
-
-    if ($lastAt === null) {
-        $lastAt = akh_wa_customer_activity_fallback_last_at($task);
-    }
+    $lastAt = akh_wa_customer_activity_max_dt(
+        akh_wa_customer_activity_last_at_from_db($code, $client),
+        akh_wa_customer_activity_fallback_last_at($task)
+    );
 
     if ($lastAt === null) {
         return [

@@ -48,10 +48,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim((string) ($_POST['ajax_action'
     if ($ajax === 'desk_panel') {
         $taskId = trim((string) ($_POST['task_id'] ?? ''));
         try {
+            $found = akh_editor_desk_find_task($editor, $taskId);
+            $activityHtml = '';
+            if (is_array($found)) {
+                $activityHtml = akh_editor_desk_customer_activity_html($found['task']);
+            }
             echo json_encode([
                 'ok' => true,
                 'task_id' => $taskId,
                 'html' => akh_editor_desk_panel_html($editor, $taskId, akh_csrf_token()),
+                'customer_activity_html' => $activityHtml,
             ], JSON_THROW_ON_ERROR);
         } catch (\Throwable) {
             echo json_encode(['ok' => false]);

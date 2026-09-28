@@ -358,6 +358,25 @@ function akh_editor_desk_panel_html(string $editorUsername, string $taskId, stri
 }
 
 /**
+ * Customer activity hint HTML for a task (editor desk compose area).
+ */
+function akh_editor_desk_customer_activity_html(array $task): string
+{
+    require_once __DIR__ . '/whatsapp-customer-activity.php';
+    $tid = akh_task_normalize_id((string) ($task['id'] ?? ''));
+    if ($tid === '') {
+        return '';
+    }
+    ob_start();
+    akh_render_editor_customer_activity_hint(
+        akh_wa_customer_activity_editor_status_for_task($task),
+        $tid
+    );
+
+    return (string) ob_get_clean();
+}
+
+/**
  * @return array{ok: bool, task_id?: string, msg_sig?: string, html?: string, error?: string}
  */
 function akh_editor_desk_thread_poll(string $editorUsername, string $taskId): array
@@ -381,9 +400,7 @@ function akh_editor_desk_thread_poll(string $editorUsername, string $taskId): ar
 
     require_once __DIR__ . '/whatsapp-customer-activity.php';
     $activity = akh_wa_customer_activity_editor_status_for_task($t);
-    ob_start();
-    akh_render_editor_customer_activity_hint($activity, $canonicalId);
-    $activityHtml = ob_get_clean();
+    $activityHtml = akh_editor_desk_customer_activity_html($t);
 
     return [
         'ok' => true,
@@ -391,7 +408,7 @@ function akh_editor_desk_thread_poll(string $editorUsername, string $taskId): ar
         'msg_sig' => akh_task_merged_conversation_sig($t),
         'html' => akh_render_task_thread_scroll_html($t, 'editor'),
         'customer_activity' => $activity,
-        'customer_activity_html' => is_string($activityHtml) ? $activityHtml : '',
+        'customer_activity_html' => $activityHtml,
     ];
 }
 

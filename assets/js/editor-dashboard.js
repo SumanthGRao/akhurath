@@ -1323,6 +1323,10 @@
     return postAjax('desk_panel', { task_id: taskId }).then(function (data) {
       if (data && data.ok && data.html) {
         mountPanelHtml(taskId, data.html);
+        if (typeof data.customer_activity_html === 'string') {
+          var panel = findPanel(taskId);
+          if (panel) updateCustomerActivityHint(panel, data.customer_activity_html);
+        }
         if (opts.show) selectTask(taskId, { skipFetch: true, noScroll: opts.noScroll });
       }
       return data;
