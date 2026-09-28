@@ -14,7 +14,7 @@ final class AkhSimplePdf
     /** @var list<string> */
     private array $graphOps = [];
 
-    /** @var list<array{x: float, y: float, size: int, text: string, bold: bool}> */
+    /** @var list<array{x: float, y: float, size: int, text: string, bold: bool, r: float, g: float, b: float}> */
     private array $textOps = [];
 
     public function fillRect(float $x, float $yFromTop, float $w, float $h, float $r, float $g, float $b): void
@@ -32,13 +32,16 @@ final class AkhSimplePdf
         );
     }
 
-    public function line(float $x1, float $y1FromTop, float $x2, float $y2FromTop, float $w = 0.5): void
+    public function line(float $x1, float $y1FromTop, float $x2, float $y2FromTop, float $w = 0.5, float $r = 0.75, float $g = 0.65, float $b = 0.55): void
     {
         $y1 = $this->pageH - $y1FromTop;
         $y2 = $this->pageH - $y2FromTop;
         $this->graphOps[] = sprintf(
-            'q %.2F w 0.75 0.7 0.65 RG %.2F %.2F m %.2F %.2F l S Q',
+            'q %.2F w %.3F %.3F %.3F RG %.2F %.2F m %.2F %.2F l S Q',
             $w,
+            $r,
+            $g,
+            $b,
             $x1,
             $y1,
             $x2,
@@ -46,8 +49,19 @@ final class AkhSimplePdf
         );
     }
 
-    public function text(float $x, float $yFromTop, string $text, int $fontSize = 10, bool $bold = false): void
-    {
+    /**
+     * @param float $r $g $b Text color 0–1 (default near-black).
+     */
+    public function text(
+        float $x,
+        float $yFromTop,
+        string $text,
+        int $fontSize = 10,
+        bool $bold = false,
+        float $r = 0.12,
+        float $g = 0.09,
+        float $b = 0.07
+    ): void {
         $text = trim($text);
         if ($text === '') {
             return;
@@ -58,31 +72,50 @@ final class AkhSimplePdf
             'size' => max(6, min(24, $fontSize)),
             'text' => $this->escapePdfText($this->latin1($text)),
             'bold' => $bold,
+            'r' => $r,
+            'g' => $g,
+            'b' => $b,
         ];
     }
 
-    public function textRight(float $rightX, float $yFromTop, string $text, int $fontSize = 10, bool $bold = false): void
-    {
+    public function textRight(
+        float $rightX,
+        float $yFromTop,
+        string $text,
+        int $fontSize = 10,
+        bool $bold = false,
+        float $r = 0.12,
+        float $g = 0.09,
+        float $b = 0.07
+    ): void {
         $text = trim($text);
         if ($text === '') {
             return;
         }
         $approx = $fontSize * 0.52 * strlen($text);
-        $this->text(max(40, $rightX - $approx), $yFromTop, $text, $fontSize, $bold);
+        $this->text(max(40, $rightX - $approx), $yFromTop, $text, $fontSize, $bold, $r, $g, $b);
     }
 
     public function bytes(): string
     {
-        $stream = implode("\n", $this->graphOps) . "\n";
-        $stream .= "BT\n";
+        $stream = implode("\n", $this->graphOps);
+        if ($stream !== '') {
+            $stream .= "\n";
+        }
         foreach ($this->textOps as $op) {
             $font = $op['bold'] ? 'F2' : 'F1';
-            $stream .= sprintf("/%s %d Tf\n", $font, $op['size']);
-            $stream .= sprintf("%.2F %.2F Td\n", $op['x'], $op['y']);
-            $stream .= '(' . $op['text'] . ") Tj\n";
-            $stream .= sprintf("%.2F %.2F Td\n", -$op['x'], -$op['y']);
+            $stream .= sprintf(
+                "BT /%s %d Tf %.3F %.3F %.3F rg %.2F %.2F Td (%s) Tj ET\n",
+                $font,
+                $op['size'],
+                $op['r'],
+                $op['g'],
+                $op['b'],
+                $op['x'],
+                $op['y'],
+                $op['text']
+            );
         }
-        $stream .= "ET\n";
 
         $len = strlen($stream);
         $objects = [];

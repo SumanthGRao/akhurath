@@ -3,6 +3,29 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/invoices.php';
+require_once __DIR__ . '/invoice-services.php';
+
+/**
+ * @param array<string, mixed> $row Raw or view-model line fields
+ */
+function akh_invoice_line_public_description(array $row): string
+{
+    $desc = trim((string) ($row['description'] ?? ''));
+    $code = trim((string) ($row['task_code'] ?? ''));
+    $sourceRef = trim((string) ($row['source_ref'] ?? ''));
+    $sourceKind = trim((string) ($row['source_kind'] ?? ''));
+    if ($desc === '' && $sourceKind === 'service' && $sourceRef !== '') {
+        $desc = akh_invoice_service_label($sourceRef);
+    }
+    if ($desc === '' && $code !== '') {
+        return $code;
+    }
+    if ($code !== '' && $desc !== '' && !str_contains($desc, $code)) {
+        return $code . ' — ' . $desc;
+    }
+
+    return $desc !== '' ? $desc : 'Service';
+}
 
 /**
  * @param array<string, mixed> $invoice
@@ -19,12 +42,22 @@ function akh_invoice_template_view_model(array $invoice): array
             continue;
         }
         ++$n;
-        $desc = trim((string) ($line['description'] ?? ''));
         $code = trim((string) ($line['task_code'] ?? ''));
+        $sourceKind = trim((string) ($line['source_kind'] ?? ''));
+        $sourceRef = trim((string) ($line['source_ref'] ?? ''));
+        $rowVm = [
+            'task_code' => $code,
+            'description' => trim((string) ($line['description'] ?? '')),
+            'source_kind' => $sourceKind,
+            'source_ref' => $sourceRef,
+        ];
+        $desc = akh_invoice_line_public_description($rowVm);
         $lines[] = [
             'no' => $n,
             'task_code' => $code,
             'description' => $desc,
+            'source_kind' => $sourceKind,
+            'source_ref' => $sourceRef,
             'quantity' => (int) ($line['quantity'] ?? 1),
             'unit_paise' => (int) ($line['unit_amount_paise'] ?? 0),
             'line_paise' => (int) ($line['line_total_paise'] ?? 0),
@@ -134,7 +167,7 @@ function akh_invoice_render_html(array $invoice): string
     <thead>
       <tr>
         <th scope="col">#</th>
-        <th scope="col">Service / particulars</th>
+        <th scope="col">Description</th>
         <th scope="col">Qty</th>
         <th scope="col">Rate</th>
         <th scope="col">Amount</th>
@@ -144,12 +177,7 @@ function akh_invoice_render_html(array $invoice): string
       <?php foreach ($vm['lines'] as $row): ?>
         <tr>
           <td><?php echo (int) $row['no']; ?></td>
-          <td>
-            <?php if ($row['task_code'] !== ''): ?>
-              <span class="inv-doc__task-code"><?php echo h($row['task_code']); ?></span>
-            <?php endif; ?>
-            <?php echo h((string) $row['description']); ?>
-          </td>
+          <td class="inv-doc__desc-cell"><?php echo h((string) $row['description']); ?></td>
           <td><?php echo (int) $row['quantity']; ?></td>
           <td><?php echo h((string) $row['unit_display']); ?></td>
           <td><?php echo h((string) $row['line_display']); ?></td>

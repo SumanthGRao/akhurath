@@ -89,9 +89,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         continue;
                     }
                     $customLabel = trim((string) ($row['custom_label'] ?? ''));
-                    $desc = $key === 'custom' || $key === ''
-                        ? $customLabel
-                        : akh_invoice_service_label($key);
+                    $desc = trim((string) ($row['description'] ?? ''));
+                    if ($desc === '') {
+                        $desc = $key === 'custom' || $key === ''
+                            ? $customLabel
+                            : akh_invoice_service_label($key);
+                    }
                     if ($desc === '') {
                         $desc = $customLabel !== '' ? $customLabel : 'Service';
                     }
@@ -385,7 +388,8 @@ require_once AKH_ROOT . '/includes/header.php';
               <table class="admin-table inv-builder__services">
                 <thead>
                   <tr>
-                    <th>Service</th>
+                    <th>Service type</th>
+                    <th>Description</th>
                     <th>Qty</th>
                     <th>Rate (INR)</th>
                     <th>Line total</th>
@@ -417,9 +421,12 @@ require_once AKH_ROOT . '/includes/header.php';
                     <?php endforeach; ?>
                   </select>
                   <label class="inv-builder__custom-wrap field" hidden>
-                    <span class="visually-hidden">Custom description</span>
-                    <input type="text" class="inv-builder__custom-label" name="svc[__IDX__][custom_label]" maxlength="500" placeholder="Describe custom service" />
+                    <span class="visually-hidden">Custom label</span>
+                    <input type="text" class="inv-builder__custom-label" name="svc[__IDX__][custom_label]" maxlength="500" placeholder="Short label for custom service" />
                   </label>
+                </td>
+                <td>
+                  <input type="text" class="inv-builder__description" name="svc[__IDX__][description]" maxlength="500" placeholder="What you are billing for" style="min-width:12rem" required />
                 </td>
                 <td><input type="number" class="inv-builder__qty" name="svc[__IDX__][qty]" min="1" max="99" value="1" style="max-width:4rem" /></td>
                 <td><input type="text" class="inv-builder__rate" name="svc[__IDX__][rate_inr]" inputmode="decimal" style="max-width:7rem" /></td>

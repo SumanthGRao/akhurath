@@ -41,6 +41,7 @@
   font-size: 1.35rem;
   font-weight: 700;
   letter-spacing: 0.12em;
+  color: #c9a962;
 }
 
 .inv-doc__meta-table {
@@ -94,15 +95,20 @@
   font-size: 0.9rem;
 }
 
+.inv-doc__desc-cell {
+  font-weight: 500;
+  color: #1a1410;
+}
+
 .inv-doc__services thead th {
-  background: #efe8df;
+  background: #2f2218;
+  color: #f8f4ef;
   text-align: left;
   padding: 0.55rem 0.5rem;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #4a3d32;
-  border: 1px solid #ddd2c6;
+  border: 1px solid #3d2e22;
 }
 
 .inv-doc__services tbody td {

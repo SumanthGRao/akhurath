@@ -39,10 +39,18 @@
     return 0;
   }
 
+  function serviceLabel(key) {
+    if (key && catalog[key] && catalog[key].label) {
+      return String(catalog[key].label);
+    }
+    return '';
+  }
+
   function bindRow(tr) {
     var sel = tr.querySelector('.inv-builder__service');
     var customWrap = tr.querySelector('.inv-builder__custom-wrap');
     var customInput = tr.querySelector('.inv-builder__custom-label');
+    var descInput = tr.querySelector('.inv-builder__description');
     var qtyInput = tr.querySelector('.inv-builder__qty');
     var rateInput = tr.querySelector('.inv-builder__rate');
     var lineEl = tr.querySelector('.inv-builder__line-total');
@@ -51,6 +59,22 @@
     function syncCustom() {
       var isCustom = sel && sel.value === 'custom';
       if (customWrap) customWrap.hidden = !isCustom;
+    }
+
+    function syncDescriptionFromService(force) {
+      if (!sel || !descInput) return;
+      var key = sel.value;
+      if (key === 'custom') {
+        if (force && customInput) {
+          descInput.value = String(customInput.value || '').trim();
+        }
+        return;
+      }
+      var label = serviceLabel(key);
+      if (label === '') return;
+      if (force || !String(descInput.value || '').trim()) {
+        descInput.value = label;
+      }
     }
 
     function recalcLine() {
@@ -67,7 +91,15 @@
         var rate = serviceRate(sel.value);
         if (rateInput && rate > 0) rateInput.value = rate.toFixed(2);
         syncCustom();
+        syncDescriptionFromService(true);
         recalcLine();
+      });
+    }
+    if (customInput) {
+      customInput.addEventListener('input', function () {
+        if (sel && sel.value === 'custom' && descInput) {
+          descInput.value = String(customInput.value || '').trim();
+        }
       });
     }
     if (qtyInput) qtyInput.addEventListener('input', recalcLine);
@@ -85,6 +117,7 @@
         rateInput.value = defRate.toFixed(2);
       }
     }
+    syncDescriptionFromService(true);
     recalcLine();
   }
 

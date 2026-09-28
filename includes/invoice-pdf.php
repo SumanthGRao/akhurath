@@ -4,6 +4,69 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/simple-pdf.php';
 require_once __DIR__ . '/invoice-template.php';
+require_once __DIR__ . '/invoice-services.php';
+
+/** Akhurath invoice PDF palette (matches HTML template). */
+final class AkhInvoicePdfTheme
+{
+    public const HEADER_R = 0.184;
+
+    public const HEADER_G = 0.133;
+
+    public const HEADER_B = 0.094;
+
+    public const GOLD_R = 0.788;
+
+    public const GOLD_G = 0.663;
+
+    public const GOLD_B = 0.384;
+
+    public const INK_R = 0.102;
+
+    public const INK_G = 0.078;
+
+    public const INK_B = 0.063;
+
+    public const MUTED_R = 0.42;
+
+    public const MUTED_G = 0.35;
+
+    public const MUTED_B = 0.28;
+
+    public const PAPER_R = 0.97;
+
+    public const PAPER_G = 0.95;
+
+    public const PAPER_B = 0.91;
+}
+
+/**
+ * @return list<string>
+ */
+function akh_invoice_pdf_wrap_text(string $text, int $maxChars = 52): array
+{
+    $text = trim(preg_replace('/\s+/u', ' ', $text) ?? '');
+    if ($text === '') {
+        return [];
+    }
+    $out = [];
+    while (mb_strlen($text) > $maxChars) {
+        $chunk = mb_substr($text, 0, $maxChars);
+        $break = mb_strrpos($chunk, ' ');
+        if ($break !== false && $break > 20) {
+            $out[] = mb_substr($text, 0, $break);
+            $text = trim(mb_substr($text, $break + 1));
+        } else {
+            $out[] = $chunk;
+            $text = trim(mb_substr($text, $maxChars));
+        }
+    }
+    if ($text !== '') {
+        $out[] = $text;
+    }
+
+    return $out;
+}
 
 /**
  * @param array<string, mixed> $invoice Must include lines[]
@@ -15,134 +78,151 @@ function akh_invoice_pdf_bytes(array $invoice): string
     $inv = $vm['invoice'];
     $pdf = new AkhSimplePdf();
 
-    $left = 40.0;
-    $right = 555.0;
-    $pdf->fillRect($left, 0, 515, 52, 0.18, 0.12, 0.08);
-    $pdf->text($left + 8, 22, (string) $profile['name'], 14, true);
-    $pdf->textRight($right - 8, 22, (string) $vm['title'], 16, true);
-    $pdf->textRight($right - 8, 40, 'No. ' . (string) ($inv['invoice_number'] ?? ''), 10, false);
+    $left = 36.0;
+    $right = 559.0;
+    $width = $right - $left;
+    $headerH = 78.0;
 
-    $y = 64.0;
+    $pdf->fillRect($left, 0, $width, $headerH, AkhInvoicePdfTheme::HEADER_R, AkhInvoicePdfTheme::HEADER_G, AkhInvoicePdfTheme::HEADER_B);
+    $pdf->fillRect($left, $headerH, $width, 3, AkhInvoicePdfTheme::GOLD_R, AkhInvoicePdfTheme::GOLD_G, AkhInvoicePdfTheme::GOLD_B);
+
+    $pdf->text($left + 10, 28, (string) $profile['name'], 15, true, 1, 1, 1);
+    $pdf->textRight($right - 10, 26, (string) $vm['title'], 17, true, AkhInvoicePdfTheme::GOLD_R, AkhInvoicePdfTheme::GOLD_G, AkhInvoicePdfTheme::GOLD_B);
+    $pdf->textRight($right - 10, 46, (string) ($inv['invoice_number'] ?? ''), 10, false, 0.95, 0.92, 0.88);
+
+    $y = 92.0;
+    $addrLines = 0;
     if (trim((string) $profile['address']) !== '') {
         foreach (preg_split('/\r\n|\r|\n/', (string) $profile['address']) ?: [] as $line) {
             $line = trim($line);
             if ($line === '') {
                 continue;
             }
-            $pdf->text($left, $y, $line, 9);
-            $y += 12;
+            $pdf->text($left, $y, $line, 9, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
+            $y += 11;
+            ++$addrLines;
+            if ($addrLines > 3) {
+                break;
+            }
         }
     }
     if (trim((string) $profile['gstin']) !== '') {
-        $pdf->text($left, $y, 'GSTIN: ' . (string) $profile['gstin'], 9);
-        $y += 12;
+        $pdf->text($left, $y, 'GSTIN: ' . (string) $profile['gstin'], 9, false, AkhInvoicePdfTheme::MUTED_R, AkhInvoicePdfTheme::MUTED_G, AkhInvoicePdfTheme::MUTED_B);
+        $y += 11;
     }
     if (trim((string) $profile['email']) !== '') {
-        $pdf->text($left, $y, (string) $profile['email'], 9);
-        $y += 12;
+        $pdf->text($left, $y, (string) $profile['email'], 9, false, AkhInvoicePdfTheme::MUTED_R, AkhInvoicePdfTheme::MUTED_G, AkhInvoicePdfTheme::MUTED_B);
+        $y += 11;
     }
 
-    $metaY = 64.0;
+    $metaY = 92.0;
     $issued = (string) ($inv['issued_at'] ?? '');
     if ($issued !== '') {
-        $pdf->textRight($right, $metaY, 'Date: ' . $issued, 9);
+        $pdf->textRight($right, $metaY, 'Date: ' . $issued, 9, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
         $metaY += 12;
     }
     $due = (string) ($inv['due_at'] ?? '');
     if ($due !== '') {
-        $pdf->textRight($right, $metaY, 'Due: ' . $due, 9);
+        $pdf->textRight($right, $metaY, 'Due: ' . $due, 9, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
         $metaY += 12;
     }
 
-    $y = max($y, $metaY) + 14;
-    $pdf->line($left, $y, $right, $y);
-    $y += 14;
-    $pdf->text($left, $y, 'Bill to', 10, true);
-    $y += 14;
-    $pdf->text($left, $y, (string) $vm['bill_name'], 11, true);
-    $y += 13;
+    $y = max($y, $metaY) + 10;
+    $pdf->fillRect($left, $y, $width, 52, AkhInvoicePdfTheme::PAPER_R, AkhInvoicePdfTheme::PAPER_G, AkhInvoicePdfTheme::PAPER_B);
+    $pdf->line($left, $y, $right, $y, 0.5);
+    $pdf->text($left + 8, $y + 16, 'Bill to', 8, true, AkhInvoicePdfTheme::MUTED_R, AkhInvoicePdfTheme::MUTED_G, AkhInvoicePdfTheme::MUTED_B);
+    $pdf->text($left + 8, $y + 30, (string) $vm['bill_name'], 12, true, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
+    $billLine = 44;
     if ($vm['bill_email'] !== '') {
-        $pdf->text($left, $y, $vm['bill_email'], 9);
-        $y += 12;
+        $pdf->text($left + 8, $y + $billLine, $vm['bill_email'], 9, false, AkhInvoicePdfTheme::MUTED_R, AkhInvoicePdfTheme::MUTED_G, AkhInvoicePdfTheme::MUTED_B);
     }
 
-    $y += 10;
+    $y += 62;
     $tableTop = $y;
     $colNo = $left;
-    $colDesc = $left + 22;
-    $colQty = 360;
-    $colRate = 410;
+    $colDesc = $left + 24;
+    $colQty = 358;
+    $colRate = 418;
     $colAmt = $right;
-    $pdf->fillRect($left, $tableTop, 515, 18, 0.93, 0.9, 0.86);
-    $pdf->text($colNo + 4, $tableTop + 13, '#', 9, true);
-    $pdf->text($colDesc, $tableTop + 13, 'Service / particulars', 9, true);
-    $pdf->text($colQty, $tableTop + 13, 'Qty', 9, true);
-    $pdf->text($colRate, $tableTop + 13, 'Rate', 9, true);
-    $pdf->textRight($colAmt, $tableTop + 13, 'Amount', 9, true);
-    $y = $tableTop + 22;
+
+    $pdf->fillRect($left, $tableTop, $width, 20, AkhInvoicePdfTheme::HEADER_R, AkhInvoicePdfTheme::HEADER_G, AkhInvoicePdfTheme::HEADER_B);
+    $pdf->text($colNo + 6, $tableTop + 14, '#', 9, true, 1, 1, 1);
+    $pdf->text($colDesc, $tableTop + 14, 'Description', 9, true, 1, 1, 1);
+    $pdf->text($colQty, $tableTop + 14, 'Qty', 9, true, 1, 1, 1);
+    $pdf->text($colRate, $tableTop + 14, 'Rate', 9, true, 1, 1, 1);
+    $pdf->textRight($colAmt - 4, $tableTop + 14, 'Amount', 9, true, 1, 1, 1);
+    $y = $tableTop + 26;
 
     foreach ($vm['lines'] as $row) {
-        $pdf->line($left, $y - 4, $right, $y - 4, 0.3);
-        $pdf->text($colNo + 4, $y + 8, (string) $row['no'], 9);
-        $desc = (string) $row['description'];
-        if ($row['task_code'] !== '') {
-            $desc = $row['task_code'] . ' - ' . $desc;
+        $desc = akh_invoice_line_public_description($row);
+        $descLines = akh_invoice_pdf_wrap_text($desc, 48);
+        if ($descLines === []) {
+            $descLines = ['Service'];
         }
-        $pdf->text($colDesc, $y + 8, mb_substr($desc, 0, 58), 9);
-        $pdf->text($colQty, $y + 8, (string) $row['quantity'], 9);
-        $pdf->text($colRate, $y + 8, (string) $row['unit_display'], 9);
-        $pdf->textRight($colAmt, $y + 8, (string) $row['line_display'], 9);
-        $y += 18;
-        if ($y > 680) {
+        $rowH = max(18, 12 + count($descLines) * 11);
+        if ($y + $rowH > 700) {
             break;
         }
-    }
-    $pdf->line($left, $y + 2, $right, $y + 2);
 
-    $y += 20;
-    $pdf->textRight($colAmt, $y, 'Subtotal: ' . (string) $vm['subtotal_display'], 10);
+        $pdf->line($left, $y, $right, $y, 0.35, 0.88, 0.82, 0.76);
+        $pdf->text($colNo + 6, $y + 12, (string) $row['no'], 9, false, AkhInvoicePdfTheme::MUTED_R, AkhInvoicePdfTheme::MUTED_G, AkhInvoicePdfTheme::MUTED_B);
+        $lineY = $y + 12;
+        foreach ($descLines as $dl) {
+            $pdf->text($colDesc, $lineY, $dl, 9, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
+            $lineY += 11;
+        }
+        $pdf->text($colQty, $y + 12, (string) $row['quantity'], 9, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
+        $pdf->text($colRate, $y + 12, (string) $row['unit_display'], 9, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
+        $pdf->textRight($colAmt, $y + 12, (string) $row['line_display'], 9, true, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
+        $y += $rowH;
+    }
+    $pdf->line($left, $y, $right, $y, 0.8, AkhInvoicePdfTheme::HEADER_R, AkhInvoicePdfTheme::HEADER_G, AkhInvoicePdfTheme::HEADER_B);
+
+    $y += 16;
+    $totalsX = 380;
+    $pdf->textRight($colAmt, $y, 'Subtotal: ' . (string) $vm['subtotal_display'], 10, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
     $y += 14;
     if ((int) $vm['tax_bps'] > 0) {
-        $pdf->textRight($colAmt, $y, (string) $vm['tax_label'] . ': ' . (string) $vm['tax_display'], 10);
+        $pdf->textRight($colAmt, $y, (string) $vm['tax_label'] . ': ' . (string) $vm['tax_display'], 10, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
         $y += 14;
     }
-    $pdf->textRight($colAmt, $y, 'TOTAL: ' . (string) $vm['total_display'], 12, true);
+    $pdf->fillRect($totalsX, $y - 4, $right - $totalsX, 22, AkhInvoicePdfTheme::PAPER_R, AkhInvoicePdfTheme::PAPER_G, AkhInvoicePdfTheme::PAPER_B);
+    $pdf->textRight($colAmt, $y + 10, 'TOTAL  ' . (string) $vm['total_display'], 12, true, AkhInvoicePdfTheme::HEADER_R, AkhInvoicePdfTheme::HEADER_G, AkhInvoicePdfTheme::HEADER_B);
 
-    $y += 22;
-    $pdf->text($left, $y, 'Amount in words:', 9, true);
+    $y += 28;
+    $pdf->text($left, $y, 'Amount in words', 8, true, AkhInvoicePdfTheme::MUTED_R, AkhInvoicePdfTheme::MUTED_G, AkhInvoicePdfTheme::MUTED_B);
     $y += 12;
-    $pdf->text($left, $y, mb_substr((string) $vm['amount_words'], 0, 95), 9);
+    foreach (akh_invoice_pdf_wrap_text((string) $vm['amount_words'], 90) as $wLine) {
+        $pdf->text($left, $y, $wLine, 9, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
+        $y += 11;
+    }
 
     $notes = trim((string) ($inv['notes'] ?? ''));
     if ($notes !== '') {
-        $y += 20;
-        $pdf->text($left, $y, 'Notes', 9, true);
+        $y += 10;
+        $pdf->text($left, $y, 'Notes', 8, true, AkhInvoicePdfTheme::MUTED_R, AkhInvoicePdfTheme::MUTED_G, AkhInvoicePdfTheme::MUTED_B);
         $y += 12;
-        foreach (preg_split('/\r\n|\r|\n/', $notes) ?: [] as $nLine) {
-            $nLine = trim($nLine);
-            if ($nLine === '') {
-                continue;
-            }
-            $pdf->text($left, $y, mb_substr($nLine, 0, 90), 9);
+        foreach (akh_invoice_pdf_wrap_text($notes, 90) as $nLine) {
+            $pdf->text($left, $y, $nLine, 9, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
             $y += 11;
         }
     }
 
     $footY = 760.0;
     if ($vm['bank_details'] !== '') {
-        $pdf->text($left, $footY, 'Bank details', 9, true);
-        $footY += 12;
+        $pdf->text($left, $footY, 'Bank details', 8, true, AkhInvoicePdfTheme::MUTED_R, AkhInvoicePdfTheme::MUTED_G, AkhInvoicePdfTheme::MUTED_B);
+        $footY += 11;
         foreach (preg_split('/\r\n|\r|\n/', $vm['bank_details']) ?: [] as $bLine) {
             $bLine = trim($bLine);
             if ($bLine === '') {
                 continue;
             }
-            $pdf->text($left, $footY, mb_substr($bLine, 0, 90), 8);
+            $pdf->text($left, $footY, mb_substr($bLine, 0, 95), 8, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
             $footY += 10;
         }
     }
     if ($vm['terms'] !== '') {
-        $pdf->text($left, $footY + 6, 'Terms: ' . mb_substr(str_replace("\n", ' ', $vm['terms']), 0, 100), 8);
+        $pdf->text($left, $footY + 4, 'Terms: ' . mb_substr(str_replace("\n", ' ', $vm['terms']), 0, 110), 8, false, AkhInvoicePdfTheme::MUTED_R, AkhInvoicePdfTheme::MUTED_G, AkhInvoicePdfTheme::MUTED_B);
     }
 
     return $pdf->bytes();
