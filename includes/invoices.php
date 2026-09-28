@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/tasks.php';
-require_once __DIR__ . '/customer-email-store.php';
+require_once __DIR__ . '/invoice-clients.php';
 require_once __DIR__ . '/site-datetime.php';
 
 /**
@@ -292,9 +292,9 @@ function akh_invoice_create(
     if ($clientUsername === '') {
         return ['ok' => false, 'error' => 'Pick a client.'];
     }
-    $cust = akh_customer_accounts();
-    if (!isset($cust[$clientUsername])) {
-        return ['ok' => false, 'error' => 'Unknown client account.'];
+    $invClient = akh_invoice_client_get($clientUsername);
+    if ($invClient === null) {
+        return ['ok' => false, 'error' => 'Pick a client from your invoice client list.'];
     }
     if ($lines === []) {
         return ['ok' => false, 'error' => 'Add at least one line item.'];
@@ -334,7 +334,10 @@ function akh_invoice_create(
     $taxPaise = (int) round($subtotal * $taxRateBps / 10000);
     $total = $subtotal + $taxPaise;
 
-    $email = akh_customer_email_get($clientUsername);
+    $email = trim((string) ($invClient['email'] ?? ''));
+    if ($clientDisplayName === null || trim($clientDisplayName) === '') {
+        $clientDisplayName = trim((string) ($invClient['display_name'] ?? ''));
+    }
     $profile = akh_invoice_studio_profile();
     if ($issuedAt === null || trim($issuedAt) === '') {
         $issuedAt = (new DateTimeImmutable('now', akh_site_timezone()))->format('Y-m-d');
@@ -358,7 +361,7 @@ function akh_invoice_create(
         $ins->execute([
             $num,
             $clientUsername,
-            $email,
+            $email !== '' ? $email : null,
             $clientDisplayName !== null && trim($clientDisplayName) !== '' ? mb_substr(trim($clientDisplayName), 0, 255) : null,
             $subtotal,
             $taxRateBps,

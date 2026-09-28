@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once AKH_ROOT . '/includes/admin-auth.php';
-require_once AKH_ROOT . '/includes/auth.php';
 require_once AKH_ROOT . '/includes/invoices.php';
+require_once AKH_ROOT . '/includes/invoice-clients.php';
 require_once AKH_ROOT . '/includes/invoice-mail.php';
 require_once AKH_ROOT . '/includes/invoice-services.php';
 require_once AKH_ROOT . '/includes/csrf.php';
@@ -25,7 +25,7 @@ $mysqlOk = akh_invoices_enabled();
 
 $invoiceId = (int) ($_GET['id'] ?? 0);
 $viewParam = trim((string) ($_GET['view'] ?? ''));
-$view = $invoiceId > 0 ? 'detail' : ($viewParam === 'create' ? 'create' : 'list');
+$view = $invoiceId > 0 ? 'detail' : ($viewParam === 'create' ? 'create' : ($viewParam === 'clients' ? 'clients' : 'list'));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
@@ -125,6 +125,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header('Location: ' . base_path('admin/invoices.php?id=' . $id));
                 exit;
             }
+        } elseif ($action === 'add_invoice_client') {
+            $name = trim((string) ($_POST['client_display_name'] ?? ''));
+            $email = trim((string) ($_POST['client_email'] ?? ''));
+            $phone = trim((string) ($_POST['client_phone'] ?? ''));
+            $address = trim((string) ($_POST['client_address'] ?? ''));
+            $notes = trim((string) ($_POST['client_notes'] ?? ''));
+            $slug = trim((string) ($_POST['client_slug'] ?? ''));
+            if ($name === '') {
+                $error = 'Client name is required.';
+            } else {
+                $newSlug = akh_invoice_client_add($name, $email, $phone, $address, $notes, $slug !== '' ? $slug : null);
+                if ($newSlug === null) {
+                    $error = 'Could not add client. Check the name and that the reference ID is not already used.';
+                } else {
+                    $flash = 'Client added to your invoice list.';
+                    header('Location: ' . base_path('admin/invoices.php?view=clients'));
+                    exit;
+                }
+            }
+        } elseif ($action === 'delete_invoice_client') {
+            $slug = trim((string) ($_POST['client_slug'] ?? ''));
+            if (!akh_invoice_client_delete($slug)) {
+                $error = 'Could not remove that client.';
+            } else {
+                $flash = 'Client removed from your invoice list.';
+                header('Location: ' . base_path('admin/invoices.php?view=clients'));
+                exit;
+            }
         } elseif ($action === 'void_invoice') {
             $id = (int) ($_POST['invoice_id'] ?? 0);
             $void = akh_invoice_void($id);
@@ -141,10 +169,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$clients = akh_customer_accounts();
-ksort($clients, SORT_STRING);
-$billableClient = strtolower(trim((string) ($_GET['client'] ?? '')));
-$billableRows = $schemaReady ? akh_invoice_billable_rows($billableClient !== '' ? $billableClient : null) : [];
+$invoiceClients = akh_invoice_clients_list();
+$billableRows = $schemaReady ? akh_invoice_billable_rows(null) : [];
 $serviceCatalog = akh_invoice_service_catalog();
 $invCssVer = is_file(AKH_ROOT . '/assets/css/invoice-document.css') ? (string) filemtime(AKH_ROOT . '/assets/css/invoice-document.css') : '1';
 $invJsVer = is_file(AKH_ROOT . '/assets/js/admin-invoice-builder.js') ? (string) filemtime(AKH_ROOT . '/assets/js/admin-invoice-builder.js') : '1';
@@ -163,7 +189,7 @@ require_once AKH_ROOT . '/includes/header.php';
       <header class="admin-head">
         <div>
           <h1 class="portal-title">Invoices</h1>
-          <p class="portal-lead admin-head__meta">Bill completed work, download PDF, and email clients. Completed tasks sync from delivered / closed jobs and from the <code>completed_tasks</code> table.</p>
+          <p class="portal-lead admin-head__meta">Manage your own invoice client list (not portal logins), build multi-service invoices, and email PDFs.</p>
         </div>
         <div class="admin-head__actions">
           <?php require __DIR__ . '/includes/admin-console-sidebar.php'; ?>
@@ -192,37 +218,110 @@ require_once AKH_ROOT . '/includes/header.php';
             <button type="submit" class="btn btn--primary">Create invoice tables</button>
           </form>
         </section>
+      <?php elseif ($view === 'clients'): ?>
+        <section class="portal-section" aria-labelledby="inv-clients-h">
+          <h2 id="inv-clients-h" class="portal-section__title">Invoice clients</h2>
+          <p class="portal-muted">
+            <a class="text-link" href="<?php echo h(base_path('admin/invoices.php')); ?>">← All invoices</a>
+            · These contacts are only for billing — not pulled from the client portal database.
+          </p>
+          <form method="post" action="" class="portal-form">
+            <input type="hidden" name="csrf_token" value="<?php echo h(akh_csrf_token()); ?>" />
+            <input type="hidden" name="action" value="add_invoice_client" />
+            <h3 class="portal-section__title">Add client</h3>
+            <div class="admin-form-row">
+              <label class="field">
+                <span>Name (on invoice)</span>
+                <input type="text" name="client_display_name" required maxlength="255" />
+              </label>
+              <label class="field">
+                <span>Email (for sending PDF)</span>
+                <input type="email" name="client_email" maxlength="255" />
+              </label>
+              <label class="field">
+                <span>Reference ID (optional)</span>
+                <input type="text" name="client_slug" maxlength="64" pattern="[a-z0-9_-]{2,64}" placeholder="auto-generated if blank" />
+              </label>
+            </div>
+            <div class="admin-form-row">
+              <label class="field">
+                <span>Phone</span>
+                <input type="text" name="client_phone" maxlength="40" />
+              </label>
+              <label class="field">
+                <span>Address (optional)</span>
+                <input type="text" name="client_address" maxlength="500" />
+              </label>
+            </div>
+            <label class="field">
+              <span>Internal notes</span>
+              <textarea name="client_notes" rows="2" maxlength="2000"></textarea>
+            </label>
+            <button type="submit" class="btn btn--primary">Add client</button>
+          </form>
+          <h3 class="portal-section__title" style="margin-top:1.5rem">All clients</h3>
+          <?php if ($invoiceClients === []): ?>
+            <p class="portal-muted">No clients yet. Add your first billing contact above.</p>
+          <?php else: ?>
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Reference</th>
+                  <th>Phone</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php foreach ($invoiceClients as $c): ?>
+                  <tr>
+                    <td><?php echo h((string) $c['display_name']); ?></td>
+                    <td><?php echo h((string) $c['email']); ?></td>
+                    <td><code><?php echo h((string) $c['slug']); ?></code></td>
+                    <td><?php echo h((string) $c['phone']); ?></td>
+                    <td>
+                      <form method="post" action="" onsubmit="return confirm('Remove this client from your invoice list?');">
+                        <input type="hidden" name="csrf_token" value="<?php echo h(akh_csrf_token()); ?>" />
+                        <input type="hidden" name="action" value="delete_invoice_client" />
+                        <input type="hidden" name="client_slug" value="<?php echo h((string) $c['slug']); ?>" />
+                        <button type="submit" class="btn btn--ghost btn--sm">Remove</button>
+                      </form>
+                    </td>
+                  </tr>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          <?php endif; ?>
+        </section>
       <?php elseif ($view === 'create'): ?>
         <section class="portal-section" aria-labelledby="inv-create-h">
           <h2 id="inv-create-h" class="portal-section__title">New invoice</h2>
-          <p class="portal-muted"><a class="text-link" href="<?php echo h(base_path('admin/invoices.php')); ?>">← All invoices</a></p>
-          <form method="get" action="" class="portal-form" style="margin-bottom:1rem">
-            <label class="field">
-              <span>Filter billable tasks by client</span>
-              <select name="client" onchange="this.form.submit()">
-                <option value="">All clients</option>
-                <?php foreach ($clients as $u => $_hash): ?>
-                  <option value="<?php echo h($u); ?>"<?php echo $billableClient === $u ? ' selected' : ''; ?>><?php echo h($u); ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-          </form>
+          <p class="portal-muted">
+            <a class="text-link" href="<?php echo h(base_path('admin/invoices.php')); ?>">← All invoices</a>
+            · <a class="text-link" href="<?php echo h(base_path('admin/invoices.php?view=clients')); ?>">Manage clients</a>
+          </p>
+          <?php if ($invoiceClients === []): ?>
+            <p class="banner banner--info" role="status">Add at least one client under <a class="text-link" href="<?php echo h(base_path('admin/invoices.php?view=clients')); ?>">Invoice clients</a> before creating an invoice.</p>
+          <?php endif; ?>
           <form method="post" action="" class="portal-form">
             <input type="hidden" name="csrf_token" value="<?php echo h(akh_csrf_token()); ?>" />
             <input type="hidden" name="action" value="create_invoice" />
             <div class="admin-form-row">
               <label class="field">
-                <span>Client account</span>
-                <select name="client_username" required>
-                  <option value="">— Select —</option>
-                  <?php foreach ($clients as $u => $_hash): ?>
-                    <option value="<?php echo h($u); ?>"<?php echo $billableClient === $u ? ' selected' : ''; ?>><?php echo h($u); ?></option>
+                <span>Bill to</span>
+                <select name="client_username" required<?php echo $invoiceClients === [] ? ' disabled' : ''; ?>>
+                  <option value="">— Select client —</option>
+                  <?php foreach ($invoiceClients as $c): ?>
+                    <option value="<?php echo h((string) $c['slug']); ?>">
+                      <?php echo h((string) $c['display_name']); ?><?php echo (string) $c['email'] !== '' ? ' — ' . h((string) $c['email']) : ''; ?>
+                    </option>
                   <?php endforeach; ?>
                 </select>
               </label>
               <label class="field">
-                <span>Bill-to name (optional)</span>
-                <input type="text" name="client_display_name" maxlength="255" placeholder="Company or couple name" />
+                <span>Override bill-to name (optional)</span>
+                <input type="text" name="client_display_name" maxlength="255" placeholder="Uses client name from list if blank" />
               </label>
               <label class="field">
                 <span>Tax % (GST)</span>
@@ -329,7 +428,7 @@ require_once AKH_ROOT . '/includes/header.php';
               </tr>
             </template>
 
-            <button type="submit" class="btn btn--primary" style="margin-top:1rem">Create draft invoice</button>
+            <button type="submit" class="btn btn--primary" style="margin-top:1rem"<?php echo $invoiceClients === [] ? ' disabled' : ''; ?>>Create draft invoice</button>
           </form>
           <link rel="stylesheet" href="<?php echo h(base_path('assets/css/invoice-document.css')); ?>?v=<?php echo h($invCssVer); ?>" />
           <script src="<?php echo h(base_path('assets/js/admin-invoice-builder.js')); ?>?v=<?php echo h($invJsVer); ?>" defer></script>
@@ -339,7 +438,8 @@ require_once AKH_ROOT . '/includes/header.php';
           <p class="portal-muted"><a class="text-link" href="<?php echo h(base_path('admin/invoices.php')); ?>">← All invoices</a></p>
           <h2 class="portal-section__title"><?php echo h((string) $detail['invoice_number']); ?></h2>
           <p class="portal-muted">
-            Client: <strong><?php echo h((string) $detail['client_username']); ?></strong>
+            Client: <strong><?php echo h(akh_invoice_client_display_label((string) $detail['client_username'])); ?></strong>
+            <span class="portal-muted">(<?php echo h((string) $detail['client_username']); ?>)</span>
             · Status: <strong><?php echo h((string) $detail['status']); ?></strong>
             · Total: <strong><?php echo h(akh_invoice_money_format_paise((int) $detail['total_paise'], (string) $detail['currency'])); ?></strong>
           </p>
@@ -379,6 +479,7 @@ require_once AKH_ROOT . '/includes/header.php';
         <section class="portal-section">
           <p>
             <a class="btn btn--primary btn--sm" href="<?php echo h(base_path('admin/invoices.php?view=create')); ?>">New invoice</a>
+            <a class="btn btn--ghost btn--sm" href="<?php echo h(base_path('admin/invoices.php?view=clients')); ?>">Invoice clients</a>
           </p>
           <?php if ($invoices === []): ?>
             <p class="portal-muted">No invoices yet.</p>
@@ -398,7 +499,7 @@ require_once AKH_ROOT . '/includes/header.php';
                 <?php foreach ($invoices as $inv): ?>
                   <tr>
                     <td><?php echo h((string) $inv['invoice_number']); ?></td>
-                    <td><?php echo h((string) $inv['client_username']); ?></td>
+                    <td><?php echo h(akh_invoice_client_display_label((string) $inv['client_username'])); ?></td>
                     <td><?php echo h((string) $inv['status']); ?></td>
                     <td><?php echo h(akh_invoice_money_format_paise((int) $inv['total_paise'], (string) $inv['currency'])); ?></td>
                     <td><?php echo h((string) ($inv['issued_at'] ?? '')); ?></td>

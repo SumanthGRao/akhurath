@@ -1,0 +1,9 @@
+{
+  "sample_client": {
+    "display_name": "Sample couple / company",
+    "email": "billing@example.com",
+    "phone": "",
+    "address": "",
+    "notes": ""
+  }
+}

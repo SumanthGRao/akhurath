@@ -124,7 +124,9 @@ function akh_invoice_render_html(array $invoice): string
       <?php if ($vm['bill_email'] !== ''): ?>
         <p class="inv-doc__party-meta"><?php echo h($vm['bill_email']); ?></p>
       <?php endif; ?>
-      <p class="inv-doc__party-meta">Client ID: <?php echo h((string) ($inv['client_username'] ?? '')); ?></p>
+      <?php if (trim((string) ($inv['client_username'] ?? '')) !== ''): ?>
+        <p class="inv-doc__party-meta">Ref: <?php echo h((string) $inv['client_username']); ?></p>
+      <?php endif; ?>
     </div>
   </section>
 

@@ -185,6 +185,7 @@ const AKH_TASK_PROGRESS_STALE_HOURS = 48;
 /**
  * Admin invoicing (PDF + email). Requires MySQL tables from sql/migrations/014_invoices_and_completed_tasks.sql.
  * Billable work is tracked in completed_tasks (synced from delivered/closed studio tasks, or inserted by future jobs).
+ * Invoice billing contacts live in data/invoice-clients.json (add them under Admin → Invoices → Invoice clients).
  */
 const AKH_INVOICE_STUDIO_LEGAL_NAME = SITE_NAME;
 const AKH_INVOICE_STUDIO_ADDRESS = "Akhurath Studio\nYour street address\nCity, State — PIN";

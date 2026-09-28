@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/smtp-mail.php';
 require_once __DIR__ . '/invoice-pdf.php';
 require_once __DIR__ . '/invoices.php';
+require_once __DIR__ . '/invoice-clients.php';
 require_once __DIR__ . '/site-notify-mail.php';
 
 /**
@@ -25,7 +26,8 @@ function akh_invoice_email_to_client(int $invoiceId, ?string $overrideEmail = nu
 
     $to = $overrideEmail !== null ? trim($overrideEmail) : trim((string) ($inv['client_email'] ?? ''));
     if ($to === '') {
-        $to = (string) (akh_customer_email_get((string) ($inv['client_username'] ?? '')) ?? '');
+        $ic = akh_invoice_client_get((string) ($inv['client_username'] ?? ''));
+        $to = $ic !== null ? trim((string) ($ic['email'] ?? '')) : '';
     }
     if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
         return ['ok' => false, 'error' => 'Client has no valid email on file.', 'skipped' => false];
