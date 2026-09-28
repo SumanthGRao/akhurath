@@ -7,6 +7,7 @@ require_once AKH_ROOT . '/includes/admin-auth.php';
 require_once AKH_ROOT . '/includes/auth.php';
 require_once AKH_ROOT . '/includes/invoices.php';
 require_once AKH_ROOT . '/includes/invoice-mail.php';
+require_once AKH_ROOT . '/includes/invoice-services.php';
 require_once AKH_ROOT . '/includes/csrf.php';
 
 akh_require_admin();
@@ -71,17 +72,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'task_code' => $taskCode,
                 ];
             }
-            $manualDesc = trim((string) ($_POST['manual_description'] ?? ''));
-            $manualAmount = trim((string) ($_POST['manual_amount'] ?? ''));
-            if ($manualDesc !== '' && $manualAmount !== '') {
-                $lines[] = [
-                    'description' => $manualDesc,
-                    'quantity' => 1,
-                    'unit_amount_paise' => akh_invoice_inr_to_paise($manualAmount),
-                    'source_kind' => 'manual',
-                    'source_ref' => '',
-                    'task_code' => '',
-                ];
+            $svcRows = $_POST['svc'] ?? [];
+            if (is_array($svcRows)) {
+                foreach ($svcRows as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+                    $key = trim((string) ($row['key'] ?? ''));
+                    $qty = (int) ($row['qty'] ?? 0);
+                    if ($qty < 1) {
+                        continue;
+                    }
+                    $rateInr = trim((string) ($row['rate_inr'] ?? ''));
+                    $unitPaise = akh_invoice_inr_to_paise($rateInr);
+                    if ($unitPaise <= 0) {
+                        continue;
+                    }
+                    $customLabel = trim((string) ($row['custom_label'] ?? ''));
+                    $desc = $key === 'custom' || $key === ''
+                        ? $customLabel
+                        : akh_invoice_service_label($key);
+                    if ($desc === '') {
+                        $desc = $customLabel !== '' ? $customLabel : 'Service';
+                    }
+                    $lines[] = [
+                        'description' => $desc,
+                        'quantity' => $qty,
+                        'unit_amount_paise' => $unitPaise,
+                        'source_kind' => 'service',
+                        'source_ref' => $key,
+                        'task_code' => '',
+                    ];
+                }
             }
             $created = akh_invoice_create($client, $lines, $taxBps, $notes, $displayName, null, null);
             if (!($created['ok'] ?? false)) {
@@ -123,6 +145,9 @@ $clients = akh_customer_accounts();
 ksort($clients, SORT_STRING);
 $billableClient = strtolower(trim((string) ($_GET['client'] ?? '')));
 $billableRows = $schemaReady ? akh_invoice_billable_rows($billableClient !== '' ? $billableClient : null) : [];
+$serviceCatalog = akh_invoice_service_catalog();
+$invCssVer = is_file(AKH_ROOT . '/assets/css/invoice-document.css') ? (string) filemtime(AKH_ROOT . '/assets/css/invoice-document.css') : '1';
+$invJsVer = is_file(AKH_ROOT . '/assets/js/admin-invoice-builder.js') ? (string) filemtime(AKH_ROOT . '/assets/js/admin-invoice-builder.js') : '1';
 $invoices = $schemaReady ? akh_invoice_list_all() : [];
 $detail = ($schemaReady && $invoiceId > 0) ? akh_invoice_get($invoiceId) : null;
 if ($view === 'detail' && $detail === null) {
@@ -201,7 +226,7 @@ require_once AKH_ROOT . '/includes/header.php';
               </label>
               <label class="field">
                 <span>Tax % (GST)</span>
-                <input type="text" name="tax_percent" inputmode="decimal" placeholder="<?php echo h(number_format((int) $profile['default_tax_bps'] / 100, 2)); ?>" />
+                <input type="text" id="inv-tax-percent" name="tax_percent" inputmode="decimal" placeholder="<?php echo h(number_format((int) $profile['default_tax_bps'] / 100, 2)); ?>" value="<?php echo (int) $profile['default_tax_bps'] > 0 ? h(number_format((int) $profile['default_tax_bps'] / 100, 2)) : ''; ?>" />
               </label>
             </div>
             <label class="field">
@@ -255,20 +280,59 @@ require_once AKH_ROOT . '/includes/header.php';
               </table>
             <?php endif; ?>
 
-            <h3 class="portal-section__title">Manual line (optional)</h3>
-            <div class="admin-form-row">
-              <label class="field">
-                <span>Description</span>
-                <input type="text" name="manual_description" maxlength="500" />
-              </label>
-              <label class="field">
-                <span>Amount (INR)</span>
-                <input type="text" name="manual_amount" inputmode="decimal" />
-              </label>
+            <h3 class="portal-section__title">Studio services</h3>
+            <p class="portal-muted">Add one or more services. Line totals and invoice total update as you type.</p>
+            <div id="inv-builder" class="inv-builder" data-catalog="<?php echo h(json_encode($serviceCatalog, JSON_THROW_ON_ERROR)); ?>">
+              <table class="admin-table inv-builder__services">
+                <thead>
+                  <tr>
+                    <th>Service</th>
+                    <th>Qty</th>
+                    <th>Rate (INR)</th>
+                    <th>Line total</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="inv-builder-rows"></tbody>
+              </table>
+              <p><button type="button" class="btn btn--ghost btn--sm" id="inv-builder-add">+ Add service</button></p>
+              <div class="inv-builder__totals" aria-live="polite">
+                <dl>
+                  <dt>Subtotal</dt>
+                  <dd id="inv-live-subtotal">Rs. 0.00</dd>
+                  <dt>Tax</dt>
+                  <dd id="inv-live-tax">Rs. 0.00</dd>
+                </dl>
+                <div class="inv-builder__grand">
+                  <span>Total</span>
+                  <span id="inv-live-total">Rs. 0.00</span>
+                </div>
+              </div>
             </div>
+            <template id="inv-builder-row-tpl">
+              <tr class="inv-builder__row">
+                <td>
+                  <select class="inv-builder__service" name="svc[__IDX__][key]">
+                    <?php foreach ($serviceCatalog as $sk => $meta): ?>
+                      <option value="<?php echo h($sk); ?>"><?php echo h((string) $meta['label']); ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                  <label class="inv-builder__custom-wrap field" hidden>
+                    <span class="visually-hidden">Custom description</span>
+                    <input type="text" class="inv-builder__custom-label" name="svc[__IDX__][custom_label]" maxlength="500" placeholder="Describe custom service" />
+                  </label>
+                </td>
+                <td><input type="number" class="inv-builder__qty" name="svc[__IDX__][qty]" min="1" max="99" value="1" style="max-width:4rem" /></td>
+                <td><input type="text" class="inv-builder__rate" name="svc[__IDX__][rate_inr]" inputmode="decimal" style="max-width:7rem" /></td>
+                <td class="inv-builder__line-total">Rs. 0.00</td>
+                <td><button type="button" class="btn btn--ghost btn--sm inv-builder__remove" aria-label="Remove row">×</button></td>
+              </tr>
+            </template>
 
-            <button type="submit" class="btn btn--primary">Create draft invoice</button>
+            <button type="submit" class="btn btn--primary" style="margin-top:1rem">Create draft invoice</button>
           </form>
+          <link rel="stylesheet" href="<?php echo h(base_path('assets/css/invoice-document.css')); ?>?v=<?php echo h($invCssVer); ?>" />
+          <script src="<?php echo h(base_path('assets/js/admin-invoice-builder.js')); ?>?v=<?php echo h($invJsVer); ?>" defer></script>
         </section>
       <?php elseif ($view === 'detail' && is_array($detail)): ?>
         <section class="portal-section">
@@ -280,33 +344,16 @@ require_once AKH_ROOT . '/includes/header.php';
             · Total: <strong><?php echo h(akh_invoice_money_format_paise((int) $detail['total_paise'], (string) $detail['currency'])); ?></strong>
           </p>
           <p>
+            <a class="btn btn--ghost btn--sm" href="<?php echo h(base_path('admin/invoice-print.php?id=' . (int) $detail['id'])); ?>" target="_blank" rel="noopener">Preview template</a>
             <a class="btn btn--ghost btn--sm" href="<?php echo h(base_path('admin/invoice-pdf.php?id=' . (int) $detail['id'])); ?>" target="_blank" rel="noopener">Download PDF</a>
           </p>
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th>Description</th>
-                <th>Qty</th>
-                <th>Rate</th>
-                <th>Line total</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php foreach ((array) ($detail['lines'] ?? []) as $line): ?>
-                <tr>
-                  <td>
-                    <?php if (!empty($line['task_code'])): ?>
-                      <span class="portal-muted"><?php echo h((string) $line['task_code']); ?></span><br />
-                    <?php endif; ?>
-                    <?php echo h((string) ($line['description'] ?? '')); ?>
-                  </td>
-                  <td><?php echo (int) ($line['quantity'] ?? 1); ?></td>
-                  <td><?php echo h(akh_invoice_money_format_paise((int) ($line['unit_amount_paise'] ?? 0))); ?></td>
-                  <td><?php echo h(akh_invoice_money_format_paise((int) ($line['line_total_paise'] ?? 0))); ?></td>
-                </tr>
-              <?php endforeach; ?>
-            </tbody>
-          </table>
+          <div style="margin:1rem 0;border:1px solid #e8dfd4;border-radius:8px;padding:0.5rem;background:#fff">
+            <?php
+            require_once AKH_ROOT . '/includes/invoice-template.php';
+            echo akh_invoice_render_html($detail);
+            ?>
+          </div>
+          <link rel="stylesheet" href="<?php echo h(base_path('assets/css/invoice-document.css')); ?>?v=<?php echo h($invCssVer); ?>" />
           <?php if ((string) ($detail['status'] ?? '') !== 'void'): ?>
             <form method="post" action="" class="portal-form" style="margin-top:1.5rem">
               <input type="hidden" name="csrf_token" value="<?php echo h(akh_csrf_token()); ?>" />

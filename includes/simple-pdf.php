@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Minimal single-page PDF writer (Helvetica, text only) for invoices and similar documents.
+ * Minimal PDF writer (Helvetica + Helvetica-Bold, text, lines, filled rects).
  */
 final class AkhSimplePdf
 {
@@ -11,28 +11,73 @@ final class AkhSimplePdf
 
     private float $pageH = 841.89;
 
-    /** @var list<array{x: float, y: float, size: int, text: string}> */
-    private array $ops = [];
+    /** @var list<string> */
+    private array $graphOps = [];
 
-    public function text(float $x, float $yFromTop, string $text, int $fontSize = 10): void
+    /** @var list<array{x: float, y: float, size: int, text: string, bold: bool}> */
+    private array $textOps = [];
+
+    public function fillRect(float $x, float $yFromTop, float $w, float $h, float $r, float $g, float $b): void
+    {
+        $y = $this->pageH - $yFromTop - $h;
+        $this->graphOps[] = sprintf(
+            'q %.3F %.3F %.3F rg %.2F %.2F %.2F %.2F re f Q',
+            $r,
+            $g,
+            $b,
+            $x,
+            $y,
+            $w,
+            $h
+        );
+    }
+
+    public function line(float $x1, float $y1FromTop, float $x2, float $y2FromTop, float $w = 0.5): void
+    {
+        $y1 = $this->pageH - $y1FromTop;
+        $y2 = $this->pageH - $y2FromTop;
+        $this->graphOps[] = sprintf(
+            'q %.2F w 0.75 0.7 0.65 RG %.2F %.2F m %.2F %.2F l S Q',
+            $w,
+            $x1,
+            $y1,
+            $x2,
+            $y2
+        );
+    }
+
+    public function text(float $x, float $yFromTop, string $text, int $fontSize = 10, bool $bold = false): void
     {
         $text = trim($text);
         if ($text === '') {
             return;
         }
-        $this->ops[] = [
+        $this->textOps[] = [
             'x' => $x,
             'y' => $this->pageH - $yFromTop,
             'size' => max(6, min(24, $fontSize)),
             'text' => $this->escapePdfText($this->latin1($text)),
+            'bold' => $bold,
         ];
+    }
+
+    public function textRight(float $rightX, float $yFromTop, string $text, int $fontSize = 10, bool $bold = false): void
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return;
+        }
+        $approx = $fontSize * 0.52 * strlen($text);
+        $this->text(max(40, $rightX - $approx), $yFromTop, $text, $fontSize, $bold);
     }
 
     public function bytes(): string
     {
-        $stream = "BT\n";
-        foreach ($this->ops as $op) {
-            $stream .= sprintf("/F1 %d Tf\n", $op['size']);
+        $stream = implode("\n", $this->graphOps) . "\n";
+        $stream .= "BT\n";
+        foreach ($this->textOps as $op) {
+            $font = $op['bold'] ? 'F2' : 'F1';
+            $stream .= sprintf("/%s %d Tf\n", $font, $op['size']);
             $stream .= sprintf("%.2F %.2F Td\n", $op['x'], $op['y']);
             $stream .= '(' . $op['text'] . ") Tj\n";
             $stream .= sprintf("%.2F %.2F Td\n", -$op['x'], -$op['y']);
@@ -44,12 +89,13 @@ final class AkhSimplePdf
         $objects[] = '<< /Type /Catalog /Pages 2 0 R >>';
         $objects[] = '<< /Type /Pages /Kids [3 0 R] /Count 1 >>';
         $objects[] = sprintf(
-            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.2F %.2F] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.2F %.2F] /Contents 4 0 R /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> >>',
             $this->pageW,
             $this->pageH
         );
         $objects[] = "<< /Length {$len} >>\nstream\n{$stream}\nendstream";
         $objects[] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
+        $objects[] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>';
 
         $pdf = "%PDF-1.4\n";
         $offsets = [0];

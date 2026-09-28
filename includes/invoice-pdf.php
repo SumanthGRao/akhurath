@@ -3,121 +3,146 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/simple-pdf.php';
-require_once __DIR__ . '/invoices.php';
+require_once __DIR__ . '/invoice-template.php';
 
 /**
  * @param array<string, mixed> $invoice Must include lines[]
  */
 function akh_invoice_pdf_bytes(array $invoice): string
 {
-    $profile = akh_invoice_studio_profile();
+    $vm = akh_invoice_template_view_model($invoice);
+    $profile = $vm['profile'];
+    $inv = $vm['invoice'];
     $pdf = new AkhSimplePdf();
-    $y = 48.0;
-    $pdf->text(48, $y, (string) ($profile['name'] ?? SITE_NAME), 16);
-    $y += 20;
-    if (trim((string) ($profile['address'] ?? '')) !== '') {
+
+    $left = 40.0;
+    $right = 555.0;
+    $pdf->fillRect($left, 0, 515, 52, 0.18, 0.12, 0.08);
+    $pdf->text($left + 8, 22, (string) $profile['name'], 14, true);
+    $pdf->textRight($right - 8, 22, (string) $vm['title'], 16, true);
+    $pdf->textRight($right - 8, 40, 'No. ' . (string) ($inv['invoice_number'] ?? ''), 10, false);
+
+    $y = 64.0;
+    if (trim((string) $profile['address']) !== '') {
         foreach (preg_split('/\r\n|\r|\n/', (string) $profile['address']) ?: [] as $line) {
             $line = trim($line);
             if ($line === '') {
                 continue;
             }
-            $pdf->text(48, $y, $line, 10);
-            $y += 14;
+            $pdf->text($left, $y, $line, 9);
+            $y += 12;
         }
     }
-    if (trim((string) ($profile['gstin'] ?? '')) !== '') {
-        $pdf->text(48, $y, 'GSTIN: ' . (string) $profile['gstin'], 10);
-        $y += 14;
+    if (trim((string) $profile['gstin']) !== '') {
+        $pdf->text($left, $y, 'GSTIN: ' . (string) $profile['gstin'], 9);
+        $y += 12;
     }
-    if (trim((string) ($profile['email'] ?? '')) !== '') {
-        $pdf->text(48, $y, (string) $profile['email'], 10);
-        $y += 18;
+    if (trim((string) $profile['email']) !== '') {
+        $pdf->text($left, $y, (string) $profile['email'], 9);
+        $y += 12;
     }
 
-    $pdf->text(360, 48, 'INVOICE', 18);
-    $pdf->text(360, 72, 'No. ' . (string) ($invoice['invoice_number'] ?? ''), 11);
-    $issued = (string) ($invoice['issued_at'] ?? '');
+    $metaY = 64.0;
+    $issued = (string) ($inv['issued_at'] ?? '');
     if ($issued !== '') {
-        $pdf->text(360, 88, 'Issued: ' . $issued, 10);
+        $pdf->textRight($right, $metaY, 'Date: ' . $issued, 9);
+        $metaY += 12;
     }
-    $due = (string) ($invoice['due_at'] ?? '');
+    $due = (string) ($inv['due_at'] ?? '');
     if ($due !== '') {
-        $pdf->text(360, 102, 'Due: ' . $due, 10);
+        $pdf->textRight($right, $metaY, 'Due: ' . $due, 9);
+        $metaY += 12;
     }
 
-    $y = max($y + 10, 130);
-    $pdf->text(48, $y, 'Bill to', 11);
-    $y += 16;
-    $billName = trim((string) ($invoice['client_display_name'] ?? ''));
-    if ($billName === '') {
-        $billName = (string) ($invoice['client_username'] ?? '');
-    }
-    $pdf->text(48, $y, $billName, 11);
+    $y = max($y, $metaY) + 14;
+    $pdf->line($left, $y, $right, $y);
     $y += 14;
-    $billEmail = trim((string) ($invoice['client_email'] ?? ''));
-    if ($billEmail !== '') {
-        $pdf->text(48, $y, $billEmail, 10);
-        $y += 14;
-    }
-    $y += 12;
-
-    $pdf->text(48, $y, 'Description', 10);
-    $pdf->text(320, $y, 'Qty', 10);
-    $pdf->text(360, $y, 'Rate', 10);
-    $pdf->text(440, $y, 'Amount', 10);
-    $y += 16;
-
-    $currency = (string) ($invoice['currency'] ?? 'INR');
-    $lines = is_array($invoice['lines'] ?? null) ? $invoice['lines'] : [];
-    foreach ($lines as $line) {
-        if (!is_array($line)) {
-            continue;
-        }
-        $desc = (string) ($line['description'] ?? '');
-        $code = trim((string) ($line['task_code'] ?? ''));
-        if ($code !== '') {
-            $desc = $code . ' — ' . $desc;
-        }
-        $qty = (int) ($line['quantity'] ?? 1);
-        $unit = (int) ($line['unit_amount_paise'] ?? 0);
-        $total = (int) ($line['line_total_paise'] ?? 0);
-        $pdf->text(48, $y, mb_substr($desc, 0, 72), 9);
-        $pdf->text(320, $y, (string) $qty, 9);
-        $pdf->text(360, $y, akh_invoice_money_format_paise($unit, $currency), 9);
-        $pdf->text(440, $y, akh_invoice_money_format_paise($total, $currency), 9);
-        $y += 14;
-        if ($y > 720) {
-            break;
-        }
+    $pdf->text($left, $y, 'Bill to', 10, true);
+    $y += 14;
+    $pdf->text($left, $y, (string) $vm['bill_name'], 11, true);
+    $y += 13;
+    if ($vm['bill_email'] !== '') {
+        $pdf->text($left, $y, $vm['bill_email'], 9);
+        $y += 12;
     }
 
     $y += 10;
-    $subtotal = (int) ($invoice['subtotal_paise'] ?? 0);
-    $tax = (int) ($invoice['tax_paise'] ?? 0);
-    $taxBps = (int) ($invoice['tax_rate_bps'] ?? 0);
-    $grand = (int) ($invoice['total_paise'] ?? 0);
-    $pdf->text(360, $y, 'Subtotal: ' . akh_invoice_money_format_paise($subtotal, $currency), 10);
+    $tableTop = $y;
+    $colNo = $left;
+    $colDesc = $left + 22;
+    $colQty = 360;
+    $colRate = 410;
+    $colAmt = $right;
+    $pdf->fillRect($left, $tableTop, 515, 18, 0.93, 0.9, 0.86);
+    $pdf->text($colNo + 4, $tableTop + 13, '#', 9, true);
+    $pdf->text($colDesc, $tableTop + 13, 'Service / particulars', 9, true);
+    $pdf->text($colQty, $tableTop + 13, 'Qty', 9, true);
+    $pdf->text($colRate, $tableTop + 13, 'Rate', 9, true);
+    $pdf->textRight($colAmt, $tableTop + 13, 'Amount', 9, true);
+    $y = $tableTop + 22;
+
+    foreach ($vm['lines'] as $row) {
+        $pdf->line($left, $y - 4, $right, $y - 4, 0.3);
+        $pdf->text($colNo + 4, $y + 8, (string) $row['no'], 9);
+        $desc = (string) $row['description'];
+        if ($row['task_code'] !== '') {
+            $desc = $row['task_code'] . ' - ' . $desc;
+        }
+        $pdf->text($colDesc, $y + 8, mb_substr($desc, 0, 58), 9);
+        $pdf->text($colQty, $y + 8, (string) $row['quantity'], 9);
+        $pdf->text($colRate, $y + 8, (string) $row['unit_display'], 9);
+        $pdf->textRight($colAmt, $y + 8, (string) $row['line_display'], 9);
+        $y += 18;
+        if ($y > 680) {
+            break;
+        }
+    }
+    $pdf->line($left, $y + 2, $right, $y + 2);
+
+    $y += 20;
+    $pdf->textRight($colAmt, $y, 'Subtotal: ' . (string) $vm['subtotal_display'], 10);
     $y += 14;
-    if ($taxBps > 0) {
-        $pct = number_format($taxBps / 100, 2) . '%';
-        $pdf->text(360, $y, 'Tax (' . $pct . '): ' . akh_invoice_money_format_paise($tax, $currency), 10);
+    if ((int) $vm['tax_bps'] > 0) {
+        $pdf->textRight($colAmt, $y, (string) $vm['tax_label'] . ': ' . (string) $vm['tax_display'], 10);
         $y += 14;
     }
-    $pdf->text(360, $y, 'Total: ' . akh_invoice_money_format_paise($grand, $currency), 12);
+    $pdf->textRight($colAmt, $y, 'TOTAL: ' . (string) $vm['total_display'], 12, true);
 
-    $notes = trim((string) ($invoice['notes'] ?? ''));
+    $y += 22;
+    $pdf->text($left, $y, 'Amount in words:', 9, true);
+    $y += 12;
+    $pdf->text($left, $y, mb_substr((string) $vm['amount_words'], 0, 95), 9);
+
+    $notes = trim((string) ($inv['notes'] ?? ''));
     if ($notes !== '') {
-        $y += 28;
-        $pdf->text(48, $y, 'Notes', 10);
-        $y += 14;
+        $y += 20;
+        $pdf->text($left, $y, 'Notes', 9, true);
+        $y += 12;
         foreach (preg_split('/\r\n|\r|\n/', $notes) ?: [] as $nLine) {
             $nLine = trim($nLine);
             if ($nLine === '') {
                 continue;
             }
-            $pdf->text(48, $y, mb_substr($nLine, 0, 90), 9);
-            $y += 12;
+            $pdf->text($left, $y, mb_substr($nLine, 0, 90), 9);
+            $y += 11;
         }
+    }
+
+    $footY = 760.0;
+    if ($vm['bank_details'] !== '') {
+        $pdf->text($left, $footY, 'Bank details', 9, true);
+        $footY += 12;
+        foreach (preg_split('/\r\n|\r|\n/', $vm['bank_details']) ?: [] as $bLine) {
+            $bLine = trim($bLine);
+            if ($bLine === '') {
+                continue;
+            }
+            $pdf->text($left, $footY, mb_substr($bLine, 0, 90), 8);
+            $footY += 10;
+        }
+    }
+    if ($vm['terms'] !== '') {
+        $pdf->text($left, $footY + 6, 'Terms: ' . mb_substr(str_replace("\n", ' ', $vm['terms']), 0, 100), 8);
     }
 
     return $pdf->bytes();

@@ -54,6 +54,8 @@ require_once AKH_ROOT . '/includes/header.php';
                 <td><?php echo h((string) ($inv['issued_at'] ?? '')); ?></td>
                 <td><?php echo h((string) ($inv['due_at'] ?? '')); ?></td>
                 <td>
+                  <a class="text-link" href="<?php echo h(base_path('customer/invoice-print.php?id=' . (int) $inv['id'])); ?>" target="_blank" rel="noopener">View</a>
+                  ·
                   <a class="text-link" href="<?php echo h(base_path('customer/invoice-pdf.php?id=' . (int) $inv['id'])); ?>" target="_blank" rel="noopener">PDF</a>
                 </td>
               </tr>

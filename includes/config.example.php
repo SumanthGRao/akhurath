@@ -192,6 +192,10 @@ const AKH_INVOICE_GSTIN = '';
 /** Tax in basis points (1800 = 18% GST). Set 0 if tax is not shown. */
 const AKH_INVOICE_DEFAULT_TAX_BPS = 0;
 const AKH_INVOICE_DUE_DAYS = 15;
+const AKH_INVOICE_BANK_DETAILS = "Account name: Akhurath Studio\nBank: Your bank\nIFSC: XXXX0000000\nAccount no.: 000000000000";
+const AKH_INVOICE_TERMS = 'Payment is due by the due date on this invoice. Please include the invoice number in your transfer reference.';
+/** Optional extra rows in the service dropdown: slug => ['label' => '…', 'inr' => 5000] */
+const AKH_INVOICE_EXTRA_SERVICES = [];
 
 /**
  * Customer portal: web UI for your NAS / drive (Synology Drive, Nextcloud, etc.).
