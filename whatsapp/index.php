@@ -200,13 +200,21 @@ foreach (akh_wa_task_statuses() as $st) {
           <span class="wa-tabs__badge wa-tabs__badge--hidden" id="wa-closed-badge">0</span>
         <?php endif; ?>
       </button>
+      <button type="button" class="wa-tabs__btn" data-wa-tab="cancelled" id="wa-tab-cancelled">
+        Cancelled
+        <?php if ((int) ($initialCounts['cancelled'] ?? 0) > 0): ?>
+          <span class="wa-tabs__badge" id="wa-cancelled-badge"><?php echo (int) $initialCounts['cancelled']; ?></span>
+        <?php else: ?>
+          <span class="wa-tabs__badge wa-tabs__badge--hidden" id="wa-cancelled-badge">0</span>
+        <?php endif; ?>
+      </button>
     </nav>
 
     <div class="wa-panel" id="wa-panel-tasks">
 
     <section class="wa-stats" aria-label="Task counts by status">
       <?php foreach (akh_wa_task_statuses() as $st): ?>
-        <?php if ($st === 'closed') { continue; } ?>
+        <?php if ($st === 'closed' || $st === 'cancelled') { continue; } ?>
         <button
           type="button"
           class="wa-stat wa-stat--<?php echo h($st); ?><?php echo $fStatus === $st ? ' is-active' : ''; ?>"
@@ -389,6 +397,35 @@ foreach (akh_wa_task_statuses() as $st) {
           </thead>
           <tbody id="wa-closed-body">
             <tr class="wa-table__empty"><td colspan="9">No closed tasks.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="wa-panel wa-panel--hidden" id="wa-panel-cancelled" hidden>
+      <section class="wa-toolbar">
+        <label class="wa-search">
+          <span class="visually-hidden">Search cancelled tasks</span>
+          <input type="search" id="wa-cancelled-search" placeholder="Search cancelled tasks…" autocomplete="off" />
+        </label>
+      </section>
+      <div class="wa-table-wrap" id="wa-cancelled-table-wrap">
+        <table class="wa-table" id="wa-cancelled-table">
+          <thead id="wa-cancelled-head">
+            <tr>
+              <th scope="col">Task ID</th>
+              <th scope="col">Customer</th>
+              <th scope="col">Project</th>
+              <th scope="col">Type</th>
+              <th scope="col">Editor</th>
+              <th scope="col">Assigned</th>
+              <th scope="col">Updated</th>
+              <th scope="col">Last progress</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="wa-cancelled-body">
+            <tr class="wa-table__empty"><td colspan="9">No cancelled tasks.</td></tr>
           </tbody>
         </table>
       </div>

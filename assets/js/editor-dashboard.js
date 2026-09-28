@@ -49,6 +49,7 @@
     { value: 'delivered', label: 'Delivered' },
     { value: 'reverted', label: 'Returned for revision' },
     { value: 'closed', label: 'Closed' },
+    { value: 'cancelled', label: 'Cancelled' },
   ];
 
   function qs(sel, ctx) {
@@ -339,7 +340,7 @@
     b.classList.toggle('desk-bell--pop', typeof n === 'number' && n > 0);
   }
 
-  function updateTabBadges(poolCount, mineCount, meetingsCount, closedCount) {
+  function updateTabBadges(poolCount, mineCount, meetingsCount, closedCount, cancelledCount) {
     qsa('.edesk-tab', root).forEach(function (tab) {
       var section = tab.getAttribute('data-section');
       var n =
@@ -349,7 +350,9 @@
             ? mineCount
             : section === 'closed'
               ? closedCount || 0
-              : meetingsCount || 0;
+              : section === 'cancelled'
+                ? cancelledCount || 0
+                : meetingsCount || 0;
       if (typeof n !== 'number' || n < 0 || !Number.isFinite(n)) {
         n = 0;
       }
@@ -605,6 +608,7 @@
     mine: qs('#edesk-list-mine', root),
     meetings: qs('#edesk-list-meetings', root),
     closed: qs('#edesk-list-closed', root),
+    cancelled: qs('#edesk-list-cancelled', root),
   };
   var panelsHost = qs('#edesk-detail-scroll', root);
   var emptyEl = qs('#edesk-empty', root);
@@ -652,8 +656,8 @@
       if (lists[key]) lists[key].hidden = key !== section;
     });
     var filtersWrap = qs('.edesk-filters', root);
-    if (filtersWrap) filtersWrap.hidden = section === 'meetings' || section === 'closed';
-    if (section !== 'meetings' && section !== 'closed') {
+    if (filtersWrap) filtersWrap.hidden = section === 'meetings' || section === 'closed' || section === 'cancelled';
+    if (section !== 'meetings' && section !== 'closed' && section !== 'cancelled') {
       syncStatusFilterOptions(section);
     }
     var hint = qs('#edesk-sidebar-hint', root);
@@ -665,7 +669,9 @@
             ? 'Upcoming Google Meet sessions — select one to open the linked task.'
             : section === 'closed'
               ? 'Finished jobs stay here for reference — reopen from the task detail if needed.'
-              : 'Live updates for messages, feedback, and status changes.';
+              : section === 'cancelled'
+                ? 'Cancelled jobs are kept here for reference.'
+                : 'Live updates for messages, feedback, and status changes.';
     }
     if (searchInput) {
       searchInput.placeholder = section === 'meetings' ? 'Search meetings…' : 'Search tasks…';
@@ -848,7 +854,7 @@
       .join('\n');
   }
 
-  var lastDeskListKeys = { pool: '', mine: '', closed: '', meetings: '' };
+  var lastDeskListKeys = { pool: '', mine: '', closed: '', cancelled: '', meetings: '' };
 
   function replaceListItem(el, row, selected) {
     if (!el || !row) return null;
@@ -932,7 +938,7 @@
 
   function applyListFilters() {
     var q = normalizeSearch(searchQuery);
-    ['pool', 'mine', 'closed'].forEach(function (section) {
+    ['pool', 'mine', 'closed', 'cancelled'].forEach(function (section) {
       var listEl = lists[section];
       if (!listEl) return;
       var isActiveList = section === activeSection;
@@ -1310,7 +1316,8 @@
         data.desk.pool_count || (data.desk.pool || []).length,
         data.desk.mine_count || (data.desk.mine || []).length,
         (data.desk.meetings || []).length,
-        data.desk.closed_count || (data.desk.closed || []).length
+        data.desk.closed_count || (data.desk.closed || []).length,
+        data.desk.cancelled_count || (data.desk.cancelled || []).length
       );
       refreshRelativeTimes();
     }
@@ -1678,16 +1685,19 @@
     syncListSection('pool', desk.pool || [], preserveSelection);
     syncListSection('mine', desk.mine || [], preserveSelection);
     syncListSection('closed', desk.closed || [], preserveSelection);
+    syncListSection('cancelled', desk.cancelled || [], preserveSelection);
     renderMeetingsList(desk.meetings || []);
     var poolRows = desk.pool || [];
     var mineRows = desk.mine || [];
     var closedRows = desk.closed || [];
+    var cancelledRows = desk.cancelled || [];
     var meetingRows = desk.meetings || [];
     updateTabBadges(
       typeof desk.pool_count === 'number' ? desk.pool_count : poolRows.length,
       typeof desk.mine_count === 'number' ? desk.mine_count : mineRows.length,
       meetingRows.length,
-      typeof desk.closed_count === 'number' ? desk.closed_count : closedRows.length
+      typeof desk.closed_count === 'number' ? desk.closed_count : closedRows.length,
+      typeof desk.cancelled_count === 'number' ? desk.cancelled_count : cancelledRows.length
     );
     refreshRelativeTimes();
     if (skipPanelRefresh || !preserveSelection || !activeTaskId || !prevActive) return;
@@ -1748,6 +1758,9 @@
       } else if (section === 'closed') {
         var firstClosed = qs('.edesk-list__item[data-section="closed"]:not([hidden])', root);
         selectTask(firstClosed ? firstClosed.getAttribute('data-task-id') || '' : '');
+      } else if (section === 'cancelled') {
+        var firstCancelled = qs('.edesk-list__item[data-section="cancelled"]:not([hidden])', root);
+        selectTask(firstCancelled ? firstCancelled.getAttribute('data-task-id') || '' : '');
       } else {
         var first = qs('.edesk-list__item[data-section="' + section + '"]:not([hidden])', root);
         selectTask(first ? first.getAttribute('data-task-id') || '' : '');

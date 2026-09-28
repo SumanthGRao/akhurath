@@ -361,6 +361,8 @@ function akh_editor_render_list_item(array $vm, bool $selected = false): void
           <span class="task-badge task-badge--<?php echo h($stSlug); ?>"><?php echo h(akh_task_status_label($st)); ?></span>
         <?php elseif ($section === 'closed'): ?>
           <span class="task-badge task-badge--closed">Closed</span>
+        <?php elseif ($section === 'cancelled'): ?>
+          <span class="task-badge task-badge--cancelled">Cancelled</span>
         <?php endif; ?>
         <?php if ($vm['has_reminder']): ?>
           <span class="edesk-list__pill edesk-list__pill--soon">Soon</span>
@@ -404,7 +406,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
     $meetingAlert = is_array($taskAlert) && str_starts_with((string) ($taskAlert['kind'] ?? ''), 'meeting_')
         ? $taskAlert
         : null;
-    $opts = ['assigned', 'in_progress', 'review', 'preview_sent', 'delivered', 'reverted', 'closed'];
+    $opts = ['assigned', 'in_progress', 'review', 'preview_sent', 'delivered', 'reverted', 'closed', 'cancelled'];
     $pipelineOpts = $section === 'pool' ? ['new', 'assigned'] : $opts;
     ?>
     <article
@@ -423,6 +425,8 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
               <span class="task-badge task-badge--<?php echo h($stSlug); ?>"><?php echo h(akh_task_status_label($st)); ?></span>
             <?php elseif ($section === 'closed'): ?>
               <span class="task-badge task-badge--closed">Closed</span>
+            <?php elseif ($section === 'cancelled'): ?>
+              <span class="task-badge task-badge--cancelled">Cancelled</span>
             <?php else: ?>
               <span class="edesk-panel__chip">Pool</span>
             <?php endif; ?>
@@ -441,7 +445,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
         </dl>
       </header>
 
-      <?php if ($section === 'mine' || $section === 'closed'): ?>
+      <?php if ($section === 'mine' || $section === 'closed' || $section === 'cancelled'): ?>
         <nav class="edesk-pipeline" aria-label="Workflow progress">
           <?php foreach ($pipelineOpts as $o): ?>
             <?php if ($o === 'new') { continue; } ?>

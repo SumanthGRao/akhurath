@@ -16,6 +16,7 @@
   var reminderTasks = {};
   var activeTab = 'tasks';
   var closedQ = '';
+  var cancelledQ = '';
   var bellOpen = false;
   var filterStatus = cfg.filterStatus || '';
   var filterQ = cfg.filterQ || '';
@@ -34,10 +35,11 @@
   var chatTaskCode = '';
   var chatMsgSig = '';
   var chatPollTimer = null;
-  var columnFilters = { tasks: {}, closed: {} };
+  var columnFilters = { tasks: {}, closed: {}, cancelled: {} };
   var sortState = {
     tasks: { column: '', dir: 'desc' },
     closed: { column: '', dir: 'desc' },
+    cancelled: { column: '', dir: 'desc' },
   };
   var columnFilterDebounce = null;
   var statusLabels = cfg.statusLabels || {};
@@ -93,6 +95,10 @@
     closedBody: document.getElementById('wa-closed-body'),
     closedSearch: document.getElementById('wa-closed-search'),
     closedBadge: document.getElementById('wa-closed-badge'),
+    panelCancelled: document.getElementById('wa-panel-cancelled'),
+    cancelledBody: document.getElementById('wa-cancelled-body'),
+    cancelledSearch: document.getElementById('wa-cancelled-search'),
+    cancelledBadge: document.getElementById('wa-cancelled-badge'),
     meetingsBody: document.getElementById('wa-meetings-body'),
     meetingsBadge: document.getElementById('wa-meetings-badge'),
     meetingBanner: document.getElementById('wa-meeting-banner'),
@@ -109,6 +115,7 @@
     chatEnd: document.getElementById('wa-chat-end'),
     tasksHead: document.getElementById('wa-tasks-head'),
     closedHead: document.getElementById('wa-closed-head'),
+    cancelledHead: document.getElementById('wa-cancelled-head'),
     exportMonth: document.getElementById('wa-export-month'),
     exportDateField: document.getElementById('wa-export-date-field'),
     exportCsv: document.getElementById('wa-export-csv'),
@@ -612,7 +619,7 @@
     if (els.totalCount) {
       var total = 0;
       Object.keys(counts).forEach(function (k) {
-        if (k === 'closed') return;
+        if (k === 'closed' || k === 'cancelled') return;
         total += counts[k] || 0;
       });
       els.totalCount.textContent = String(total);
@@ -621,6 +628,11 @@
       var closedN = parseInt((counts && counts.closed) || 0, 10);
       els.closedBadge.textContent = String(closedN);
       els.closedBadge.classList.toggle('wa-tabs__badge--hidden', closedN === 0);
+    }
+    if (els.cancelledBadge) {
+      var cancelledN = parseInt((counts && counts.cancelled) || 0, 10);
+      els.cancelledBadge.textContent = String(cancelledN);
+      els.cancelledBadge.classList.toggle('wa-tabs__badge--hidden', cancelledN === 0);
     }
   }
 
@@ -657,9 +669,13 @@
     return taskColumnValue(task, col);
   }
 
+  function archiveColumns(tableKind) {
+    return tableKind === 'tasks' ? TASK_COLUMNS : CLOSED_COLUMNS;
+  }
+
   function taskMatchesColumnFilters(task, tableKind) {
     var filters = columnFilters[tableKind] || {};
-    var columns = tableKind === 'closed' ? CLOSED_COLUMNS : TASK_COLUMNS;
+    var columns = archiveColumns(tableKind);
     for (var i = 0; i < columns.length; i++) {
       var col = columns[i];
       var needle = String(filters[col.key] || '').trim();
@@ -689,9 +705,14 @@
   }
 
   function renderColumnTableHead(tableKind) {
-    var head = tableKind === 'closed' ? els.closedHead : els.tasksHead;
+    var head =
+      tableKind === 'closed'
+        ? els.closedHead
+        : tableKind === 'cancelled'
+          ? els.cancelledHead
+          : els.tasksHead;
     if (!head) return;
-    var columns = tableKind === 'closed' ? CLOSED_COLUMNS : TASK_COLUMNS;
+    var columns = archiveColumns(tableKind);
     var filters = columnFilters[tableKind] || {};
     var state = sortState[tableKind] || { column: '', dir: 'desc' };
     var html = '<tr>';
@@ -703,7 +724,7 @@
         filterHtml = '<select class="wa-th__filter" data-col-filter="' + col.key + '" data-table-kind="' + tableKind + '">';
         filterHtml += '<option value="">All</option>';
         (cfg.statuses || []).forEach(function (st) {
-          if (st === 'closed') return;
+          if (st === 'closed' || st === 'cancelled') return;
           var selected = filters[col.key] === st ? ' selected' : '';
           var label = statusLabels[st] || st;
           filterHtml += '<option value="' + escHtml(st) + '"' + selected + '>' + escHtml(label) + '</option>';
@@ -806,7 +827,7 @@
   function sortTasksByColumn(list, tableKind) {
     var state = sortState[tableKind] || { column: '', dir: 'desc' };
     if (!state.column) return list;
-    var columns = tableKind === 'closed' ? CLOSED_COLUMNS : TASK_COLUMNS;
+    var columns = archiveColumns(tableKind);
     var col = findColumnByKey(columns, state.column);
     if (!col) return list;
     list.sort(function (a, b) {
@@ -961,13 +982,13 @@
     }).join('');
   }
 
-  function renderClosedTable(tasks) {
-    if (!els.closedBody) return;
+  function renderArchiveTable(bodyEl, tasks, emptyLabel) {
+    if (!bodyEl) return;
     if (!tasks || tasks.length === 0) {
-      els.closedBody.innerHTML = '<tr class="wa-table__empty"><td colspan="9">No closed tasks.</td></tr>';
+      bodyEl.innerHTML = '<tr class="wa-table__empty"><td colspan="9">' + escHtml(emptyLabel) + '</td></tr>';
       return;
     }
-    els.closedBody.innerHTML = tasks
+    bodyEl.innerHTML = tasks
       .map(function (t) {
         var editor = t.assigned_editor_name ? escHtml(t.assigned_editor_name) : '—';
         return (
@@ -1007,8 +1028,23 @@
       .join('');
   }
 
+  function renderClosedTable(tasks) {
+    renderArchiveTable(els.closedBody, tasks, 'No closed tasks.');
+  }
+
+  function renderCancelledTable(tasks) {
+    renderArchiveTable(els.cancelledBody, tasks, 'No cancelled tasks.');
+  }
+
   function switchTab(tab) {
-    activeTab = tab === 'meetings' ? 'meetings' : tab === 'closed' ? 'closed' : 'tasks';
+    activeTab =
+      tab === 'meetings'
+        ? 'meetings'
+        : tab === 'closed'
+          ? 'closed'
+          : tab === 'cancelled'
+            ? 'cancelled'
+            : 'tasks';
     document.querySelectorAll('[data-wa-tab]').forEach(function (btn) {
       var t = btn.getAttribute('data-wa-tab');
       btn.classList.toggle('is-active', t === activeTab);
@@ -1025,10 +1061,12 @@
       els.panelClosed.hidden = activeTab !== 'closed';
       els.panelClosed.classList.toggle('wa-panel--hidden', activeTab !== 'closed');
     }
+    if (els.panelCancelled) {
+      els.panelCancelled.hidden = activeTab !== 'cancelled';
+      els.panelCancelled.classList.toggle('wa-panel--hidden', activeTab !== 'cancelled');
+    }
     if (activeTab === 'meetings') {
       renderMeetingsTable();
-    } else if (activeTab === 'closed') {
-      loadTasks(false);
     } else {
       loadTasks(false);
     }
@@ -1046,29 +1084,34 @@
   }
 
   function applyFiltersLocally() {
-    if (activeTab === 'closed') {
-      var closedList = Object.keys(tasksById).map(function (id) {
+    if (activeTab === 'closed' || activeTab === 'cancelled') {
+      var archiveKind = activeTab;
+      var archiveList = Object.keys(tasksById).map(function (id) {
         return tasksById[id];
       });
-      var closedState = sortState.closed || { column: '', dir: 'desc' };
-      if (closedState.column) {
-        sortTasksByColumn(closedList, 'closed');
+      var archiveState = sortState[archiveKind] || { column: '', dir: 'desc' };
+      if (archiveState.column) {
+        sortTasksByColumn(archiveList, archiveKind);
       } else {
-        closedList.sort(function (a, b) {
+        archiveList.sort(function (a, b) {
           return String(b.updated_at).localeCompare(String(a.updated_at));
         });
       }
-      var cq = closedQ.toLowerCase().trim();
-      if (cq) {
-        closedList = closedList.filter(function (t) {
+      var aq = (archiveKind === 'closed' ? closedQ : cancelledQ).toLowerCase().trim();
+      if (aq) {
+        archiveList = archiveList.filter(function (t) {
           var hay = [t.task_code, t.customer_name, t.project_name, t.task_type].join(' ').toLowerCase();
-          return hay.indexOf(cq) !== -1;
+          return hay.indexOf(aq) !== -1;
         });
       }
-      closedList = closedList.filter(function (t) {
-        return taskMatchesColumnFilters(t, 'closed');
+      archiveList = archiveList.filter(function (t) {
+        return taskMatchesColumnFilters(t, archiveKind);
       });
-      renderClosedTable(closedList);
+      if (archiveKind === 'closed') {
+        renderClosedTable(archiveList);
+      } else {
+        renderCancelledTable(archiveList);
+      }
       return;
     }
 
@@ -1098,10 +1141,16 @@
     if (loading) return Promise.resolve();
     if (!silent) setLoading(true);
 
+    var listScope = 'active';
+    if (activeTab === 'closed') {
+      listScope = 'closed';
+    } else if (activeTab === 'cancelled') {
+      listScope = 'cancelled';
+    }
     return post('list', {
-      status: activeTab === 'closed' ? '' : filterStatus,
-      q: activeTab === 'closed' ? closedQ : filterQ,
-      scope: activeTab === 'closed' ? 'closed' : 'active',
+      status: activeTab === 'tasks' ? filterStatus : '',
+      q: activeTab === 'closed' ? closedQ : activeTab === 'cancelled' ? cancelledQ : filterQ,
+      scope: listScope,
     })
       .then(function (data) {
         var newCount = (data.tasks || []).length;
@@ -1489,6 +1538,18 @@
       });
     }
 
+    if (els.cancelledSearch) {
+      els.cancelledSearch.addEventListener('input', function () {
+        cancelledQ = els.cancelledSearch.value;
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(function () {
+          if (activeTab === 'cancelled') {
+            loadTasks(false);
+          }
+        }, 350);
+      });
+    }
+
     if (els.search) {
       els.search.addEventListener('input', function () {
         filterQ = els.search.value;
@@ -1509,6 +1570,7 @@
         });
         resetColumnFilters('tasks');
         resetColumnFilters('closed');
+        resetColumnFilters('cancelled');
         loadTasks(false);
       });
     }
@@ -1543,6 +1605,15 @@
 
     if (els.closedBody) {
       els.closedBody.addEventListener('click', function (ev) {
+        var btn = ev.target.closest('[data-wa-edit]');
+        if (!btn) return;
+        var id = parseInt(btn.getAttribute('data-wa-edit'), 10);
+        if (id) openEdit(id);
+      });
+    }
+
+    if (els.cancelledBody) {
+      els.cancelledBody.addEventListener('click', function (ev) {
         var btn = ev.target.closest('[data-wa-edit]');
         if (!btn) return;
         var id = parseInt(btn.getAttribute('data-wa-edit'), 10);
@@ -1672,6 +1743,7 @@
   rebuildReminderTasks(cfg.reminders || []);
   renderColumnTableHead('tasks');
   renderColumnTableHead('closed');
+  renderColumnTableHead('cancelled');
   indexTasks(cfg.tasks || []);
   if (cfg.alerts) {
     clientAlerts = cfg.alerts;

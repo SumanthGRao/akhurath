@@ -264,6 +264,7 @@ $boardCtx = akh_editor_desk_board_context($editor);
 $newTasks = $boardCtx['newTasks'];
 $mine = $boardCtx['mine'];
 $closed = $boardCtx['closed'];
+$cancelled = $boardCtx['cancelled'];
 $dashboardAlerts = $boardCtx['dashboardAlerts'];
 $seenNew = $boardCtx['seenNew'];
 $editorReminderCodes = $boardCtx['editorReminderCodes'];
@@ -295,6 +296,14 @@ if ($openTicketId !== '') {
         foreach ($closed as $t) {
             if (akh_task_ids_match((string) ($t['id'] ?? ''), $openTicketId)) {
                 $defaultDeskTab = 'closed';
+                break;
+            }
+        }
+    }
+    if ($defaultDeskTab !== 'pool' && $defaultDeskTab !== 'closed') {
+        foreach ($cancelled as $t) {
+            if (akh_task_ids_match((string) ($t['id'] ?? ''), $openTicketId)) {
+                $defaultDeskTab = 'cancelled';
                 break;
             }
         }
@@ -346,6 +355,12 @@ require_once AKH_ROOT . '/includes/header.php';
             Closed
             <?php if (count($closed) > 0): ?>
               <span class="edesk-tab__badge"><?php echo count($closed); ?></span>
+            <?php endif; ?>
+          </button>
+          <button type="button" class="edesk-tab" data-section="cancelled" aria-selected="false">
+            Cancelled
+            <?php if (count($cancelled) > 0): ?>
+              <span class="edesk-tab__badge"><?php echo count($cancelled); ?></span>
             <?php endif; ?>
           </button>
         </nav>
@@ -462,6 +477,19 @@ require_once AKH_ROOT . '/includes/header.php';
                 <?php endforeach; ?>
               <?php endif; ?>
             </div>
+            <div class="edesk-list" id="edesk-list-cancelled" role="list" hidden>
+              <?php if ($cancelled === []): ?>
+                <p class="edesk-list__empty">No cancelled tasks.</p>
+              <?php else: ?>
+                <?php foreach ($cancelled as $t): ?>
+                  <?php
+                  $vm = akh_editor_task_view_model($t, $editor, $dashboardAlerts, $editorReminderCodes, $seenNew, 'cancelled');
+                  $sel = $openTicketId !== '' && akh_task_ids_match($openTicketId, (string) $vm['tid']);
+                  akh_editor_render_list_item($vm, $sel);
+                  ?>
+                <?php endforeach; ?>
+              <?php endif; ?>
+            </div>
             <div class="edesk-list edesk-list--meetings" id="edesk-list-meetings" role="list" hidden>
               <?php if ($editorMeetingRows === []): ?>
                 <p class="edesk-list__empty">No upcoming meetings scheduled.</p>
@@ -513,6 +541,15 @@ require_once AKH_ROOT . '/includes/header.php';
                 }
                 $renderedPanels[$tid] = true;
                 $vm = akh_editor_task_view_model($t, $editor, $dashboardAlerts, $editorReminderCodes, $seenNew, 'closed');
+                akh_editor_render_detail_panel($vm, $pageCsrf);
+            }
+            foreach ($cancelled as $t) {
+                $tid = (string) ($t['id'] ?? '');
+                if ($tid === '' || isset($renderedPanels[$tid])) {
+                    continue;
+                }
+                $renderedPanels[$tid] = true;
+                $vm = akh_editor_task_view_model($t, $editor, $dashboardAlerts, $editorReminderCodes, $seenNew, 'cancelled');
                 akh_editor_render_detail_panel($vm, $pageCsrf);
             }
             ?>

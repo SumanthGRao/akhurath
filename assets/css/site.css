@@ -4063,6 +4063,11 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   color: #1f4d32;
 }
 
+.task-badge--cancelled {
+  background: rgba(248, 113, 113, 0.18);
+  color: #b91c1c;
+}
+
 .task-badge--closed {
   background: rgba(26, 23, 21, 0.08);
 }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 /** @return list<string> */
 function akh_wa_task_statuses(): array
 {
-    return ['new', 'assigned', 'editing', 'review', 'preview_sent', 'delivered', 'closed'];
+    return ['new', 'assigned', 'editing', 'review', 'preview_sent', 'delivered', 'closed', 'cancelled'];
 }
 
 function akh_wa_task_status_label(string $status): string
@@ -19,6 +19,7 @@ function akh_wa_task_status_label(string $status): string
         'preview_sent' => 'Preview sent',
         'delivered' => 'Delivered',
         'closed' => 'Closed',
+        'cancelled' => 'Cancelled',
     ];
 
     return $map[$key] ?? ucfirst($key);
@@ -123,7 +124,7 @@ function akh_wa_editors_for_select(): array
 }
 
 /**
- * @param array{status?: string, q?: string, scope?: string} $filters scope: active (default), closed, all
+ * @param array{status?: string, q?: string, scope?: string} $filters scope: active (default), closed, cancelled, all
  * @return list<array<string, mixed>>
  */
 function akh_wa_tasks_list(array $filters = []): array
@@ -144,12 +145,16 @@ function akh_wa_tasks_list(array $filters = []): array
     if ($scope === 'closed') {
         $where[] = 'LOWER(status) = ?';
         $params[] = 'closed';
+    } elseif ($scope === 'cancelled') {
+        $where[] = 'LOWER(status) = ?';
+        $params[] = 'cancelled';
     } elseif ($status !== null) {
         $where[] = 'LOWER(status) = ?';
         $params[] = $status;
     } elseif ($scope !== 'all') {
-        $where[] = 'LOWER(status) <> ?';
+        $where[] = 'LOWER(status) NOT IN (?, ?)';
         $params[] = 'closed';
+        $params[] = 'cancelled';
     }
 
     $q = strtolower(trim((string) ($filters['q'] ?? '')));
@@ -476,6 +481,13 @@ function akh_wa_task_update(int $id, array $fields): array
         return ['ok' => false, 'error' => 'No fields to update.'];
     }
 
+    $prevWaStatus = strtolower(trim((string) ($existing['status'] ?? '')));
+    $statusWillChange = false;
+    if (array_key_exists('status', $fields)) {
+        $normNext = akh_wa_task_normalize_status((string) $fields['status']);
+        $statusWillChange = $normNext !== null && $normNext !== $prevWaStatus;
+    }
+
     if (isset($fields['task_code'])) {
         $dup = akh_db()->prepare('SELECT id FROM whatsapp_tasks WHERE task_code = ? AND id <> ? LIMIT 1');
         $dup->execute([(string) $fields['task_code'], $id]);
@@ -484,6 +496,7 @@ function akh_wa_task_update(int $id, array $fields): array
         }
     }
 
+    $set[] = 'updated_at = CURRENT_TIMESTAMP';
     $params[] = $id;
     $sql = 'UPDATE whatsapp_tasks SET ' . implode(', ', $set) . ' WHERE id = ?';
     akh_db()->prepare($sql)->execute($params);
@@ -494,7 +507,6 @@ function akh_wa_task_update(int $id, array $fields): array
     }
 
     if (array_key_exists('status', $fields)) {
-        $prevWaStatus = strtolower(trim((string) ($existing['status'] ?? '')));
         $nextWaStatus = strtolower(trim((string) ($task['status'] ?? '')));
         if ($prevWaStatus === 'preview_sent' && $nextWaStatus !== 'preview_sent') {
             require_once __DIR__ . '/task-notification-events.php';
@@ -503,6 +515,13 @@ function akh_wa_task_update(int $id, array $fields): array
                 'preview_sent',
                 $nextWaStatus
             );
+        }
+        if ($statusWillChange) {
+            akh_wa_log_dashboard_status_change($task);
+            $studioErr = akh_wa_sync_status_to_studio_board((string) ($task['task_code'] ?? ''), $nextWaStatus);
+            if ($studioErr !== null) {
+                return ['ok' => false, 'error' => 'Saved in WhatsApp tasks, but editor board sync failed: ' . $studioErr, 'task' => $task];
+            }
         }
     }
 
@@ -530,9 +549,62 @@ function akh_wa_map_status_to_studio(string $waStatus): string
         'preview_sent' => 'preview_sent',
         'delivered' => 'delivered',
         'closed' => 'closed',
+        'cancelled' => 'cancelled',
     ];
 
     return $map[$key] ?? 'new';
+}
+
+/**
+ * Mirror WhatsApp task status onto the studio board (app_kv tasks).
+ */
+function akh_wa_sync_status_to_studio_board(string $taskCode, string $waStatus): ?string
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    if ($taskCode === '') {
+        return 'Missing task code.';
+    }
+    $norm = akh_wa_task_normalize_status($waStatus);
+    if ($norm === null) {
+        return 'Invalid WhatsApp status.';
+    }
+    $studioStatus = akh_wa_map_status_to_studio($norm);
+
+    return akh_task_admin_set_status($taskCode, $studioStatus);
+}
+
+/**
+ * @param array<string, mixed> $waRow
+ */
+function akh_wa_log_dashboard_status_change(array $waRow): void
+{
+    require_once __DIR__ . '/whatsapp-task-sync.php';
+
+    if (!akh_wa_task_updates_table_exists()) {
+        return;
+    }
+    $taskCode = akh_task_normalize_id((string) ($waRow['task_code'] ?? ''));
+    if ($taskCode === '') {
+        return;
+    }
+    $waStatus = akh_wa_task_normalize_status((string) ($waRow['status'] ?? '')) ?? 'new';
+    $label = akh_wa_task_status_label($waStatus);
+    $operator = 'WhatsApp dashboard';
+    if (function_exists('akh_wa_dashboard_current')) {
+        $name = trim((string) (akh_wa_dashboard_current() ?? ''));
+        if ($name !== '') {
+            $operator = $name;
+        }
+    }
+    try {
+        akh_db()->prepare(
+            'INSERT INTO task_updates (task_id, status, comment, updated_by) VALUES (?, ?, ?, ?)'
+        )->execute([$taskCode, $label, 'Status updated from WhatsApp dashboard.', $operator]);
+    } catch (Throwable $e) {
+        error_log('akh_wa_log_dashboard_status_change: ' . $e->getMessage());
+    }
 }
 
 function akh_wa_map_status_from_studio(string $studioStatus): ?string
@@ -546,6 +618,7 @@ function akh_wa_map_status_from_studio(string $studioStatus): ?string
         'delivered' => 'delivered',
         'reverted' => 'review',
         'closed' => 'closed',
+        'cancelled' => 'cancelled',
     ];
     $wa = $map[$key] ?? null;
     if ($wa === null) {
@@ -1276,6 +1349,22 @@ function akh_wa_sync_to_studio(array $waRow): ?string
                     return $statusErr;
                 }
             }
+        }
+    }
+
+    $studio = akh_task_by_id($studioId);
+    if ($studio === null) {
+        foreach (akh_tasks_load() as $t) {
+            if (akh_task_ids_match((string) ($t['id'] ?? ''), $studioId)) {
+                $studio = $t;
+                break;
+            }
+        }
+    }
+    if (is_array($studio) && strtolower(trim((string) ($studio['status'] ?? ''))) !== $studioStatus) {
+        $statusErr = akh_wa_sync_status_to_studio_board($taskCode, $waStatus);
+        if ($statusErr !== null) {
+            return $statusErr;
         }
     }
 

@@ -74,13 +74,17 @@ function akh_editor_desk_board_context(string $editorUsername): array
     $closed = array_values(array_filter($mine, static function (array $t): bool {
         return strtolower(trim((string) ($t['status'] ?? ''))) === 'closed';
     }));
+    $cancelled = array_values(array_filter($mine, static function (array $t): bool {
+        return strtolower(trim((string) ($t['status'] ?? ''))) === 'cancelled';
+    }));
     $mine = array_values(array_filter($mine, static function (array $t): bool {
-        return strtolower(trim((string) ($t['status'] ?? ''))) !== 'closed';
+        return !akh_task_status_is_archive((string) ($t['status'] ?? ''));
     }));
 
     $dashboardAlerts = akh_dashboard_alerts_for_editor($editorUsername);
     $mineIds = [];
     $closedIds = [];
+    $cancelledIds = [];
     foreach ($mine as $t) {
         $nid = akh_task_normalize_id((string) ($t['id'] ?? ''));
         if ($nid !== '') {
@@ -93,8 +97,14 @@ function akh_editor_desk_board_context(string $editorUsername): array
             $closedIds[$nid] = true;
         }
     }
+    foreach ($cancelled as $t) {
+        $nid = akh_task_normalize_id((string) ($t['id'] ?? ''));
+        if ($nid !== '') {
+            $cancelledIds[$nid] = true;
+        }
+    }
     foreach (array_keys($dashboardAlerts) as $alertTaskId) {
-        if (isset($mineIds[$alertTaskId]) || isset($closedIds[$alertTaskId])) {
+        if (isset($mineIds[$alertTaskId]) || isset($closedIds[$alertTaskId]) || isset($cancelledIds[$alertTaskId])) {
             continue;
         }
         $extra = akh_task_notification_editor_board_row($alertTaskId, $editorUsername);
@@ -102,10 +112,16 @@ function akh_editor_desk_board_context(string $editorUsername): array
             continue;
         }
         $nid = akh_task_normalize_id((string) ($extra['id'] ?? ''));
-        if (strtolower(trim((string) ($extra['status'] ?? ''))) === 'closed') {
+        $extraSt = strtolower(trim((string) ($extra['status'] ?? '')));
+        if ($extraSt === 'closed') {
             $closed[] = $extra;
             if ($nid !== '') {
                 $closedIds[$nid] = true;
+            }
+        } elseif ($extraSt === 'cancelled') {
+            $cancelled[] = $extra;
+            if ($nid !== '') {
+                $cancelledIds[$nid] = true;
             }
         } else {
             $mine[] = $extra;
@@ -115,6 +131,14 @@ function akh_editor_desk_board_context(string $editorUsername): array
         }
     }
     usort($closed, static function (array $a, array $b): int {
+        $cmp = strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+
+        return strcmp((string) ($a['id'] ?? ''), (string) ($b['id'] ?? ''));
+    });
+    usort($cancelled, static function (array $a, array $b): int {
         $cmp = strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
         if ($cmp !== 0) {
             return $cmp;
@@ -150,6 +174,7 @@ function akh_editor_desk_board_context(string $editorUsername): array
 
     $mine = akh_editor_desk_dedupe_tasks_by_id($mine);
     $closed = akh_editor_desk_dedupe_tasks_by_id($closed);
+    $cancelled = akh_editor_desk_dedupe_tasks_by_id($cancelled);
     $newTasks = akh_editor_desk_dedupe_tasks_by_id($newTasks);
 
     $seenNew = akh_task_editor_seen_load()[$editorUsername] ?? [];
@@ -166,6 +191,7 @@ function akh_editor_desk_board_context(string $editorUsername): array
         'newTasks' => $newTasks,
         'mine' => $mine,
         'closed' => $closed,
+        'cancelled' => $cancelled,
         'dashboardAlerts' => $dashboardAlerts,
         'seenNew' => is_array($seenNew) ? $seenNew : [],
         'editorReminderCodes' => $editorReminderCodes,
@@ -276,6 +302,18 @@ function akh_editor_desk_lists_json(string $editorUsername): array
         );
         $closed[] = akh_editor_desk_list_row_json($vm);
     }
+    $cancelled = [];
+    foreach ($ctx['cancelled'] as $t) {
+        $vm = akh_editor_task_view_model(
+            $t,
+            $editorUsername,
+            $ctx['dashboardAlerts'],
+            $ctx['editorReminderCodes'],
+            $ctx['seenNew'],
+            'cancelled'
+        );
+        $cancelled[] = akh_editor_desk_list_row_json($vm);
+    }
     $meetings = [];
     foreach ($ctx['editorMeetingRows'] as $desk) {
         if (!is_array($desk) || (string) ($desk['task_code'] ?? '') === '') {
@@ -284,7 +322,7 @@ function akh_editor_desk_lists_json(string $editorUsername): array
         $meetings[] = $desk;
     }
 
-    return ['pool' => $pool, 'mine' => $mine, 'closed' => $closed, 'meetings' => $meetings];
+    return ['pool' => $pool, 'mine' => $mine, 'closed' => $closed, 'cancelled' => $cancelled, 'meetings' => $meetings];
 }
 
 /**
@@ -295,6 +333,14 @@ function akh_editor_desk_task_section(array $t, string $editorUsername): string
     $editorUsername = strtolower(trim($editorUsername));
     $assigned = strtolower(trim((string) ($t['assigned_editor'] ?? '')));
     if ($assigned !== '' && $assigned === $editorUsername) {
+        $st = strtolower(trim((string) ($t['status'] ?? '')));
+        if ($st === 'closed') {
+            return 'closed';
+        }
+        if ($st === 'cancelled') {
+            return 'cancelled';
+        }
+
         return 'mine';
     }
     if (akh_task_editor_pool_eligible($t)) {
@@ -335,6 +381,16 @@ function akh_editor_desk_find_task_in_ctx(array $ctx, string $editorUsername, st
                 'task' => $t,
                 'section' => akh_editor_desk_task_section($t, $editorUsername),
             ];
+        }
+    }
+    foreach ($ctx['closed'] as $t) {
+        if (akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
+            return ['task' => $t, 'section' => 'closed'];
+        }
+    }
+    foreach ($ctx['cancelled'] as $t) {
+        if (akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
+            return ['task' => $t, 'section' => 'cancelled'];
         }
     }
 
@@ -455,9 +511,11 @@ function akh_editor_desk_poll_bundle(string $editorUsername): array
         'pool' => $lists['pool'],
         'mine' => $lists['mine'],
         'closed' => $lists['closed'],
+        'cancelled' => $lists['cancelled'],
         'meetings' => $lists['meetings'],
         'pool_count' => count($lists['pool']),
         'mine_count' => count($lists['mine']),
         'closed_count' => count($lists['closed']),
+        'cancelled_count' => count($lists['cancelled']),
     ];
 }

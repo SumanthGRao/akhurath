@@ -763,6 +763,7 @@ function akh_dashboard_data_whatsapp_tasks_filtered(array $filters = []): array
         return [];
     }
 
+    $scope = strtolower(trim((string) ($filters['scope'] ?? 'active')));
     $status = isset($filters['status']) ? strtolower(trim((string) $filters['status'])) : '';
     $q = strtolower(trim((string) ($filters['q'] ?? '')));
 
@@ -771,8 +772,23 @@ function akh_dashboard_data_whatsapp_tasks_filtered(array $filters = []): array
         if (!is_array($row)) {
             continue;
         }
-        if ($status !== '' && strtolower(trim((string) ($row['status'] ?? ''))) !== $status) {
-            continue;
+        $rowStatus = strtolower(trim((string) ($row['status'] ?? '')));
+        if ($scope === 'closed') {
+            if ($rowStatus !== 'closed') {
+                continue;
+            }
+        } elseif ($scope === 'cancelled') {
+            if ($rowStatus !== 'cancelled') {
+                continue;
+            }
+        } elseif ($status !== '') {
+            if ($rowStatus !== $status) {
+                continue;
+            }
+        } elseif ($scope !== 'all') {
+            if ($rowStatus === 'closed' || $rowStatus === 'cancelled') {
+                continue;
+            }
         }
         if ($q !== '') {
             $hay = strtolower(implode(' ', [
