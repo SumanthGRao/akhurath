@@ -903,6 +903,76 @@
   margin-top: 0.55rem;
   padding-top: 0;
   border-top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.edesk-customer-activity {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  line-height: 1.35;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.65) inset;
+}
+
+.edesk-customer-activity--active {
+  background: linear-gradient(135deg, rgba(34, 120, 78, 0.1) 0%, rgba(34, 120, 78, 0.04) 100%);
+  border-color: rgba(34, 120, 78, 0.22);
+}
+
+.edesk-customer-activity--idle {
+  background: linear-gradient(135deg, rgba(168, 72, 32, 0.09) 0%, rgba(168, 72, 32, 0.03) 100%);
+  border-color: rgba(168, 72, 32, 0.2);
+}
+
+.edesk-customer-activity__icon {
+  flex-shrink: 0;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-top: 0.1rem;
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border-radius: 999px;
+}
+
+.edesk-customer-activity--active .edesk-customer-activity__icon {
+  color: #1d6b45;
+  background: rgba(34, 120, 78, 0.14);
+}
+
+.edesk-customer-activity--idle .edesk-customer-activity__icon {
+  color: #a84820;
+  background: rgba(168, 72, 32, 0.12);
+}
+
+.edesk-customer-activity__title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #1c2028;
+}
+
+.edesk-customer-activity__detail {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: rgba(28, 32, 40, 0.68);
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-customer-activity__title {
+  color: #f4f1eb;
+}
+
+html[data-theme="dark"] body.akh-theme-enabled.page-editor-desk .edesk-customer-activity__detail {
+  color: rgba(244, 241, 235, 0.68);
 }
 
 .edesk-card--thread .ticket__msg {

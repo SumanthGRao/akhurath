@@ -379,11 +379,19 @@ function akh_editor_desk_thread_poll(string $editorUsername, string $taskId): ar
 
     $canonicalId = (string) ($t['id'] ?? $taskId);
 
+    require_once __DIR__ . '/whatsapp-customer-activity.php';
+    $activity = akh_wa_customer_activity_editor_status_for_task($t);
+    ob_start();
+    akh_render_editor_customer_activity_hint($activity, $canonicalId);
+    $activityHtml = ob_get_clean();
+
     return [
         'ok' => true,
         'task_id' => $canonicalId,
         'msg_sig' => akh_task_merged_conversation_sig($t),
         'html' => akh_render_task_thread_scroll_html($t, 'editor'),
+        'customer_activity' => $activity,
+        'customer_activity_html' => is_string($activityHtml) ? $activityHtml : '',
     ];
 }
 

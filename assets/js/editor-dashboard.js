@@ -1167,13 +1167,43 @@
     lastThreadSigByTask[taskId] = sig;
   }
 
+  function updateCustomerActivityHint(panel, html) {
+    if (!panel || typeof html !== 'string') return;
+    var form = panel.querySelector('.ticket__thread-form');
+    if (!form) return;
+    var trimmed = html.trim();
+    var existing = form.querySelector('[data-edesk-customer-activity]');
+    if (trimmed === '') {
+      if (existing) existing.remove();
+      return;
+    }
+    var wrap = document.createElement('div');
+    wrap.innerHTML = trimmed;
+    var fresh = wrap.firstElementChild;
+    if (!fresh) return;
+    if (existing) {
+      existing.replaceWith(fresh);
+      return;
+    }
+    var input = form.querySelector('[name="thread_body"]');
+    if (input) {
+      form.insertBefore(fresh, input);
+    } else {
+      form.insertBefore(fresh, form.firstChild);
+    }
+  }
+
   function pollThread(taskId, force) {
     taskId = normId(taskId);
     if (!taskId) return Promise.resolve();
     var panel = findPanel(taskId);
     if (!panel || !panel.querySelector('.ticket__thread')) return Promise.resolve();
     return postAjax('thread_poll', { task_id: taskId }).then(function (data) {
-      if (!data || !data.ok || typeof data.html !== 'string') return data;
+      if (!data || !data.ok) return data;
+      if (typeof data.customer_activity_html === 'string') {
+        updateCustomerActivityHint(panel, data.customer_activity_html);
+      }
+      if (typeof data.html !== 'string') return data;
       var sig = data.msg_sig || '';
       var prevSig = lastThreadSigByTask[taskId] || '';
       if (!force && sig !== '' && sig === prevSig) return data;

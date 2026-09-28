@@ -906,6 +906,8 @@ function akh_task_client_append_thread(string $taskId, string $clientUsername, s
             return 'Could not save.';
         }
         akh_task_write_client_message_notification($list[$i], $body);
+        require_once __DIR__ . '/whatsapp-customer-activity.php';
+        akh_wa_customer_activity_record_for_task($list[$i], 'portal_thread', 'message');
 
         return null;
     }

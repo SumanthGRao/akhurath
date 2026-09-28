@@ -256,6 +256,22 @@ function akh_wa_message_insert(array $fields): ?int
             return null;
         }
 
+        if (akh_wa_message_is_client_incoming([
+            'direction' => $direction,
+            'sender' => $sender,
+        ])) {
+            require_once __DIR__ . '/whatsapp-customer-activity.php';
+            $clientUser = '';
+            foreach (akh_tasks_load() as $taskRow) {
+                if (!akh_task_ids_match((string) ($taskRow['id'] ?? ''), $taskCode)) {
+                    continue;
+                }
+                $clientUser = strtolower(trim((string) ($taskRow['client_username'] ?? '')));
+                break;
+            }
+            akh_wa_customer_activity_record($taskCode, $clientUser, 'whatsapp_in', 'message');
+        }
+
         return $id;
     } catch (Throwable $e) {
         error_log('akh_wa_message_insert: ' . $e->getMessage());
