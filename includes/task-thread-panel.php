@@ -229,15 +229,15 @@ function akh_render_task_thread_panel(array $t, string $portal, string $csrfToke
         <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>" />
         <input type="hidden" name="<?php echo h($actionField); ?>" value="<?php echo h($actionVal); ?>" />
         <input type="hidden" name="task_id" value="<?php echo h($tid); ?>" />
-        <?php
-        if (!$isClient) {
-            require_once __DIR__ . '/whatsapp-customer-activity.php';
-            akh_render_editor_customer_activity_hint(
-                akh_wa_customer_activity_editor_status_for_task($t),
-                $tid
-            );
-        }
-        ?>
+        <?php if (!$isClient): ?>
+        <div
+          class="edesk-customer-activity edesk-customer-activity--pending"
+          data-edesk-customer-activity="1"
+          data-task-id="<?php echo h($tid); ?>"
+          hidden
+          aria-hidden="true"
+        ></div>
+        <?php endif; ?>
         <label class="visually-hidden" for="thread-<?php echo h($portal); ?>-<?php echo h($tid); ?>">Message</label>
         <textarea id="thread-<?php echo h($portal); ?>-<?php echo h($tid); ?>" name="thread_body" rows="3" maxlength="2000" placeholder="Write a brief message…" class="ticket__thread-input"></textarea>
         <button type="submit" class="btn btn--primary btn--sm">Send</button>

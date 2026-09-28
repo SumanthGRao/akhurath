@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/tasks.php';
 require_once __DIR__ . '/site-datetime.php';
-require_once __DIR__ . '/whatsapp-contacts.php';
 
 /** @var array<string, string|null> */
 $akhWaCustomerActivityColumnCache = [
@@ -238,6 +237,7 @@ function akh_wa_customer_activity_phones_for_task(array $task): array
         return $phones;
     }
 
+    require_once __DIR__ . '/whatsapp-contacts.php';
     foreach (akh_whatsapp_phones_for_task_code($code) as $raw) {
         foreach (akh_wa_customer_activity_phone_digit_variants($raw) as $variant) {
             if (!in_array($variant, $phones, true)) {

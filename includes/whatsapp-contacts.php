@@ -197,17 +197,3 @@ function akh_whatsapp_phones_for_task_code(string $taskCode): array
 
     return $phones;
 }
-
-function akh_wa_tasks_table_exists(): bool
-{
-    if (!function_exists('akh_db_is_pdo') || !akh_db_is_pdo()) {
-        return false;
-    }
-    try {
-        $st = akh_db()->query("SHOW TABLES LIKE 'whatsapp_tasks'");
-
-        return $st !== false && $st->fetch(PDO::FETCH_NUM) !== false;
-    } catch (\Throwable $e) {
-        return false;
-    }
-}

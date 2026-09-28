@@ -362,18 +362,22 @@ function akh_editor_desk_panel_html(string $editorUsername, string $taskId, stri
  */
 function akh_editor_desk_customer_activity_html(array $task): string
 {
-    require_once __DIR__ . '/whatsapp-customer-activity.php';
-    $tid = akh_task_normalize_id((string) ($task['id'] ?? ''));
-    if ($tid === '') {
+    try {
+        require_once __DIR__ . '/whatsapp-customer-activity.php';
+        $tid = akh_task_normalize_id((string) ($task['id'] ?? ''));
+        if ($tid === '') {
+            return '';
+        }
+        ob_start();
+        akh_render_editor_customer_activity_hint(
+            akh_wa_customer_activity_editor_status_for_task($task),
+            $tid
+        );
+
+        return (string) ob_get_clean();
+    } catch (\Throwable) {
         return '';
     }
-    ob_start();
-    akh_render_editor_customer_activity_hint(
-        akh_wa_customer_activity_editor_status_for_task($task),
-        $tid
-    );
-
-    return (string) ob_get_clean();
 }
 
 /**
@@ -398,9 +402,15 @@ function akh_editor_desk_thread_poll(string $editorUsername, string $taskId): ar
 
     $canonicalId = (string) ($t['id'] ?? $taskId);
 
-    require_once __DIR__ . '/whatsapp-customer-activity.php';
-    $activity = akh_wa_customer_activity_editor_status_for_task($t);
-    $activityHtml = akh_editor_desk_customer_activity_html($t);
+    $activity = [];
+    $activityHtml = '';
+    try {
+        require_once __DIR__ . '/whatsapp-customer-activity.php';
+        $activity = akh_wa_customer_activity_editor_status_for_task($t);
+        $activityHtml = akh_editor_desk_customer_activity_html($t);
+    } catch (\Throwable) {
+        $activity = ['enabled' => false, 'state' => 'unknown', 'message' => '', 'detail' => '', 'last_at_iso' => '', 'last_at_label' => ''];
+    }
 
     return [
         'ok' => true,
