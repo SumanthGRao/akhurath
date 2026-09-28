@@ -83,7 +83,7 @@ function akh_wa_customer_activity_columns(): array
         }
     }
     $clientCol = null;
-    foreach (['client_username', 'customer_username', 'username'] as $candidate) {
+    foreach (['client_username', 'customer_username', 'username', 'customer_id'] as $candidate) {
         if (akh_wa_customer_activity_column_exists($candidate)) {
             $clientCol = $candidate;
             break;
@@ -146,32 +146,149 @@ function akh_wa_customer_activity_record(
 }
 
 /**
- * @return DateTimeImmutable|null
+ * @return list<string>
  */
-function akh_wa_customer_activity_last_at_from_db(string $taskCode, string $clientUsername): ?DateTimeImmutable
+function akh_wa_customer_activity_timestamp_columns(): array
+{
+    $out = [];
+    foreach (['activity_at', 'last_active_at', 'updated_at', 'created_at'] as $candidate) {
+        if (akh_wa_customer_activity_column_exists($candidate)) {
+            $out[] = $candidate;
+        }
+    }
+
+    return $out;
+}
+
+function akh_wa_customer_activity_parse_dt(string $raw): ?DateTimeImmutable
+{
+    $raw = trim($raw);
+    if ($raw === '') {
+        return null;
+    }
+    $tz = akh_site_timezone();
+    try {
+        if (preg_match('/Z$|[+-]\d{2}:?\d{2}$/', $raw) === 1) {
+            return new DateTimeImmutable($raw);
+        }
+
+        return new DateTimeImmutable($raw, $tz);
+    } catch (\Throwable $e) {
+        return null;
+    }
+}
+
+/**
+ * @param array<string, mixed> $task
+ * @return list<string>
+ */
+function akh_wa_customer_activity_client_identifiers(array $task): array
+{
+    $ids = [];
+    $add = static function (string $v) use (&$ids): void {
+        $v = trim($v);
+        if ($v === '') {
+            return;
+        }
+        $lower = strtolower($v);
+        if (!in_array($lower, $ids, true)) {
+            $ids[] = $lower;
+        }
+        $digits = preg_replace('/\D+/', '', $v) ?? '';
+        if ($digits !== '' && strlen($digits) >= 8 && !in_array($digits, $ids, true)) {
+            $ids[] = $digits;
+        }
+    };
+
+    $add((string) ($task['client_username'] ?? ''));
+    $code = akh_task_normalize_id((string) ($task['id'] ?? ''));
+    if ($code === '') {
+        return $ids;
+    }
+
+    require_once __DIR__ . '/whatsapp-messages.php';
+    require_once __DIR__ . '/whatsapp-tasks.php';
+
+    $add(akh_wa_message_phone_for_task($code));
+    $wa = akh_wa_task_by_code($code);
+    if (is_array($wa)) {
+        $add((string) ($wa['phone'] ?? ''));
+        $add((string) ($wa['customer_id'] ?? ''));
+        $add((string) ($wa['customer_name'] ?? ''));
+    }
+
+    return $ids;
+}
+
+/**
+ * Last customer activity for this task from whatsapp_customer_activity only.
+ *
+ * @param array<string, mixed> $task
+ */
+function akh_wa_customer_activity_last_at_from_db(array $task): ?DateTimeImmutable
 {
     if (!akh_wa_customer_activity_table_exists()) {
         return null;
     }
     $cols = akh_wa_customer_activity_columns();
     $taskCol = $cols['task'];
-    if ($taskCol === null || !akh_wa_customer_activity_column_exists('created_at')) {
+    $tsCols = akh_wa_customer_activity_timestamp_columns();
+    if ($taskCol === null || $tsCols === []) {
         return null;
     }
-    $tz = akh_site_timezone();
-    $taskCode = akh_task_normalize_id(trim($taskCode));
-    $clientUsername = strtolower(trim($clientUsername));
-    if ($taskCode === '') {
+
+    $taskId = trim((string) ($task['id'] ?? ''));
+    $variants = akh_task_id_match_variants($taskId);
+    if ($variants === []) {
         return null;
     }
-    try {
-        $sql = 'SELECT MAX(created_at) AS last_at FROM whatsapp_customer_activity WHERE `' . $taskCol . '` = ?';
-        $params = [$taskCode];
-        $clientCol = $cols['client'];
-        if ($clientCol !== null && $clientUsername !== '') {
-            $sql .= ' AND (`' . $clientCol . '` = ? OR `' . $clientCol . '` = \'\' OR `' . $clientCol . '` IS NULL)';
-            $params[] = $clientUsername;
+
+    $coalesce = [];
+    foreach ($tsCols as $c) {
+        $coalesce[] = '`' . $c . '`';
+    }
+    $maxExpr = count($coalesce) === 1
+        ? 'MAX(' . $coalesce[0] . ')'
+        : 'MAX(COALESCE(' . implode(', ', $coalesce) . '))';
+
+    $taskPlaceholders = implode(',', array_fill(0, count($variants), '?'));
+    $sql = 'SELECT ' . $maxExpr . ' AS last_at FROM whatsapp_customer_activity WHERE TRIM(`' . $taskCol . '`) IN (' . $taskPlaceholders . ')';
+    $params = $variants;
+
+    $clientIds = akh_wa_customer_activity_client_identifiers($task);
+    $clientPredicates = [];
+    $clientCol = $cols['client'];
+    if ($clientCol !== null) {
+        $clientPredicates[] = 'TRIM(COALESCE(`' . $clientCol . '`, \'\')) = \'\'';
+        foreach ($clientIds as $id) {
+            $clientPredicates[] = 'LOWER(TRIM(`' . $clientCol . '`)) = ?';
+            $params[] = $id;
         }
+    }
+    if (akh_wa_customer_activity_column_exists('phone') && ($clientCol === null || $clientCol !== 'phone')) {
+        $clientPredicates[] = 'TRIM(COALESCE(`phone`, \'\')) = \'\'';
+        foreach ($clientIds as $id) {
+            $clientPredicates[] = 'LOWER(TRIM(`phone`)) = ?';
+            $params[] = $id;
+        }
+    }
+    if ($clientPredicates !== []) {
+        $sql .= ' AND (' . implode(' OR ', $clientPredicates) . ')';
+    }
+
+    foreach (['actor', 'role', 'user_type', 'sender'] as $actorCol) {
+        if (!akh_wa_customer_activity_column_exists($actorCol)) {
+            continue;
+        }
+        $sql .= ' AND (
+            `' . $actorCol . '` IS NULL
+            OR TRIM(`' . $actorCol . '`) = \'\'
+            OR LOWER(TRIM(`' . $actorCol . '`)) NOT IN (\'editor\', \'system\', \'staff\', \'admin\')
+        )';
+        break;
+    }
+
+    try {
         $st = akh_db()->prepare($sql);
         $st->execute($params);
         $row = $st->fetch(PDO::FETCH_ASSOC);
@@ -179,27 +296,12 @@ function akh_wa_customer_activity_last_at_from_db(string $taskCode, string $clie
             return null;
         }
 
-        return new DateTimeImmutable((string) $row['last_at'], $tz);
+        return akh_wa_customer_activity_parse_dt((string) $row['last_at']);
     } catch (\Throwable $e) {
         error_log('akh_wa_customer_activity_last_at_from_db: ' . $e->getMessage());
 
         return null;
     }
-}
-
-/**
- * @return DateTimeImmutable|null
- */
-function akh_wa_customer_activity_max_dt(?DateTimeImmutable $a, ?DateTimeImmutable $b): ?DateTimeImmutable
-{
-    if ($a === null) {
-        return $b;
-    }
-    if ($b === null) {
-        return $a;
-    }
-
-    return $a->getTimestamp() >= $b->getTimestamp() ? $a : $b;
 }
 
 /**
@@ -213,38 +315,6 @@ function akh_wa_customer_activity_record_for_task(array $task, string $source, s
         return;
     }
     akh_wa_customer_activity_record($code, $client, $source, $activityKind);
-}
-
-/**
- * Best-effort last customer touch from portal thread + WhatsApp (when activity log is empty).
- *
- * @param array<string, mixed> $task
- */
-function akh_wa_customer_activity_fallback_last_at(array $task): ?DateTimeImmutable
-{
-    require_once __DIR__ . '/whatsapp-messages.php';
-
-    $latest = null;
-    foreach (akh_task_merged_conversation_list($task) as $row) {
-        if (!is_array($row)) {
-            continue;
-        }
-        if (strtolower(trim((string) ($row['role'] ?? ''))) !== 'client') {
-            continue;
-        }
-        $at = trim((string) ($row['at'] ?? ''));
-        if ($at === '') {
-            continue;
-        }
-        try {
-            $dt = new DateTimeImmutable($at);
-            $latest = akh_wa_customer_activity_max_dt($latest, $dt);
-        } catch (\Throwable $e) {
-            continue;
-        }
-    }
-
-    return $latest;
 }
 
 /**
@@ -271,8 +341,11 @@ function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 
         'last_at_label' => '',
     ];
 
+    if (!akh_wa_customer_activity_table_exists()) {
+        return $disabled;
+    }
+
     $code = akh_task_normalize_id((string) ($task['id'] ?? ''));
-    $client = strtolower(trim((string) ($task['client_username'] ?? '')));
     if ($code === '') {
         return $disabled;
     }
@@ -282,24 +355,21 @@ function akh_wa_customer_activity_editor_status(array $task, int $windowHours = 
     $now = new DateTimeImmutable('now', $tz);
     $cutoff = $now->modify('-' . $windowHours . ' hours');
 
-    $lastAt = akh_wa_customer_activity_max_dt(
-        akh_wa_customer_activity_last_at_from_db($code, $client),
-        akh_wa_customer_activity_fallback_last_at($task)
-    );
+    $lastAt = akh_wa_customer_activity_last_at_from_db($task);
 
     if ($lastAt === null) {
         return [
             'enabled' => true,
             'state' => 'idle',
             'message' => 'Customer has not been active for ' . $windowHours . ' hours',
-            'detail' => 'No customer messages logged for this task yet.',
+            'detail' => 'No rows in whatsapp_customer_activity for this customer on this task.',
             'last_at_iso' => '',
             'last_at_label' => '',
         ];
     }
 
     $lastLabel = akh_format_datetime_site_short($lastAt->format('Y-m-d H:i:s'));
-    $active = $lastAt >= $cutoff;
+    $active = $lastAt->getTimestamp() >= $cutoff->getTimestamp();
     if ($active) {
         return [
             'enabled' => true,
