@@ -92,17 +92,14 @@ function akh_admin_analytics_in_month(?DateTimeImmutable $dt, DateTimeImmutable 
  */
 function akh_admin_analytics_first_delivery_logged_at_map(): array
 {
-    $fromStatusLog = akh_task_status_log_first_delivered_at_map();
-    if ($fromStatusLog !== []) {
-        return $fromStatusLog;
-    }
+    $out = akh_task_status_log_first_delivered_at_map();
 
     require_once __DIR__ . '/whatsapp-task-sync.php';
     if (!function_exists('akh_wa_task_updates_table_exists') || !akh_wa_task_updates_table_exists()) {
-        return [];
+        return $out;
     }
     if (!function_exists('akh_db') || !akh_db_is_pdo()) {
-        return [];
+        return $out;
     }
 
     try {
@@ -113,24 +110,26 @@ function akh_admin_analytics_first_delivery_logged_at_map(): array
              GROUP BY task_id"
         );
         if ($st === false) {
-            return [];
+            return $out;
         }
-        $out = [];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $code = akh_task_normalize_id((string) ($row['task_id'] ?? ''));
             $raw = trim((string) ($row['delivered_at'] ?? ''));
             if ($code === '' || $raw === '') {
                 continue;
             }
-            $dt = akh_parse_datetime_to_site($raw);
-            if ($dt !== null) {
+            $dt = akh_analytics_parse_log_timestamp($raw);
+            if ($dt === null) {
+                continue;
+            }
+            if (!isset($out[$code]) || $dt < $out[$code]) {
                 $out[$code] = $dt;
             }
         }
 
         return $out;
     } catch (Throwable) {
-        return [];
+        return $out;
     }
 }
 
@@ -150,7 +149,7 @@ function akh_admin_analytics_task_delivered_at(array $task, array $deliveryLogMa
         return $deliveryLogMap[$code];
     }
 
-    return akh_admin_analytics_task_updated_at($task);
+    return null;
 }
 
 /**

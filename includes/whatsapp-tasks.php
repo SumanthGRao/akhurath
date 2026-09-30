@@ -320,6 +320,9 @@ function akh_wa_task_status_counts(): array
 
 function akh_wa_tasks_poll_signature(): string
 {
+    require_once __DIR__ . '/whatsapp-preview-workflow.php';
+    akh_wa_preview_workflow_tick();
+
     if (!akh_wa_tasks_table_exists()) {
         return 'missing';
     }
@@ -330,7 +333,22 @@ function akh_wa_tasks_poll_signature(): string
             return 'empty';
         }
 
-        return hash('sha256', (string) ($row['c'] ?? '0') . '|' . (string) ($row['u'] ?? ''));
+        $previewPending = 0;
+        if (akh_wa_preview_messages_table_exists()) {
+            $pst = akh_db()->query(
+                'SELECT COUNT(*) FROM whatsapp_preview_messages WHERE processed_at IS NULL'
+            );
+            if ($pst !== false) {
+                $previewPending = (int) $pst->fetchColumn();
+            }
+        }
+
+        return hash(
+            'sha256',
+            (string) ($row['c'] ?? '0')
+            . '|' . (string) ($row['u'] ?? '')
+            . '|preview:' . (string) $previewPending
+        );
     } catch (Throwable) {
         return 'error';
     }
@@ -1229,7 +1247,7 @@ function akh_wa_apply_meeting_notify_to_studio(array $waRow, string $studioId, ?
         $list[$i]['editor_feedback_notify'] = true;
         $list[$i]['editor_notify_detail'] = akh_wa_build_editor_notify_detail($waRow);
         $st = (string) ($t['status'] ?? '');
-        if (in_array($st, ['delivered', 'review'], true)) {
+        if (in_array($st, ['delivered', 'review', 'preview_sent'], true)) {
             $list[$i]['status'] = 'reverted';
         }
         $list[$i]['updated_at'] = gmdate('c');

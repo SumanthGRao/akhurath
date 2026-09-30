@@ -18,6 +18,27 @@ function akh_db_apply_runtime_patches(PDO $pdo): void
     akh_db_patch_task_notification_event_kind($pdo);
     akh_db_patch_meeting_requests_table($pdo);
     akh_db_patch_meeting_requests_dashboard_read($pdo);
+    akh_db_patch_whatsapp_preview_messages_table($pdo);
+}
+
+function akh_db_patch_whatsapp_preview_messages_table(PDO $pdo): void
+{
+    try {
+        $tbl = $pdo->query("SHOW TABLES LIKE 'whatsapp_preview_messages'");
+        if ($tbl !== false && $tbl->fetch(PDO::FETCH_NUM) !== false) {
+            return;
+        }
+        $migration = AKH_ROOT . '/sql/migrations/017_whatsapp_preview_messages.sql';
+        if (!is_file($migration)) {
+            return;
+        }
+        $sql = file_get_contents($migration);
+        if (is_string($sql) && trim($sql) !== '') {
+            $pdo->exec($sql);
+        }
+    } catch (Throwable $e) {
+        error_log('akh_db_patch_whatsapp_preview_messages_table: ' . $e->getMessage());
+    }
 }
 
 function akh_db_patch_task_notification_status(PDO $pdo): void

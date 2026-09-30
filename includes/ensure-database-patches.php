@@ -83,6 +83,7 @@ function akh_ensure_database_schema_checklist(PDO $pdo): array
         'whatsapp_customer_activity',
         'task_notification_events',
         'meeting_requests',
+        'whatsapp_preview_messages',
         'invoices',
         'completed_tasks',
     ];
@@ -277,6 +278,15 @@ function akh_ensure_database_apply_patches(PDO $pdo, array $options = []): array
             $sqlLog = file_get_contents($migrationStatusLog);
             if (is_string($sqlLog) && trim($sqlLog) !== '') {
                 $pdo->exec($sqlLog);
+            }
+        }
+
+        $migrationWaPreview = AKH_ROOT . '/sql/migrations/017_whatsapp_preview_messages.sql';
+        if (is_file($migrationWaPreview) && !akh_ensure_db_table_exists($pdo, $schema, 'whatsapp_preview_messages')) {
+            $log('Applying sql/migrations/017_whatsapp_preview_messages.sql ...');
+            $sqlPreview = file_get_contents($migrationWaPreview);
+            if (is_string($sqlPreview) && trim($sqlPreview) !== '') {
+                $pdo->exec($sqlPreview);
             }
         }
 

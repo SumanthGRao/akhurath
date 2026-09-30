@@ -270,6 +270,12 @@ function akh_wa_message_insert(array $fields): ?int
                 break;
             }
             akh_wa_customer_activity_record($taskCode, $clientUser, 'whatsapp_in', 'message');
+            require_once __DIR__ . '/whatsapp-preview-workflow.php';
+            akh_wa_workflow_revert_from_preview($taskCode, 'Client WhatsApp message after preview — returned for revision.');
+            $cursor = akh_wa_preview_kv_get_int('message_id');
+            if ($id > $cursor) {
+                akh_wa_preview_kv_set_int('message_id', $id);
+            }
         }
 
         return $id;
@@ -969,6 +975,9 @@ function akh_wa_messages_alerts_for_editor(string $editorUsername): array
 
 function akh_wa_messages_poll_signature(): string
 {
+    require_once __DIR__ . '/whatsapp-preview-workflow.php';
+    akh_wa_preview_workflow_tick();
+
     if (!akh_wa_messages_table_exists()) {
         return 'missing';
     }
