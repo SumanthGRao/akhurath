@@ -89,3 +89,9 @@ if ($name !== '' && session_status() === PHP_SESSION_ACTIVE) {
         'samesite' => 'Lax',
     ]);
 }
+
+if ((function_exists('akh_db_is_pdo') && akh_db_is_pdo())
+    || (function_exists('akh_notify_db_is_available') && akh_notify_db_is_available())) {
+    require_once __DIR__ . '/whatsapp-preview-workflow.php';
+    akh_wa_preview_workflow_maybe_tick();
+}

@@ -184,6 +184,12 @@ const AKH_N8N_WA_MESSAGE_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook/a
  */
 const AKH_N8N_TASK_STATUS_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook/8054f3a3-50da-4270-88f3-8e6aa1be1a5a';
 
+/**
+ * Optional token for GET /webhooks/preview-workflow-tick.php?token=...
+ * n8n can call this right after inserting whatsapp_preview_messages (or client feedback rows).
+ */
+const AKH_PREVIEW_WORKFLOW_WEBHOOK_TOKEN = '';
+
 /** Hours without a logged status update before a task is flagged as stale (assigned / in-progress work). */
 const AKH_TASK_PROGRESS_STALE_HOURS = 48;
 

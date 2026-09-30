@@ -271,11 +271,7 @@ function akh_wa_message_insert(array $fields): ?int
             }
             akh_wa_customer_activity_record($taskCode, $clientUser, 'whatsapp_in', 'message');
             require_once __DIR__ . '/whatsapp-preview-workflow.php';
-            akh_wa_workflow_revert_from_preview($taskCode, 'Client WhatsApp message after preview — returned for revision.');
-            $cursor = akh_wa_preview_kv_get_int('message_id');
-            if ($id > $cursor) {
-                akh_wa_preview_kv_set_int('message_id', $id);
-            }
+            akh_wa_preview_on_client_message_inserted($taskCode, $id);
         }
 
         return $id;

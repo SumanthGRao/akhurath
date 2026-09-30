@@ -44,6 +44,11 @@ function akh_db()
         ]
     );
 
+    if (defined('AKH_ROOT')) {
+        require_once AKH_ROOT . '/includes/db-schema-patches.php';
+        akh_db_apply_runtime_patches($pdo);
+    }
+
     return $pdo;
 }
 

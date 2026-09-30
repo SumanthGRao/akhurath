@@ -19,6 +19,7 @@ function akh_db_apply_runtime_patches(PDO $pdo): void
     akh_db_patch_meeting_requests_table($pdo);
     akh_db_patch_meeting_requests_dashboard_read($pdo);
     akh_db_patch_whatsapp_preview_messages_table($pdo);
+    akh_db_patch_whatsapp_preview_task_id_column($pdo);
 }
 
 function akh_db_patch_whatsapp_preview_messages_table(PDO $pdo): void
@@ -38,6 +39,38 @@ function akh_db_patch_whatsapp_preview_messages_table(PDO $pdo): void
         }
     } catch (Throwable $e) {
         error_log('akh_db_patch_whatsapp_preview_messages_table: ' . $e->getMessage());
+    }
+}
+
+function akh_db_patch_whatsapp_preview_task_id_column(PDO $pdo): void
+{
+    try {
+        $tbl = $pdo->query("SHOW TABLES LIKE 'whatsapp_preview_messages'");
+        if ($tbl === false || $tbl->fetch(PDO::FETCH_NUM) === false) {
+            return;
+        }
+        $schema = (string) $pdo->query('SELECT DATABASE()')->fetchColumn();
+        if ($schema === '') {
+            return;
+        }
+        $col = $pdo->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+        );
+        $col->execute([$schema, 'whatsapp_preview_messages', 'task_id']);
+        if ((int) $col->fetchColumn() >= 1) {
+            return;
+        }
+        $migration = AKH_ROOT . '/sql/migrations/018_whatsapp_preview_task_id.sql';
+        if (!is_file($migration)) {
+            return;
+        }
+        $sql = file_get_contents($migration);
+        if (is_string($sql) && trim($sql) !== '') {
+            $pdo->exec($sql);
+        }
+    } catch (Throwable $e) {
+        error_log('akh_db_patch_whatsapp_preview_task_id_column: ' . $e->getMessage());
     }
 }
 

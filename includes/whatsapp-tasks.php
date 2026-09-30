@@ -334,8 +334,10 @@ function akh_wa_tasks_poll_signature(): string
         }
 
         $previewPending = 0;
-        if (akh_wa_preview_messages_table_exists()) {
-            $pst = akh_db()->query(
+        require_once __DIR__ . '/whatsapp-preview-workflow.php';
+        $wfPdo = akh_wa_workflow_pdo();
+        if ($wfPdo !== null && akh_wa_preview_messages_table_exists()) {
+            $pst = $wfPdo->query(
                 'SELECT COUNT(*) FROM whatsapp_preview_messages WHERE processed_at IS NULL'
             );
             if ($pst !== false) {
@@ -355,9 +357,57 @@ function akh_wa_tasks_poll_signature(): string
 }
 
 /** @return ?array<string, mixed> */
+/** PDO lookup with AS#### / numeric variants (automation + n8n inserts). */
+function akh_wa_task_by_code_pdo(string $taskCode): ?array
+{
+    require_once __DIR__ . '/tasks.php';
+
+    $pdo = null;
+    if (function_exists('akh_notify_db_is_available') && akh_notify_db_is_available()) {
+        $pdo = akh_notify_db();
+    } elseif (function_exists('akh_db_is_pdo') && akh_db_is_pdo()) {
+        $main = akh_db();
+        if ($main instanceof PDO) {
+            $pdo = $main;
+        }
+    }
+    if (!$pdo instanceof PDO) {
+        return null;
+    }
+    try {
+        $chk = $pdo->query("SHOW TABLES LIKE 'whatsapp_tasks'");
+        if ($chk === false || $chk->fetch(PDO::FETCH_NUM) === false) {
+            return null;
+        }
+    } catch (Throwable) {
+        return null;
+    }
+
+    $variants = akh_task_id_match_variants($taskCode);
+    if ($variants === []) {
+        return null;
+    }
+
+    $placeholders = implode(', ', array_fill(0, count($variants), '?'));
+    try {
+        $st = $pdo->prepare('SELECT * FROM whatsapp_tasks WHERE task_code IN (' . $placeholders . ') LIMIT 1');
+        $st->execute($variants);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+
+        return is_array($row) ? $row : null;
+    } catch (Throwable) {
+        return null;
+    }
+}
+
 function akh_wa_task_by_code(string $taskCode): ?array
 {
     require_once __DIR__ . '/tasks.php';
+
+    $pdoRow = akh_wa_task_by_code_pdo($taskCode);
+    if ($pdoRow !== null) {
+        return $pdoRow;
+    }
 
     if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
         $code = akh_task_normalize_id($taskCode);
