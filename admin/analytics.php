@@ -82,7 +82,7 @@ require_once AKH_ROOT . '/includes/header.php';
         <button type="submit" class="btn btn--primary btn--sm">Apply</button>
         <p class="portal-muted admin-analytics__hint">
           <strong>Incoming</strong> = tasks created in the month.
-          <strong>Delivered</strong> = tasks marked delivered or closed with a last update in the month.
+          <strong>Delivered</strong> = first logged Delivered/Closed date (status history), or last update if no log exists.
         </p>
       </form>
 
