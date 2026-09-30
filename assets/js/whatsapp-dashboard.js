@@ -1312,6 +1312,11 @@
         if (data.counts) updateCounts(data.counts);
         if (data.sig) currentSig = data.sig;
         applyFiltersLocally();
+        if (data.sync_warning && els.editError) {
+          els.editError.textContent = String(data.sync_warning);
+          els.editError.classList.remove('wa-banner--hidden');
+          return;
+        }
         closeEdit();
       })
       .catch(function (err) {

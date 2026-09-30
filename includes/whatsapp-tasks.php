@@ -517,10 +517,21 @@ function akh_wa_task_update(int $id, array $fields): array
             );
         }
         if ($statusWillChange) {
+            akh_wa_task_status_log_transition(
+                (string) ($task['task_code'] ?? ''),
+                $prevWaStatus,
+                $nextWaStatus,
+                akh_wa_dashboard_operator_label(),
+                'Status updated from WhatsApp dashboard.'
+            );
             akh_wa_log_dashboard_status_change($task);
             $studioErr = akh_wa_sync_status_to_studio_board((string) ($task['task_code'] ?? ''), $nextWaStatus);
             if ($studioErr !== null) {
-                return ['ok' => false, 'error' => 'Saved in WhatsApp tasks, but editor board sync failed: ' . $studioErr, 'task' => $task];
+                return [
+                    'ok' => true,
+                    'task' => $task,
+                    'sync_warning' => 'Saved on WhatsApp board. Editor board sync: ' . $studioErr,
+                ];
             }
         }
     }
@@ -536,6 +547,55 @@ function akh_wa_task_update(int $id, array $fields): array
 function akh_wa_task_has_assigned_editor(array $row): bool
 {
     return isset($row['assigned_editor']) && $row['assigned_editor'] !== null && (string) $row['assigned_editor'] !== '';
+}
+
+/**
+ * Log a WhatsApp queue status change into task_status_changes (studio status codes).
+ */
+function akh_wa_task_status_log_transition(
+    string $taskCode,
+    string $prevWaStatus,
+    string $nextWaStatus,
+    string $changedBy = '',
+    string $comment = ''
+): void {
+    require_once __DIR__ . '/tasks.php';
+    require_once __DIR__ . '/task-status-log.php';
+
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    $prevWa = akh_wa_task_normalize_status($prevWaStatus) ?? 'new';
+    $nextWa = akh_wa_task_normalize_status($nextWaStatus) ?? '';
+    if ($taskCode === '' || $nextWa === '' || $prevWa === $nextWa) {
+        return;
+    }
+
+    $fromStudio = akh_wa_map_status_to_studio($prevWa);
+    $toStudio = akh_wa_map_status_to_studio($nextWa);
+    if ($fromStudio === $toStudio) {
+        return;
+    }
+
+    akh_task_status_log_record(
+        $taskCode,
+        $fromStudio,
+        $toStudio,
+        'whatsapp',
+        $changedBy !== '' ? $changedBy : 'WhatsApp dashboard',
+        $comment !== '' ? $comment : 'Status updated on WhatsApp dashboard.'
+    );
+}
+
+function akh_wa_dashboard_operator_label(): string
+{
+    $operator = 'WhatsApp dashboard';
+    if (function_exists('akh_wa_dashboard_current')) {
+        $name = trim((string) (akh_wa_dashboard_current() ?? ''));
+        if ($name !== '') {
+            $operator = $name;
+        }
+    }
+
+    return $operator;
 }
 
 function akh_wa_map_status_to_studio(string $waStatus): string
@@ -591,13 +651,7 @@ function akh_wa_log_dashboard_status_change(array $waRow): void
     }
     $waStatus = akh_wa_task_normalize_status((string) ($waRow['status'] ?? '')) ?? 'new';
     $label = akh_wa_task_status_label($waStatus);
-    $operator = 'WhatsApp dashboard';
-    if (function_exists('akh_wa_dashboard_current')) {
-        $name = trim((string) (akh_wa_dashboard_current() ?? ''));
-        if ($name !== '') {
-            $operator = $name;
-        }
-    }
+    $operator = akh_wa_dashboard_operator_label();
     try {
         akh_db()->prepare(
             'INSERT INTO task_updates (task_id, status, comment, updated_by) VALUES (?, ?, ?, ?)'
@@ -1308,12 +1362,12 @@ function akh_wa_sync_to_studio(array $waRow): ?string
     }
 
     if ($editorUsername !== null) {
-        $assignErr = akh_task_admin_assign($studioId, $editorUsername);
+        $assignErr = akh_task_admin_assign($studioId, $editorUsername, false);
         if ($assignErr !== null) {
             return $assignErr;
         }
         if (!in_array($studioStatus, ['new', 'assigned'], true)) {
-            $statusErr = akh_task_admin_set_status($studioId, $studioStatus);
+            $statusErr = akh_task_admin_set_status($studioId, $studioStatus, 'whatsapp');
             if ($statusErr !== null) {
                 return $statusErr;
             }
@@ -1337,14 +1391,14 @@ function akh_wa_sync_to_studio(array $waRow): ?string
             return null;
         }
 
-        $assignErr = akh_task_admin_assign($studioId, null);
+        $assignErr = akh_task_admin_assign($studioId, null, false);
         if ($assignErr !== null) {
             return $assignErr;
         }
         if ($waStatus === 'new') {
             $studio = akh_task_by_id($studioId);
             if (is_array($studio) && (string) ($studio['status'] ?? '') !== 'new') {
-                $statusErr = akh_task_admin_set_status($studioId, 'new');
+                $statusErr = akh_task_admin_set_status($studioId, 'new', 'whatsapp');
                 if ($statusErr !== null) {
                     return $statusErr;
                 }
@@ -1362,6 +1416,16 @@ function akh_wa_sync_to_studio(array $waRow): ?string
         }
     }
     if (is_array($studio) && strtolower(trim((string) ($studio['status'] ?? ''))) !== $studioStatus) {
+        $studioPrev = strtolower(trim((string) ($studio['status'] ?? 'new')));
+        require_once __DIR__ . '/task-status-log.php';
+        akh_task_status_log_record(
+            $taskCode,
+            $studioPrev,
+            $studioStatus,
+            'whatsapp',
+            'WhatsApp sync',
+            'Editor board synced from WhatsApp queue.'
+        );
         $statusErr = akh_wa_sync_status_to_studio_board($taskCode, $waStatus);
         if ($statusErr !== null) {
             return $statusErr;

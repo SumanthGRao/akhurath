@@ -2620,7 +2620,7 @@ function akh_task_count_for_editor(string $editorUsername): int
  *
  * @return string|null error or null on success
  */
-function akh_task_admin_assign(string $taskId, ?string $editorUsername): ?string
+function akh_task_admin_assign(string $taskId, ?string $editorUsername, bool $recordStatusLog = true): ?string
 {
     $editorUsername = $editorUsername !== null ? strtolower(trim($editorUsername)) : '';
     if ($editorUsername !== '') {
@@ -2677,7 +2677,7 @@ function akh_task_admin_assign(string $taskId, ?string $editorUsername): ?string
     if (!akh_tasks_save_locked($list)) {
         return 'Could not save tasks.';
     }
-    if (isset($prevSt, $nextSt) && $prevSt !== $nextSt) {
+    if ($recordStatusLog && isset($prevSt, $nextSt) && $prevSt !== $nextSt) {
         require_once __DIR__ . '/task-status-log.php';
         akh_task_status_log_record(
             $taskId,
@@ -2748,14 +2748,14 @@ function akh_task_admin_set_status(string $taskId, string $newStatus, string $lo
     if (!akh_tasks_save_locked($list)) {
         return 'Could not save tasks.';
     }
-    if (isset($prevSt) && $prevSt !== $newStatus) {
+    if (isset($prevSt) && $prevSt !== $newStatus && $logSource !== 'whatsapp') {
         require_once __DIR__ . '/task-status-log.php';
         akh_task_status_log_record(
             $taskId,
             $prevSt,
             $newStatus,
             $logSource,
-            $logSource === 'whatsapp' ? 'WhatsApp dashboard' : 'admin',
+            'admin',
             'Admin status update'
         );
     }

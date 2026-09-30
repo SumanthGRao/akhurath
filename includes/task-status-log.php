@@ -87,6 +87,9 @@ function akh_task_status_log_record(
     $taskId = akh_task_normalize_id(trim($taskId));
     $from = akh_task_status_log_normalize($fromStatus);
     $to = akh_task_status_log_normalize($toStatus);
+    if ($from === '') {
+        $from = 'new';
+    }
     if ($taskId === '' || $to === '' || $from === $to) {
         return;
     }
