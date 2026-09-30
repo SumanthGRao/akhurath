@@ -5232,6 +5232,27 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   margin: 0 0 0.75rem;
 }
 
+.admin-analytics__editors-perf {
+  margin: 0 0 1.75rem;
+}
+
+.admin-analytics__editor-chart {
+  margin-bottom: 1rem;
+}
+
+.admin-analytics__editor-table-wrap {
+  margin-bottom: 1.25rem;
+}
+
+.admin-analytics__task-timing-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.admin-analytics__task-timing-scroll .admin-table {
+  min-width: 52rem;
+}
+
 .admin-updated-sql {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 0.9375rem;

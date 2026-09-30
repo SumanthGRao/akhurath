@@ -68,6 +68,63 @@ function akh_task_status_log_normalize_source(string $source): string
 }
 
 /**
+ * task_status_changes.created_at is stored/read as UTC (GMT). Analytics only — do not use elsewhere.
+ */
+function akh_analytics_parse_log_timestamp(string $raw): ?DateTimeImmutable
+{
+    $raw = trim($raw);
+    if ($raw === '') {
+        return null;
+    }
+
+    $utc = new DateTimeZone('UTC');
+    if (akh_datetime_has_timezone($raw)) {
+        try {
+            return (new DateTimeImmutable($raw))->setTimezone(akh_site_timezone());
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    foreach (['Y-m-d H:i:s', 'Y-m-d H:i', 'Y-m-d\TH:i:s'] as $fmt) {
+        $dt = DateTimeImmutable::createFromFormat($fmt, $raw, $utc);
+        if ($dt instanceof DateTimeImmutable) {
+            return $dt->setTimezone(akh_site_timezone());
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @return array{0: string, 1: string} UTC SQL bounds for a site-local month range
+ */
+function akh_analytics_month_sql_bounds_utc(DateTimeImmutable $startSite, DateTimeImmutable $endSite): array
+{
+    $utc = new DateTimeZone('UTC');
+
+    return [
+        $startSite->setTimezone($utc)->format('Y-m-d H:i:s'),
+        $endSite->setTimezone($utc)->format('Y-m-d H:i:s'),
+    ];
+}
+
+/**
+ * @return list<array{key: string, label: string, from: string, to: string}>
+ */
+function akh_task_status_log_editor_stage_definitions(): array
+{
+    return [
+        ['key' => 'new_assigned', 'label' => 'New → Assigned', 'from' => 'new', 'to' => 'assigned'],
+        ['key' => 'assigned_in_progress', 'label' => 'Assigned → Editing', 'from' => 'assigned', 'to' => 'in_progress'],
+        ['key' => 'in_progress_review', 'label' => 'Editing → Review', 'from' => 'in_progress', 'to' => 'review'],
+        ['key' => 'review_preview', 'label' => 'Review → Preview', 'from' => 'review', 'to' => 'preview_sent'],
+        ['key' => 'preview_delivered', 'label' => 'Preview → Delivered', 'from' => 'preview_sent', 'to' => 'delivered'],
+        ['key' => 'create_delivered', 'label' => 'New → Delivered', 'from' => '_created', 'to' => 'delivered'],
+    ];
+}
+
+/**
  * Record a studio status transition (no-op when from === to or table missing).
  */
 function akh_task_status_log_record(
@@ -189,15 +246,7 @@ function akh_task_status_log_backfill_from_task_updates(): int
  */
 function akh_task_status_log_pipeline_definitions(): array
 {
-    return [
-        ['key' => 'new_assigned', 'label' => 'New → Assigned', 'from' => 'new', 'to' => 'assigned'],
-        ['key' => 'assigned_preview', 'label' => 'Assigned → Preview sent', 'from' => 'assigned', 'to' => 'preview_sent'],
-        ['key' => 'preview_delivered', 'label' => 'Preview sent → Delivered', 'from' => 'preview_sent', 'to' => 'delivered'],
-        ['key' => 'new_delivered', 'label' => 'New → Delivered', 'from' => 'new', 'to' => 'delivered'],
-        ['key' => 'assigned_in_progress', 'label' => 'Assigned → In progress', 'from' => 'assigned', 'to' => 'in_progress'],
-        ['key' => 'in_progress_review', 'label' => 'In progress → Review', 'from' => 'in_progress', 'to' => 'review'],
-        ['key' => 'review_preview', 'label' => 'Review → Preview sent', 'from' => 'review', 'to' => 'preview_sent'],
-    ];
+    return akh_task_status_log_editor_stage_definitions();
 }
 
 /**
@@ -239,16 +288,14 @@ function akh_task_status_log_pipeline_report(DateTimeImmutable $start, DateTimeI
     }
 
     try {
+        [$sqlStart, $sqlEnd] = akh_analytics_month_sql_bounds_utc($start, $end);
         $st = akh_db()->prepare(
             'SELECT task_id, from_status, to_status, source, created_at
              FROM task_status_changes
              WHERE created_at >= ? AND created_at < ?
              ORDER BY task_id ASC, created_at ASC, id ASC'
         );
-        $st->execute([
-            $start->format('Y-m-d H:i:s'),
-            $end->format('Y-m-d H:i:s'),
-        ]);
+        $st->execute([$sqlStart, $sqlEnd]);
         $monthRows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
     } catch (Throwable) {
         return $empty;
@@ -281,7 +328,7 @@ function akh_task_status_log_pipeline_report(DateTimeImmutable $start, DateTimeI
 
             $taskId = (string) ($row['task_id'] ?? '');
             $createdRaw = (string) ($row['created_at'] ?? '');
-            $toDt = akh_parse_datetime_to_site($createdRaw);
+            $toDt = akh_analytics_parse_log_timestamp($createdRaw);
             if ($taskId !== '' && $toDt !== null) {
                 $prevAt = akh_task_status_log_previous_change_at($taskId, $createdRaw);
                 if ($prevAt !== null) {
@@ -332,10 +379,225 @@ function akh_task_status_log_previous_change_at(string $taskId, string $beforeCr
         $st->execute([$taskId, $beforeCreatedRaw]);
         $raw = $st->fetchColumn();
 
-        return is_string($raw) && $raw !== '' ? akh_parse_datetime_to_site($raw) : null;
+        return is_string($raw) && $raw !== '' ? akh_analytics_parse_log_timestamp($raw) : null;
     } catch (Throwable) {
         return null;
     }
+}
+
+/**
+ * @return array<string, array<string, DateTimeImmutable>>
+ */
+function akh_task_status_log_first_status_hits_by_task(): array
+{
+    if (!akh_task_status_log_table_exists()) {
+        return [];
+    }
+
+    try {
+        $st = akh_db()->query(
+            'SELECT task_id, to_status, created_at
+             FROM task_status_changes
+             ORDER BY task_id ASC, created_at ASC, id ASC'
+        );
+        if ($st === false) {
+            return [];
+        }
+
+        require_once __DIR__ . '/tasks.php';
+
+        /** @var array<string, array<string, DateTimeImmutable>> */
+        $firstHit = [];
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $code = akh_task_normalize_id((string) ($row['task_id'] ?? ''));
+            $to = akh_task_status_log_normalize((string) ($row['to_status'] ?? ''));
+            $dt = akh_analytics_parse_log_timestamp((string) ($row['created_at'] ?? ''));
+            if ($code === '' || $to === '' || $dt === null) {
+                continue;
+            }
+            if (!isset($firstHit[$code][$to]) || $dt < $firstHit[$code][$to]) {
+                $firstHit[$code][$to] = $dt;
+            }
+        }
+
+        return $firstHit;
+    } catch (Throwable) {
+        return [];
+    }
+}
+
+/**
+ * @param array<string, DateTimeImmutable> $hits
+ * @param array{from: string, to: string} $stage
+ */
+function akh_task_status_log_stage_hours(array $hits, DateTimeImmutable $created, array $stage): ?float
+{
+    $toStatus = $stage['to'];
+    if (!isset($hits[$toStatus])) {
+        return null;
+    }
+    $toDt = $hits[$toStatus];
+    if ($stage['from'] === '_created') {
+        $fromDt = $created;
+    } elseif (isset($hits[$stage['from']])) {
+        $fromDt = $hits[$stage['from']];
+    } else {
+        return null;
+    }
+    if ($toDt <= $fromDt) {
+        return null;
+    }
+    $hours = ($toDt->getTimestamp() - $fromDt->getTimestamp()) / 3600;
+    if ($hours < 0 || $hours >= 24 * 366) {
+        return null;
+    }
+
+    return $hours;
+}
+
+/**
+ * Editor turnaround from status log (tasks delivered in the report month).
+ *
+ * @return array{
+ *   available: bool,
+ *   stage_columns: list<array{key: string, label: string}>,
+ *   by_editor: list<array{username: string, delivered: int, averages: array<string, float|null>}>,
+ *   tasks: list<array{task_id: string, editor: string, delivered_label: string, stages: array<string, float|null>}>
+ * }
+ */
+function akh_task_status_log_editor_performance_report(DateTimeImmutable $start, DateTimeImmutable $end): array
+{
+    $stageDefs = akh_task_status_log_editor_stage_definitions();
+    $stageColumns = array_map(static fn (array $s): array => [
+        'key' => (string) $s['key'],
+        'label' => (string) $s['label'],
+    ], $stageDefs);
+
+    $empty = [
+        'available' => false,
+        'stage_columns' => $stageColumns,
+        'by_editor' => [],
+        'tasks' => [],
+    ];
+
+    if (!akh_task_status_log_table_exists()) {
+        return $empty;
+    }
+
+    require_once __DIR__ . '/tasks.php';
+
+    $firstHit = akh_task_status_log_first_status_hits_by_task();
+    if ($firstHit === []) {
+        return $empty;
+    }
+
+    /** @var array<string, list<float>> */
+    $editorBuckets = [];
+    /** @var list<array{task_id: string, editor: string, delivered_ts: int, delivered_label: string, stages: array<string, float|null>}> */
+    $taskRows = [];
+
+    foreach (akh_tasks_load() as $t) {
+        if (!is_array($t)) {
+            continue;
+        }
+        $code = akh_task_normalize_id((string) ($t['id'] ?? ''));
+        if ($code === '' || !isset($firstHit[$code])) {
+            continue;
+        }
+        $hits = $firstHit[$code];
+        if (!isset($hits['delivered']) && isset($hits['closed'])) {
+            $hits['delivered'] = $hits['closed'];
+        }
+        if (!isset($hits['delivered'])) {
+            continue;
+        }
+        $deliveredDt = $hits['delivered'];
+        if ($deliveredDt < $start || $deliveredDt >= $end) {
+            continue;
+        }
+
+        $editor = strtolower(trim((string) ($t['assigned_editor'] ?? '')));
+        if ($editor === '') {
+            continue;
+        }
+
+        $created = akh_parse_datetime_to_site((string) ($t['created_at'] ?? ''));
+        if ($created === null) {
+            continue;
+        }
+
+        /** @var array<string, float|null> */
+        $stageHours = [];
+        foreach ($stageDefs as $stage) {
+            $hours = akh_task_status_log_stage_hours($hits, $created, $stage);
+            $stageHours[(string) $stage['key']] = $hours;
+            if ($hours !== null) {
+                if (!isset($editorBuckets[$editor])) {
+                    $editorBuckets[$editor] = [];
+                    foreach ($stageDefs as $sd) {
+                        $editorBuckets[$editor][(string) $sd['key']] = [];
+                    }
+                }
+                $editorBuckets[$editor][(string) $stage['key']][] = $hours;
+            }
+        }
+
+        $taskRows[] = [
+            'task_id' => $code,
+            'editor' => $editor,
+            'delivered_ts' => $deliveredDt->getTimestamp(),
+            'delivered_label' => $deliveredDt->format('M j, Y g:i A'),
+            'stages' => $stageHours,
+        ];
+    }
+
+    usort($taskRows, static fn (array $a, array $b): int => $b['delivered_ts'] <=> $a['delivered_ts']);
+
+    $byEditor = [];
+    foreach ($editorBuckets as $username => $buckets) {
+        $averages = [];
+        foreach ($stageDefs as $stage) {
+            $key = (string) $stage['key'];
+            $averages[$key] = akh_task_status_log_avg_hours($buckets[$key] ?? []);
+        }
+        $deliveredCount = 0;
+        foreach ($taskRows as $tr) {
+            if ($tr['editor'] === $username) {
+                ++$deliveredCount;
+            }
+        }
+        $byEditor[] = [
+            'username' => $username,
+            'delivered' => $deliveredCount,
+            'averages' => $averages,
+        ];
+    }
+
+    usort($byEditor, static function (array $a, array $b): int {
+        $cmp = ($b['delivered'] ?? 0) <=> ($a['delivered'] ?? 0);
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+
+        return strcmp((string) ($a['username'] ?? ''), (string) ($b['username'] ?? ''));
+    });
+
+    $tasksOut = [];
+    foreach (array_slice($taskRows, 0, 50) as $tr) {
+        $tasksOut[] = [
+            'task_id' => (string) $tr['task_id'],
+            'editor' => (string) $tr['editor'],
+            'delivered_label' => (string) $tr['delivered_label'],
+            'stages' => $tr['stages'],
+        ];
+    }
+
+    return [
+        'available' => true,
+        'stage_columns' => $stageColumns,
+        'by_editor' => $byEditor,
+        'tasks' => $tasksOut,
+    ];
 }
 
 /**
@@ -375,11 +637,7 @@ function akh_task_status_log_median_hours(array $hours): ?float
  */
 function akh_task_status_log_milestone_durations(DateTimeImmutable $start, DateTimeImmutable $end): array
 {
-    $milestones = [
-        ['key' => 'create_to_assigned', 'label' => 'Created → Assigned', 'from' => '_created', 'to' => 'assigned'],
-        ['key' => 'assigned_to_preview', 'label' => 'Assigned → Preview sent', 'from' => 'assigned', 'to' => 'preview_sent'],
-        ['key' => 'preview_to_delivered', 'label' => 'Preview sent → Delivered', 'from' => 'preview_sent', 'to' => 'delivered'],
-    ];
+    $milestones = akh_task_status_log_editor_stage_definitions();
 
     $out = [];
     foreach ($milestones as $m) {
@@ -398,27 +656,9 @@ function akh_task_status_log_milestone_durations(DateTimeImmutable $start, DateT
     require_once __DIR__ . '/tasks.php';
 
     try {
-        $st = akh_db()->query(
-            'SELECT task_id, to_status, created_at
-             FROM task_status_changes
-             ORDER BY task_id ASC, created_at ASC, id ASC'
-        );
-        if ($st === false) {
+        $firstHit = akh_task_status_log_first_status_hits_by_task();
+        if ($firstHit === []) {
             return $out;
-        }
-
-        /** @var array<string, array<string, DateTimeImmutable>> */
-        $firstHit = [];
-        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $code = akh_task_normalize_id((string) ($row['task_id'] ?? ''));
-            $to = akh_task_status_log_normalize((string) ($row['to_status'] ?? ''));
-            $dt = akh_parse_datetime_to_site((string) ($row['created_at'] ?? ''));
-            if ($code === '' || $to === '' || $dt === null) {
-                continue;
-            }
-            if (!isset($firstHit[$code][$to]) || $dt < $firstHit[$code][$to]) {
-                $firstHit[$code][$to] = $dt;
-            }
         }
 
         /** @var array<string, list<float>> */
@@ -450,18 +690,8 @@ function akh_task_status_log_milestone_durations(DateTimeImmutable $start, DateT
                 if ($toDt < $start || $toDt >= $end) {
                     continue;
                 }
-                if ($m['from'] === '_created') {
-                    $fromDt = $created;
-                } elseif (isset($hits[$m['from']])) {
-                    $fromDt = $hits[$m['from']];
-                } else {
-                    continue;
-                }
-                if ($toDt <= $fromDt) {
-                    continue;
-                }
-                $hours = ($toDt->getTimestamp() - $fromDt->getTimestamp()) / 3600;
-                if ($hours >= 0 && $hours < 24 * 366) {
+                $hours = akh_task_status_log_stage_hours($hits, $created, $m);
+                if ($hours !== null) {
                     $buckets[$m['key']][] = $hours;
                 }
             }
@@ -505,7 +735,7 @@ function akh_task_status_log_first_delivered_at_map(): array
             if ($code === '' || $raw === '') {
                 continue;
             }
-            $dt = akh_parse_datetime_to_site($raw);
+            $dt = akh_analytics_parse_log_timestamp($raw);
             if ($dt !== null) {
                 $out[$code] = $dt;
             }

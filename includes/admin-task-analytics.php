@@ -193,6 +193,7 @@ function akh_admin_task_analytics_report(int $year, int $month): array
     $tz = akh_site_timezone();
 
     $pipeline = akh_task_status_log_pipeline_report($start, $end);
+    $editorPerformance = akh_task_status_log_editor_performance_report($start, $end);
 
     $deliveryLogMap = akh_admin_analytics_first_delivery_logged_at_map();
     $allTasks = akh_admin_analytics_tasks();
@@ -346,5 +347,6 @@ function akh_admin_task_analytics_report(int $year, int $month): array
             'delivered' => $trendDelivered,
         ],
         'pipeline' => $pipeline,
+        'editor_performance' => $editorPerformance,
     ];
 }

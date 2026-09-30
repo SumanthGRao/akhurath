@@ -38,6 +38,10 @@ $tasksBase = base_path('admin/tasks.php');
 $pipelineTransitions = is_array($pipeline['transitions'] ?? null) ? $pipeline['transitions'] : [];
 $pipelineStages = is_array($pipeline['stage_durations'] ?? null) ? $pipeline['stage_durations'] : [];
 $pipelineBySource = is_array($pipeline['by_source'] ?? null) ? $pipeline['by_source'] : [];
+$editorPerformance = is_array($report['editor_performance'] ?? null) ? $report['editor_performance'] : [];
+$editorPerfColumns = is_array($editorPerformance['stage_columns'] ?? null) ? $editorPerformance['stage_columns'] : [];
+$editorPerfByEditor = is_array($editorPerformance['by_editor'] ?? null) ? $editorPerformance['by_editor'] : [];
+$editorPerfTasks = is_array($editorPerformance['tasks'] ?? null) ? $editorPerformance['tasks'] : [];
 
 $chartPayload = [
     'trend' => $report['trend'],
@@ -57,8 +61,16 @@ $chartPayload = [
         'colors' => ['hsl(218, 38%, 42%)', 'hsl(132, 40%, 36%)'],
     ],
     'pipeline' => [
-        'labels' => array_map(static fn (array $r): string => (string) ($r['label'] ?? ''), array_slice($pipelineTransitions, 0, 5)),
-        'counts' => array_map(static fn (array $r): int => (int) ($r['count'] ?? 0), array_slice($pipelineTransitions, 0, 5)),
+        'labels' => array_map(static fn (array $r): string => (string) ($r['label'] ?? ''), array_slice($pipelineTransitions, 0, 6)),
+        'counts' => array_map(static fn (array $r): int => (int) ($r['count'] ?? 0), array_slice($pipelineTransitions, 0, 6)),
+    ],
+    'editorDelivery' => [
+        'labels' => array_map(static fn (array $r): string => (string) ($r['username'] ?? ''), array_slice($editorPerfByEditor, 0, 12)),
+        'hours' => array_map(static function (array $r): ?float {
+            $avg = $r['averages']['create_delivered'] ?? null;
+
+            return $avg !== null ? (float) $avg : null;
+        }, array_slice($editorPerfByEditor, 0, 12)),
     ],
 ];
 
@@ -93,6 +105,7 @@ require_once AKH_ROOT . '/includes/header.php';
           <strong>Incoming</strong> = tasks created in the month.
           <strong>Delivered</strong> = first logged Delivered/Closed transition.
           <strong>Pipeline</strong> = status-change log (editor desk + WhatsApp + admin).
+          Status log times are read as <strong>GMT/UTC</strong> and shown in <?php echo h($report['timezone']); ?>.
         </p>
       </form>
 
@@ -192,6 +205,82 @@ require_once AKH_ROOT . '/includes/header.php';
               </div>
             </article>
           </div>
+        <?php endif; ?>
+      </section>
+
+      <section class="admin-analytics__editors-perf admin-fade-stagger" aria-labelledby="analytics-editor-perf-h">
+        <h2 id="analytics-editor-perf-h" class="admin-panel__title">Editor turnaround — delivered in <?php echo h($report['month_label']); ?></h2>
+        <p class="admin-panel__lead admin-analytics__pipeline-lead">
+          Per-task stage times from the status log (first time each stage was reached). Averages are across tasks delivered this month with an assigned editor.
+        </p>
+        <?php if (!($editorPerformance['available'] ?? false)): ?>
+          <p class="portal-muted">No editor timing data yet — ensure <code>task_status_changes</code> exists and editors move tasks through New → Assigned → Editing → Review → Preview → Delivered.</p>
+        <?php else: ?>
+          <?php if ($editorPerfByEditor === []): ?>
+            <p class="portal-muted">No delivered tasks with an assigned editor in this month.</p>
+          <?php else: ?>
+            <div class="admin-chart-canvas-wrap admin-chart-canvas-wrap--pipeline admin-analytics__editor-chart">
+              <canvas id="akh-analytics-editor-delivery" role="img" aria-label="Average time to deliver by editor"></canvas>
+            </div>
+            <div class="admin-table-wrap admin-analytics__editor-table-wrap">
+              <table class="admin-table admin-table--compact">
+                <thead>
+                  <tr>
+                    <th scope="col">Editor</th>
+                    <th scope="col">Delivered</th>
+                    <?php foreach ($editorPerfColumns as $col): ?>
+                      <th scope="col"><?php echo h((string) ($col['label'] ?? '')); ?></th>
+                    <?php endforeach; ?>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php foreach ($editorPerfByEditor as $row): ?>
+                    <tr>
+                      <td>
+                        <a class="text-link" href="<?php echo h($tasksBase . '?f_editor=' . rawurlencode((string) ($row['username'] ?? ''))); ?>"><?php echo h((string) ($row['username'] ?? '')); ?></a>
+                      </td>
+                      <td><?php echo (int) ($row['delivered'] ?? 0); ?></td>
+                      <?php foreach ($editorPerfColumns as $col): ?>
+                        <?php $key = (string) ($col['key'] ?? ''); ?>
+                        <td><?php echo h(akh_task_status_log_format_hours(isset($row['averages'][$key]) ? (float) $row['averages'][$key] : null)); ?></td>
+                      <?php endforeach; ?>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+            </div>
+          <?php endif; ?>
+
+          <?php if ($editorPerfTasks !== []): ?>
+            <h3 class="admin-panel__subtitle">Task breakdown (up to 50)</h3>
+            <div class="admin-table-wrap admin-analytics__task-timing-scroll">
+              <table class="admin-table admin-table--compact">
+                <thead>
+                  <tr>
+                    <th scope="col">Task</th>
+                    <th scope="col">Editor</th>
+                    <th scope="col">Delivered</th>
+                    <?php foreach ($editorPerfColumns as $col): ?>
+                      <th scope="col"><?php echo h((string) ($col['label'] ?? '')); ?></th>
+                    <?php endforeach; ?>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php foreach ($editorPerfTasks as $row): ?>
+                    <tr>
+                      <td><a class="text-link" href="<?php echo h($tasksBase . '?f_q=' . rawurlencode((string) ($row['task_id'] ?? ''))); ?>"><?php echo h((string) ($row['task_id'] ?? '')); ?></a></td>
+                      <td><?php echo h((string) ($row['editor'] ?? '')); ?></td>
+                      <td><?php echo h((string) ($row['delivered_label'] ?? '')); ?></td>
+                      <?php foreach ($editorPerfColumns as $col): ?>
+                        <?php $key = (string) ($col['key'] ?? ''); ?>
+                        <td><?php echo h(akh_task_status_log_format_hours(isset($row['stages'][$key]) ? (float) $row['stages'][$key] : null)); ?></td>
+                      <?php endforeach; ?>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+            </div>
+          <?php endif; ?>
         <?php endif; ?>
       </section>
 

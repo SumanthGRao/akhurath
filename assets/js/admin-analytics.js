@@ -105,6 +105,33 @@
     });
   }
 
+  var editorDelEl = document.getElementById('akh-analytics-editor-delivery');
+  if (editorDelEl && cfg.editorDelivery && (cfg.editorDelivery.labels || []).length) {
+    var delHours = (cfg.editorDelivery.hours || []).map(function (h) {
+      return h === null || h === undefined ? 0 : h;
+    });
+    new Chart(editorDelEl, {
+      type: 'bar',
+      data: {
+        labels: cfg.editorDelivery.labels,
+        datasets: [
+          {
+            label: 'Avg New → Delivered (hours)',
+            data: delHours,
+            backgroundColor: 'hsl(132, 40%, 36%)',
+          },
+        ],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true } },
+      },
+    });
+  }
+
   var pipelineEl = document.getElementById('akh-analytics-pipeline');
   if (pipelineEl && cfg.pipeline && (cfg.pipeline.labels || []).length) {
     new Chart(pipelineEl, {
