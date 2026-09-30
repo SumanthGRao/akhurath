@@ -2965,7 +2965,14 @@ function akh_task_automation_apply_status(string $taskRef, string $newStatus, st
             'Preview automation',
             $comment
         );
-        akh_whatsapp_dispatch_n8n_status_update($canonical, $newStatus, $comment, 'preview_automation');
+        // Do not call task-status n8n webhook for preview automation — it can create false
+        // "preview approved" notification rows that surface once status becomes preview_sent.
+        if ($newStatus === 'preview_sent') {
+            require_once __DIR__ . '/task-notification-events.php';
+            akh_task_notification_mark_preview_approvals_read($canonical);
+        } else {
+            akh_whatsapp_dispatch_n8n_status_update($canonical, $newStatus, $comment, 'preview_automation');
+        }
     }
 
     return true;

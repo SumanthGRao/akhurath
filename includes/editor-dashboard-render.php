@@ -149,10 +149,7 @@ function akh_editor_task_view_model(
         && str_starts_with((string) ($taskAlert['kind'] ?? ''), 'meeting_');
     $meetingUnread = $hasReminder || $meetingAlertUnread;
     $previewApproved = is_array($taskAlert)
-        && (
-            akh_task_notification_is_preview_approval_kind((string) ($taskAlert['kind'] ?? ''))
-            || str_contains(strtolower((string) ($taskAlert['preview'] ?? '')), 'approved')
-        );
+        && akh_task_notification_is_preview_approval_kind((string) ($taskAlert['kind'] ?? ''));
     $fromWhatsapp = (string) ($t['edit_type'] ?? '') === 'studio_admin'
         || strtolower(trim((string) ($t['client_username'] ?? ''))) === 'whatsapp';
     $classes = ['edesk-list__item', 'ticket--st-' . $stSlug];

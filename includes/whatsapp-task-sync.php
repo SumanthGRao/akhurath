@@ -611,6 +611,7 @@ function akh_whatsapp_dispatch_n8n_status_update(
         'status' => trim($status),
         'comment' => trim($comment),
         'updated_by' => akh_wa_editor_display_name(trim($editorUsername)),
+        'source' => trim($editorUsername) === 'preview_automation' ? 'preview_automation' : 'editor',
     ];
 
     $payload = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

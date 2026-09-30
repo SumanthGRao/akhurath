@@ -100,6 +100,29 @@ function akh_task_notification_is_preview_approval_kind(string $kind): bool
 /**
  * @param array<string, mixed> $row
  */
+function akh_task_notification_row_is_automation_or_studio_status_note(array $row): bool
+{
+    $body = strtolower(trim(akh_task_notification_row_body($row)));
+    if ($body === '') {
+        return false;
+    }
+
+    if (str_contains($body, 'preview link pushed')
+        || str_contains($body, 'preview_automation')
+        || str_contains($body, 'automation status update')
+        || str_contains($body, 'status updated from whatsapp dashboard')) {
+        return true;
+    }
+
+    if (str_contains($body, 'status (admin):') || str_contains($body, 'status:')) {
+        if (str_contains($body, 'preview sent') && !str_contains($body, 'approved')) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function akh_task_notification_row_is_preview_approval(array $row): bool
 {
     $kind = strtolower(trim((string) ($row['event_kind'] ?? $row['kind'] ?? '')));
@@ -107,8 +130,16 @@ function akh_task_notification_row_is_preview_approval(array $row): bool
         return true;
     }
 
+    if (akh_task_notification_row_is_automation_or_studio_status_note($row)) {
+        return false;
+    }
+
     $body = strtolower(trim(akh_task_notification_row_body($row)));
     if ($body === '') {
+        return false;
+    }
+
+    if (str_contains($body, 'preview sent') && !str_contains($body, 'approved')) {
         return false;
     }
 
@@ -152,6 +183,10 @@ function akh_task_notification_row_should_surface(array $row): bool
 
     if (!akh_task_notification_row_is_preview_approval($row)) {
         return true;
+    }
+
+    if (akh_task_notification_row_is_automation_or_studio_status_note($row)) {
+        return false;
     }
 
     $ref = akh_task_notification_row_task_ref($row);
