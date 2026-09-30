@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/tasks.php';
 require_once __DIR__ . '/site-datetime.php';
+require_once __DIR__ . '/auth.php';
 
 /**
  * @return array{0: DateTimeImmutable, 1: DateTimeImmutable}

@@ -220,7 +220,7 @@ require_once AKH_ROOT . '/includes/header.php';
   $analyticsVer = is_file($analyticsJs) ? (string) filemtime($analyticsJs) : '1';
   ?>
   <script>
-    window._akhAdminAnalytics = <?php echo json_encode($chartPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE); ?>;
+    window._akhAdminAnalytics = <?php echo json_encode($chartPayload, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
   </script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script defer src="<?php echo h(base_path('assets/js/admin-analytics.js')); ?>?v=<?php echo h($analyticsVer); ?>"></script>
