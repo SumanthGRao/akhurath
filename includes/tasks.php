@@ -1114,17 +1114,12 @@ function akh_task_ajax_client_view_ack(string $clientUsername, string $taskId): 
 }
 
 /**
+ * Authoritative task board (app_kv / tasks.json). Use for saves and automation.
+ *
  * @return list<array<string, mixed>>
  */
-function akh_tasks_load(): array
+function akh_tasks_load_persisted(): array
 {
-    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
-        $bridge = akh_dashboard_data_tasks_merged_for_board();
-        if ($bridge !== []) {
-            return $bridge;
-        }
-    }
-
     if (akh_tasks_storage_is_database()) {
         akh_tasks_require_kv();
         $raw = akh_kv_get('tasks');
@@ -1165,6 +1160,21 @@ function akh_tasks_load(): array
     }
 
     return array_values($out);
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function akh_tasks_load(): array
+{
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        $bridge = akh_dashboard_data_tasks_merged_for_board();
+        if ($bridge !== []) {
+            return $bridge;
+        }
+    }
+
+    return akh_tasks_load_persisted();
 }
 
 /**
@@ -1229,9 +1239,20 @@ function akh_tasks_save_locked(array $tasks): bool
 
 function akh_task_by_id(string $id): ?array
 {
-    foreach (akh_tasks_load() as $t) {
+    foreach (akh_tasks_load_persisted() as $t) {
         if (akh_task_ids_match((string) ($t['id'] ?? ''), $id)) {
             return $t;
+        }
+    }
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        foreach (akh_dashboard_data_tasks_merged_for_board() as $t) {
+            if (!is_array($t)) {
+                continue;
+            }
+            if (akh_task_ids_match((string) ($t['id'] ?? ''), $id)) {
+                return $t;
+            }
         }
     }
 
@@ -2708,9 +2729,10 @@ function akh_task_admin_set_status(string $taskId, string $newStatus, string $lo
     if (!in_array($newStatus, $allowed, true)) {
         return 'Invalid status.';
     }
-    $list = akh_tasks_load();
+    $list = akh_tasks_load_persisted();
     $found = false;
     $parentForSync = '';
+    $canonicalId = '';
     foreach ($list as $i => $t) {
         if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
             continue;
@@ -2719,6 +2741,7 @@ function akh_task_admin_set_status(string $taskId, string $newStatus, string $lo
             return 'Use the child task rows to change status; the bundle row tracks children automatically.';
         }
         $found = true;
+        $canonicalId = akh_task_normalize_id((string) ($t['id'] ?? $taskId));
         $prevSt = (string) ($t['status'] ?? '');
         $list[$i]['status'] = $newStatus;
         if ($newStatus === 'new') {
@@ -2748,10 +2771,11 @@ function akh_task_admin_set_status(string $taskId, string $newStatus, string $lo
     if (!akh_tasks_save_locked($list)) {
         return 'Could not save tasks.';
     }
+    $logTaskId = $canonicalId !== '' ? $canonicalId : akh_task_normalize_id($taskId);
     if (isset($prevSt) && $prevSt !== $newStatus && $logSource !== 'whatsapp') {
         require_once __DIR__ . '/task-status-log.php';
         akh_task_status_log_record(
-            $taskId,
+            $logTaskId,
             $prevSt,
             $newStatus,
             $logSource,
@@ -2761,7 +2785,7 @@ function akh_task_admin_set_status(string $taskId, string $newStatus, string $lo
     }
     if ($parentForSync !== '') {
         akh_task_bundle_sync_parent($parentForSync);
-        $t2 = akh_task_by_id($taskId);
+        $t2 = akh_task_by_id($logTaskId);
         if ($t2 !== null && ($t2['client_editor_notify'] ?? false) === true) {
             akh_task_bundle_flag_parent_client_notify($parentForSync, (string) ($t2['client_notify_detail'] ?? ''));
         }

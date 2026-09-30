@@ -30,12 +30,28 @@ function akh_wa_workflow_pdo(): ?PDO
  */
 function akh_wa_preview_workflow_maybe_tick(): void
 {
-    if (akh_wa_workflow_pdo() === null) {
+    $pdo = akh_wa_workflow_pdo();
+    if ($pdo === null) {
         return;
     }
+
+    $urgent = false;
+    if (akh_wa_preview_messages_table_exists()) {
+        try {
+            $pending = $pdo->query(
+                'SELECT COUNT(*) FROM whatsapp_preview_messages WHERE processed_at IS NULL'
+            );
+            if ($pending !== false) {
+                $urgent = (int) $pending->fetchColumn() > 0;
+            }
+        } catch (Throwable) {
+            $urgent = false;
+        }
+    }
+
     $now = time();
     $last = akh_wa_preview_kv_get_int('last_tick_ts');
-    if ($last > 0 && ($now - $last) < 2) {
+    if (!$urgent && $last > 0 && ($now - $last) < 2) {
         return;
     }
     akh_wa_preview_kv_set_int('last_tick_ts', $now);
@@ -136,6 +152,59 @@ function akh_wa_preview_kv_set_int(string $suffix, int $value): void
 }
 
 /**
+ * Map n8n preview row values (AS0208, 208, whatsapp_tasks.id, etc.) to canonical AS####.
+ */
+function akh_wa_workflow_resolve_canonical_task_code(string $raw): string
+{
+    $raw = trim($raw);
+    if ($raw === '') {
+        return '';
+    }
+
+    $pdo = akh_wa_workflow_pdo();
+    if ($pdo instanceof PDO && ctype_digit($raw)) {
+        $waPk = (int) $raw;
+        if ($waPk > 0) {
+            try {
+                $st = $pdo->prepare('SELECT task_code FROM whatsapp_tasks WHERE id = ? LIMIT 1');
+                $st->execute([$waPk]);
+                $tc = $st->fetchColumn();
+                if (is_string($tc) && trim($tc) !== '') {
+                    $raw = trim($tc);
+                }
+            } catch (Throwable) {
+                // ignore
+            }
+        }
+    }
+
+    foreach (akh_tasks_load_persisted() as $t) {
+        if (akh_task_ids_match((string) ($t['id'] ?? ''), $raw)) {
+            return akh_task_normalize_id((string) ($t['id'] ?? ''));
+        }
+    }
+
+    $norm = akh_task_normalize_id($raw);
+    if ($norm !== '') {
+        foreach (akh_tasks_load_persisted() as $t) {
+            if (akh_task_ids_match((string) ($t['id'] ?? ''), $norm)) {
+                return akh_task_normalize_id((string) ($t['id'] ?? ''));
+            }
+        }
+    }
+
+    $wa = akh_wa_task_by_code_pdo($norm !== '' ? $norm : $raw);
+    if ($wa !== null) {
+        $fromWa = akh_task_normalize_id((string) ($wa['task_code'] ?? ''));
+        if ($fromWa !== '') {
+            return $fromWa;
+        }
+    }
+
+    return $norm !== '' ? $norm : akh_task_normalize_id($raw);
+}
+
+/**
  * @param array<string, mixed> $row
  */
 function akh_wa_workflow_task_code_from_row(array $row): string
@@ -148,7 +217,7 @@ function akh_wa_workflow_task_code_from_row(array $row): string
         if ($raw === '') {
             continue;
         }
-        $code = akh_task_normalize_id($raw);
+        $code = akh_wa_workflow_resolve_canonical_task_code($raw);
         if ($code !== '') {
             return $code;
         }
@@ -170,7 +239,7 @@ function akh_wa_workflow_task_code_from_row(array $row): string
         if ($raw === '') {
             continue;
         }
-        $code = akh_task_normalize_id($raw);
+        $code = akh_wa_workflow_resolve_canonical_task_code($raw);
         if ($code !== '') {
             return $code;
         }
@@ -199,8 +268,10 @@ function akh_wa_preview_task_is_awaiting_feedback(string $taskCode): bool
 
 function akh_wa_workflow_set_preview_sent(string $taskCode): bool
 {
-    $code = akh_task_normalize_id(trim($taskCode));
+    $code = akh_wa_workflow_resolve_canonical_task_code($taskCode);
     if ($code === '') {
+        error_log('akh_wa_workflow_set_preview_sent: could not resolve task from ' . $taskCode);
+
         return false;
     }
 
@@ -211,50 +282,54 @@ function akh_wa_workflow_set_preview_sent(string $taskCode): bool
         return false;
     }
 
+    $canonical = akh_task_normalize_id((string) ($studio['id'] ?? $code));
     $studioPrev = akh_task_status_log_normalize((string) ($studio['status'] ?? 'new'));
     if ($studioPrev === '') {
         $studioPrev = 'new';
     }
 
-    $studioOk = true;
+    $changed = false;
     if ($studioPrev !== 'preview_sent') {
         akh_task_status_log_record(
-            $code,
+            $canonical,
             $studioPrev,
             'preview_sent',
             'whatsapp',
             'Preview automation',
             'Preview link pushed — status set to Preview sent.'
         );
-        $err = akh_task_admin_set_status($code, 'preview_sent', 'whatsapp');
+        $err = akh_task_admin_set_status($canonical, 'preview_sent', 'whatsapp');
         if ($err !== null) {
             error_log('akh_wa_workflow_set_preview_sent studio: ' . $err);
 
             return false;
         }
-        $studioOk = true;
+        $changed = true;
     }
 
-    $wa = akh_wa_task_by_code_pdo($code);
-    if ($wa === null) {
-        return $studioOk;
+    $wa = akh_wa_task_by_code_pdo($canonical);
+    if ($wa !== null) {
+        $waId = (int) ($wa['id'] ?? 0);
+        $prevWa = strtolower(trim((string) ($wa['status'] ?? '')));
+        if ($waId > 0 && $prevWa !== 'preview_sent') {
+            $res = akh_wa_task_update($waId, ['status' => 'preview_sent']);
+            if (($res['ok'] ?? false) !== true) {
+                error_log('akh_wa_workflow_set_preview_sent wa: ' . (string) ($res['error'] ?? 'update failed'));
+
+                return false;
+            }
+            $changed = true;
+        }
     }
 
-    $waId = (int) ($wa['id'] ?? 0);
-    if ($waId <= 0) {
-        return $studioOk;
-    }
-
-    $prevWa = strtolower(trim((string) ($wa['status'] ?? '')));
-    if ($prevWa === 'preview_sent') {
-        return true;
-    }
-
-    $res = akh_wa_task_update($waId, ['status' => 'preview_sent']);
-    if (($res['ok'] ?? false) !== true) {
-        error_log('akh_wa_workflow_set_preview_sent wa: ' . (string) ($res['error'] ?? 'update failed'));
-
-        return false;
+    if ($changed || $studioPrev === 'preview_sent') {
+        require_once __DIR__ . '/whatsapp-task-sync.php';
+        akh_whatsapp_dispatch_n8n_status_update(
+            $canonical,
+            'preview_sent',
+            'Preview link pushed — status set to Preview sent.',
+            'preview_automation'
+        );
     }
 
     return true;
@@ -333,7 +408,12 @@ function akh_wa_preview_messages_process_queue(): void
             $id = (int) ($row['id'] ?? 0);
             $code = akh_wa_workflow_task_code_from_row($row);
             if ($id <= 0 || $code === '') {
-                error_log('akh_wa_preview_messages_process_queue: missing task id on preview row ' . $id);
+                error_log(
+                    'akh_wa_preview_messages_process_queue: missing/unresolved task on preview row '
+                    . $id
+                    . ' keys='
+                    . json_encode(array_intersect_key($row, array_flip(['task_code', 'task_id', 'payload'])), JSON_UNESCAPED_SLASHES)
+                );
                 continue;
             }
             if (!akh_wa_workflow_set_preview_sent($code)) {
