@@ -275,64 +275,11 @@ function akh_wa_workflow_set_preview_sent(string $taskCode): bool
         return false;
     }
 
-    $studio = akh_task_by_id($code);
-    if ($studio === null) {
-        error_log('akh_wa_workflow_set_preview_sent: studio task not found for ' . $code);
-
-        return false;
-    }
-
-    $canonical = akh_task_normalize_id((string) ($studio['id'] ?? $code));
-    $studioPrev = akh_task_status_log_normalize((string) ($studio['status'] ?? 'new'));
-    if ($studioPrev === '') {
-        $studioPrev = 'new';
-    }
-
-    $changed = false;
-    if ($studioPrev !== 'preview_sent') {
-        akh_task_status_log_record(
-            $canonical,
-            $studioPrev,
-            'preview_sent',
-            'whatsapp',
-            'Preview automation',
-            'Preview link pushed — status set to Preview sent.'
-        );
-        $err = akh_task_admin_set_status($canonical, 'preview_sent', 'whatsapp');
-        if ($err !== null) {
-            error_log('akh_wa_workflow_set_preview_sent studio: ' . $err);
-
-            return false;
-        }
-        $changed = true;
-    }
-
-    $wa = akh_wa_task_by_code_pdo($canonical);
-    if ($wa !== null) {
-        $waId = (int) ($wa['id'] ?? 0);
-        $prevWa = strtolower(trim((string) ($wa['status'] ?? '')));
-        if ($waId > 0 && $prevWa !== 'preview_sent') {
-            $res = akh_wa_task_update($waId, ['status' => 'preview_sent']);
-            if (($res['ok'] ?? false) !== true) {
-                error_log('akh_wa_workflow_set_preview_sent wa: ' . (string) ($res['error'] ?? 'update failed'));
-
-                return false;
-            }
-            $changed = true;
-        }
-    }
-
-    if ($changed || $studioPrev === 'preview_sent') {
-        require_once __DIR__ . '/whatsapp-task-sync.php';
-        akh_whatsapp_dispatch_n8n_status_update(
-            $canonical,
-            'preview_sent',
-            'Preview link pushed — status set to Preview sent.',
-            'preview_automation'
-        );
-    }
-
-    return true;
+    return akh_task_automation_apply_status(
+        $code,
+        'preview_sent',
+        'Preview link pushed — status set to Preview sent.'
+    );
 }
 
 function akh_wa_workflow_revert_from_preview(string $taskCode, string $comment): void
@@ -341,41 +288,13 @@ function akh_wa_workflow_revert_from_preview(string $taskCode, string $comment):
         return;
     }
 
-    $code = akh_task_normalize_id(trim($taskCode));
+    $code = akh_wa_workflow_resolve_canonical_task_code($taskCode);
     if ($code === '') {
         return;
     }
 
-    $studio = akh_task_by_id($code);
-    $prev = is_array($studio) ? akh_task_status_log_normalize((string) ($studio['status'] ?? '')) : '';
-    if ($prev === 'reverted') {
-        return;
-    }
-    if ($prev === '') {
-        $prev = 'preview_sent';
-    }
-
-    akh_task_status_log_record($code, $prev, 'reverted', 'whatsapp', 'Client feedback', $comment);
-    akh_task_admin_set_status($code, 'reverted', 'whatsapp');
-
-    $pdo = akh_wa_workflow_pdo();
-    if ($pdo === null) {
-        return;
-    }
-
-    $wa = akh_wa_task_by_code_pdo($code);
-    if ($wa === null) {
-        return;
-    }
-    $waId = (int) ($wa['id'] ?? 0);
-    if ($waId <= 0) {
-        return;
-    }
-    try {
-        $pdo->prepare('UPDATE whatsapp_tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-            ->execute(['review', $waId]);
-    } catch (Throwable $e) {
-        error_log('akh_wa_workflow_revert_from_preview: ' . $e->getMessage());
+    if (!akh_task_automation_apply_status($code, 'reverted', $comment)) {
+        error_log('akh_wa_workflow_revert_from_preview: failed for ' . $code);
     }
 }
 

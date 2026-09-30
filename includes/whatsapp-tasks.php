@@ -64,16 +64,11 @@ function akh_wa_task_format_datetime_ist(string $raw): string
     }
 }
 
-function akh_wa_tasks_table_exists(): bool
+function akh_wa_tasks_mysql_table_exists(): bool
 {
-    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
-        return akh_dashboard_data_whatsapp_tasks() !== [] || akh_dashboard_data_tasks_merged_for_board() !== [];
-    }
-
     if (!function_exists('akh_db') || !akh_db_is_pdo()) {
         return false;
     }
-
     try {
         $st = akh_db()->query("SHOW TABLES LIKE 'whatsapp_tasks'");
 
@@ -81,6 +76,19 @@ function akh_wa_tasks_table_exists(): bool
     } catch (Throwable) {
         return false;
     }
+}
+
+function akh_wa_tasks_table_exists(): bool
+{
+    if (akh_wa_tasks_mysql_table_exists()) {
+        return true;
+    }
+
+    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+        return akh_dashboard_data_whatsapp_tasks() !== [] || akh_dashboard_data_tasks_merged_for_board() !== [];
+    }
+
+    return false;
 }
 
 /** @return array<int, string> editor id => username */
@@ -129,11 +137,11 @@ function akh_wa_editors_for_select(): array
  */
 function akh_wa_tasks_list(array $filters = []): array
 {
-    if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
-        return akh_dashboard_data_whatsapp_tasks_filtered($filters);
-    }
+    if (!akh_wa_tasks_mysql_table_exists()) {
+        if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
+            return akh_dashboard_data_whatsapp_tasks_filtered($filters);
+        }
 
-    if (!akh_wa_tasks_table_exists()) {
         throw new RuntimeException('Table whatsapp_tasks was not found. Import sql/migrations/004_whatsapp_tasks.sql.');
     }
 
@@ -299,12 +307,20 @@ function akh_wa_tasks_list_for_dashboard(array $filters = []): array
 function akh_wa_task_status_counts(): array
 {
     $counts = array_fill_keys(akh_wa_task_statuses(), 0);
-    if (!akh_wa_tasks_table_exists()) {
+    if (!akh_wa_tasks_mysql_table_exists()) {
         return $counts;
     }
 
     try {
-        $st = akh_db()->query('SELECT LOWER(status) AS status, COUNT(*) AS c FROM whatsapp_tasks GROUP BY LOWER(status)');
+        $pdo = akh_db();
+        if (!$pdo instanceof PDO) {
+            require_once __DIR__ . '/whatsapp-preview-workflow.php';
+            $pdo = akh_wa_workflow_pdo();
+        }
+        if (!$pdo instanceof PDO) {
+            return $counts;
+        }
+        $st = $pdo->query('SELECT LOWER(status) AS status, COUNT(*) AS c FROM whatsapp_tasks GROUP BY LOWER(status)');
         while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
             $key = akh_wa_task_normalize_status((string) ($row['status'] ?? ''));
             if ($key !== null) {
@@ -323,12 +339,20 @@ function akh_wa_tasks_poll_signature(): string
     require_once __DIR__ . '/whatsapp-preview-workflow.php';
     akh_wa_preview_workflow_tick();
 
-    if (!akh_wa_tasks_table_exists()) {
+    if (!akh_wa_tasks_mysql_table_exists()) {
         return 'missing';
     }
 
     try {
-        $row = akh_db()->query('SELECT COUNT(*) AS c, COALESCE(MAX(updated_at), "") AS u FROM whatsapp_tasks')->fetch(PDO::FETCH_ASSOC);
+        $pdo = akh_db();
+        if (!$pdo instanceof PDO) {
+            require_once __DIR__ . '/whatsapp-preview-workflow.php';
+            $pdo = akh_wa_workflow_pdo();
+        }
+        if (!$pdo instanceof PDO) {
+            return 'missing';
+        }
+        $row = $pdo->query('SELECT COUNT(*) AS c, COALESCE(MAX(updated_at), "") AS u FROM whatsapp_tasks')->fetch(PDO::FETCH_ASSOC);
         if (!is_array($row)) {
             return 'empty';
         }

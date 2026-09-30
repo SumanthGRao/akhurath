@@ -1163,6 +1163,80 @@ function akh_tasks_load_persisted(): array
 }
 
 /**
+ * When n8n bridge supplies tasks but automation saves to app_kv, overlay persisted fields on the board.
+ *
+ * @param list<array<string, mixed>> $bridge
+ * @return list<array<string, mixed>>
+ */
+function akh_tasks_overlay_persisted_on_bridge(array $bridge): array
+{
+    $persisted = akh_tasks_load_persisted();
+    if ($persisted === [] || $bridge === []) {
+        return $bridge;
+    }
+
+    /** @var array<string, array<string, mixed>> */
+    $byId = [];
+    foreach ($persisted as $p) {
+        if (!is_array($p)) {
+            continue;
+        }
+        $nid = akh_task_normalize_id((string) ($p['id'] ?? ''));
+        if ($nid !== '') {
+            $byId[$nid] = $p;
+        }
+    }
+
+    $overlayKeys = [
+        'status',
+        'updated_at',
+        'assigned_editor',
+        'deliverable_output',
+        'client_editor_notify',
+        'client_notify_detail',
+        'editor_feedback_notify',
+        'editor_notify_detail',
+    ];
+
+    $seen = [];
+    $out = [];
+    foreach ($bridge as $t) {
+        if (!is_array($t)) {
+            continue;
+        }
+        $nid = akh_task_normalize_id((string) ($t['id'] ?? ''));
+        if ($nid !== '') {
+            $seen[$nid] = true;
+        }
+        if ($nid !== '' && isset($byId[$nid])) {
+            $p = $byId[$nid];
+            $merged = $t;
+            foreach ($overlayKeys as $key) {
+                if (array_key_exists($key, $p)) {
+                    $merged[$key] = $p[$key];
+                }
+            }
+            $out[] = $merged;
+            continue;
+        }
+        $out[] = $t;
+    }
+
+    foreach ($persisted as $p) {
+        if (!is_array($p)) {
+            continue;
+        }
+        $nid = akh_task_normalize_id((string) ($p['id'] ?? ''));
+        if ($nid === '' || isset($seen[$nid])) {
+            continue;
+        }
+        $out[] = $p;
+    }
+
+    return $out;
+}
+
+/**
  * @return list<array<string, mixed>>
  */
 function akh_tasks_load(): array
@@ -1170,7 +1244,7 @@ function akh_tasks_load(): array
     if (function_exists('akh_dashboard_data_bridge_reads') && akh_dashboard_data_bridge_reads()) {
         $bridge = akh_dashboard_data_tasks_merged_for_board();
         if ($bridge !== []) {
-            return $bridge;
+            return akh_tasks_overlay_persisted_on_bridge($bridge);
         }
     }
 
@@ -2792,6 +2866,109 @@ function akh_task_admin_set_status(string $taskId, string $newStatus, string $lo
     }
 
     return null;
+}
+
+/**
+ * Same path as editor status save: whatsapp_tasks + app_kv + n8n (for preview / automation).
+ */
+function akh_task_automation_apply_status(string $taskRef, string $newStatus, string $comment): bool
+{
+    $allowed = ['assigned', 'in_progress', 'review', 'preview_sent', 'delivered', 'reverted', 'closed', 'cancelled'];
+    if (!in_array($newStatus, $allowed, true)) {
+        return false;
+    }
+
+    $comment = trim($comment);
+    if ($comment === '') {
+        $comment = 'Automation status update.';
+    }
+    if (mb_strlen($comment) > 2000) {
+        $comment = mb_substr($comment, 0, 1997) . '…';
+    }
+
+    $code = akh_task_normalize_id(trim($taskRef));
+    if ($code === '') {
+        return false;
+    }
+
+    $list = akh_tasks_load_persisted();
+    $found = false;
+    $idx = -1;
+    $prevSt = '';
+    $out = null;
+
+    foreach ($list as $i => $t) {
+        if (!akh_task_ids_match((string) ($t['id'] ?? ''), $code)) {
+            continue;
+        }
+        $found = true;
+        $idx = $i;
+        $prevSt = (string) ($t['status'] ?? '');
+        $out = $t;
+        break;
+    }
+
+    if (!$found) {
+        foreach (akh_tasks_load() as $t) {
+            if (!akh_task_ids_match((string) ($t['id'] ?? ''), $code)) {
+                continue;
+            }
+            if ($list === []) {
+                $list = [$t];
+                $idx = 0;
+            } else {
+                $list[] = $t;
+                $idx = count($list) - 1;
+            }
+            $prevSt = (string) ($t['status'] ?? '');
+            $out = $t;
+            $found = true;
+            break;
+        }
+    }
+
+    if (!$found || $out === null || $idx < 0) {
+        error_log('akh_task_automation_apply_status: task not found for ' . $code);
+
+        return false;
+    }
+
+    $canonical = akh_task_normalize_id((string) ($out['id'] ?? $code));
+    if ($prevSt !== $newStatus) {
+        if (!akh_whatsapp_record_task_status_update($out, $newStatus, 'preview_automation', $comment)) {
+            error_log(
+                'akh_task_automation_apply_status: WhatsApp sync failed for '
+                . $canonical
+                . ': '
+                . akh_whatsapp_task_sync_last_error()
+            );
+
+            return false;
+        }
+        $list[$idx]['status'] = $newStatus;
+        $list[$idx]['updated_at'] = gmdate('c');
+    }
+
+    if (!akh_tasks_save_locked($list)) {
+        error_log('akh_task_automation_apply_status: could not save tasks for ' . $canonical);
+
+        return false;
+    }
+
+    if ($prevSt !== $newStatus) {
+        require_once __DIR__ . '/task-status-log.php';
+        akh_task_status_log_record(
+            $canonical,
+            $prevSt,
+            $newStatus,
+            'whatsapp',
+            'Preview automation',
+            $comment
+        );
+        akh_whatsapp_dispatch_n8n_status_update($canonical, $newStatus, $comment, 'preview_automation');
+    }
+
+    return true;
 }
 
 function akh_task_admin_delete(string $taskId): bool

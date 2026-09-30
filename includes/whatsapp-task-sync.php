@@ -451,6 +451,12 @@ function akh_wa_find_row_for_studio_task(array $studioTask): ?array
         return null;
     }
 
+    require_once __DIR__ . '/whatsapp-tasks.php';
+    $pdoRow = akh_wa_task_by_code_pdo($taskCode);
+    if ($pdoRow !== null) {
+        return $pdoRow;
+    }
+
     return akh_wa_task_by_code($taskCode);
 }
 
