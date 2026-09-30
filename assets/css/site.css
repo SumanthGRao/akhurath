@@ -5099,6 +5099,62 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   min-height: 240px;
 }
 
+.admin-chart-canvas-wrap--tall {
+  height: min(360px, 60vw);
+  min-height: 280px;
+}
+
+.admin-panel--wide {
+  grid-column: 1 / -1;
+}
+
+.admin-analytics__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1.25rem;
+  margin: 0 0 1.5rem;
+}
+
+.admin-analytics__month {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.admin-analytics__month-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.admin-analytics__hint {
+  flex: 1 1 16rem;
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.admin-analytics__tables {
+  margin-top: 0.5rem;
+}
+
+.admin-analytics__table-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+@media (min-width: 960px) {
+  .admin-analytics__table-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.admin-panel__subtitle {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+}
+
 .admin-chart-canvas-wrap--bar {
   height: min(340px, 58vw);
   min-height: 260px;
