@@ -2359,6 +2359,7 @@ function akh_task_claim(string $taskId, string $editorUsername): ?array
     $list = akh_tasks_load();
     $found = false;
     $parentId = '';
+    $prevSt = 'new';
     foreach ($list as $i => $t) {
         if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
             continue;
@@ -2366,6 +2367,7 @@ function akh_task_claim(string $taskId, string $editorUsername): ?array
         if (!akh_task_editor_pool_eligible($t)) {
             return null;
         }
+        $prevSt = (string) ($t['status'] ?? 'new');
         $list[$i]['assigned_editor'] = $editorUsername;
         $list[$i]['status'] = 'assigned';
         $list[$i]['updated_at'] = gmdate('c');
@@ -2387,6 +2389,17 @@ function akh_task_claim(string $taskId, string $editorUsername): ?array
     }
     if (!akh_tasks_save_locked($list)) {
         return null;
+    }
+    if ($prevSt !== 'assigned') {
+        require_once __DIR__ . '/task-status-log.php';
+        akh_task_status_log_record(
+            (string) ($out['id'] ?? $taskId),
+            $prevSt,
+            'assigned',
+            'editor',
+            $editorUsername,
+            'Editor claimed task'
+        );
     }
     if ($parentId !== '') {
         akh_task_bundle_sync_parent($parentId);
@@ -2491,6 +2504,17 @@ function akh_task_set_status(
     }
     if (!akh_tasks_save_locked($list)) {
         return null;
+    }
+    if ($prevSt !== $newStatus) {
+        require_once __DIR__ . '/task-status-log.php';
+        akh_task_status_log_record(
+            (string) ($out['id'] ?? $taskId),
+            $prevSt,
+            $newStatus,
+            'editor',
+            $editorUsername,
+            $statusComment
+        );
     }
     if ($syncWaStatus) {
         akh_whatsapp_dispatch_n8n_status_update(
@@ -2617,6 +2641,7 @@ function akh_task_admin_assign(string $taskId, ?string $editorUsername): ?string
             return 'Use the child task rows to assign editors for each deliverable.';
         }
         $found = true;
+        $prevSt = (string) ($t['status'] ?? 'new');
         $prevEd = strtolower(trim((string) ($t['assigned_editor'] ?? '')));
         if ($editorUsername === '') {
             $list[$i]['assigned_editor'] = null;
@@ -2625,6 +2650,7 @@ function akh_task_admin_assign(string $taskId, ?string $editorUsername): ?string
             $list[$i]['assigned_editor'] = $editorUsername;
             $list[$i]['status'] = 'assigned';
         }
+        $nextSt = (string) ($list[$i]['status'] ?? 'new');
         $list[$i]['updated_at'] = gmdate('c');
         $newEd = strtolower(trim((string) ($list[$i]['assigned_editor'] ?? '')));
         $cu = strtolower(trim((string) ($list[$i]['client_username'] ?? '')));
@@ -2651,6 +2677,17 @@ function akh_task_admin_assign(string $taskId, ?string $editorUsername): ?string
     if (!akh_tasks_save_locked($list)) {
         return 'Could not save tasks.';
     }
+    if (isset($prevSt, $nextSt) && $prevSt !== $nextSt) {
+        require_once __DIR__ . '/task-status-log.php';
+        akh_task_status_log_record(
+            $taskId,
+            $prevSt,
+            $nextSt,
+            'admin',
+            'admin',
+            $editorUsername !== '' ? 'Assigned editor: ' . $editorUsername : 'Editor unassigned'
+        );
+    }
     if ($parentForSync !== '') {
         akh_task_bundle_sync_parent($parentForSync);
         $t2 = akh_task_by_id($taskId);
@@ -2665,7 +2702,7 @@ function akh_task_admin_assign(string $taskId, ?string $editorUsername): ?string
 /**
  * @return string|null error
  */
-function akh_task_admin_set_status(string $taskId, string $newStatus): ?string
+function akh_task_admin_set_status(string $taskId, string $newStatus, string $logSource = 'admin'): ?string
 {
     $allowed = ['new', 'assigned', 'in_progress', 'review', 'preview_sent', 'delivered', 'reverted', 'closed', 'cancelled'];
     if (!in_array($newStatus, $allowed, true)) {
@@ -2710,6 +2747,17 @@ function akh_task_admin_set_status(string $taskId, string $newStatus): ?string
     }
     if (!akh_tasks_save_locked($list)) {
         return 'Could not save tasks.';
+    }
+    if (isset($prevSt) && $prevSt !== $newStatus) {
+        require_once __DIR__ . '/task-status-log.php';
+        akh_task_status_log_record(
+            $taskId,
+            $prevSt,
+            $newStatus,
+            $logSource,
+            $logSource === 'whatsapp' ? 'WhatsApp dashboard' : 'admin',
+            'Admin status update'
+        );
     }
     if ($parentForSync !== '') {
         akh_task_bundle_sync_parent($parentForSync);

@@ -31,8 +31,13 @@ if ($month < 1 || $month > 12) {
 
 $report = akh_admin_task_analytics_report($year, $month);
 $summary = $report['summary'];
+$pipeline = $report['pipeline'] ?? [];
 $monthValue = sprintf('%04d-%02d', $year, $month);
 $tasksBase = base_path('admin/tasks.php');
+
+$pipelineTransitions = is_array($pipeline['transitions'] ?? null) ? $pipeline['transitions'] : [];
+$pipelineStages = is_array($pipeline['stage_durations'] ?? null) ? $pipeline['stage_durations'] : [];
+$pipelineBySource = is_array($pipeline['by_source'] ?? null) ? $pipeline['by_source'] : [];
 
 $chartPayload = [
     'trend' => $report['trend'],
@@ -50,6 +55,10 @@ $chartPayload = [
         'labels' => ['Incoming', 'Delivered'],
         'data' => [(int) $summary['incoming'], (int) $summary['delivered']],
         'colors' => ['hsl(218, 38%, 42%)', 'hsl(132, 40%, 36%)'],
+    ],
+    'pipeline' => [
+        'labels' => array_map(static fn (array $r): string => (string) ($r['label'] ?? ''), array_slice($pipelineTransitions, 0, 5)),
+        'counts' => array_map(static fn (array $r): int => (int) ($r['count'] ?? 0), array_slice($pipelineTransitions, 0, 5)),
     ],
 ];
 
@@ -82,7 +91,8 @@ require_once AKH_ROOT . '/includes/header.php';
         <button type="submit" class="btn btn--primary btn--sm">Apply</button>
         <p class="portal-muted admin-analytics__hint">
           <strong>Incoming</strong> = tasks created in the month.
-          <strong>Delivered</strong> = first logged Delivered/Closed date (status history), or last update if no log exists.
+          <strong>Delivered</strong> = first logged Delivered/Closed transition.
+          <strong>Pipeline</strong> = status-change log (editor desk + WhatsApp + admin).
         </p>
       </form>
 
@@ -104,6 +114,86 @@ require_once AKH_ROOT . '/includes/header.php';
           <span class="admin-stat__label">Cancelled (updated in month)</span>
         </div>
       </div>
+
+      <section class="admin-analytics__pipeline admin-fade-stagger" aria-labelledby="analytics-pipeline-h">
+        <h2 id="analytics-pipeline-h" class="admin-panel__title">Status pipeline — <?php echo h($report['month_label']); ?></h2>
+        <p class="admin-panel__lead admin-analytics__pipeline-lead">
+          Transitions recorded when status changes on the editor desk or WhatsApp dashboard.
+          Stage times use the <em>first</em> time each milestone was reached (steps in between are allowed).
+        </p>
+        <?php if (!($pipeline['available'] ?? false)): ?>
+          <p class="portal-muted">Status log table is not available yet. Run <code>php scripts/ensure-database.php</code> on the server, then change statuses to start collecting data.</p>
+        <?php else: ?>
+          <div class="admin-analytics__pipeline-stats">
+            <div class="admin-stat admin-stat--compact">
+              <span class="admin-stat__value"><?php echo (int) ($pipelineBySource['editor'] ?? 0); ?></span>
+              <span class="admin-stat__label">Editor desk changes</span>
+            </div>
+            <div class="admin-stat admin-stat--compact">
+              <span class="admin-stat__value"><?php echo (int) ($pipelineBySource['whatsapp'] ?? 0); ?></span>
+              <span class="admin-stat__label">WhatsApp dashboard</span>
+            </div>
+            <div class="admin-stat admin-stat--compact">
+              <span class="admin-stat__value"><?php echo (int) ($pipelineBySource['admin'] ?? 0); ?></span>
+              <span class="admin-stat__label">Admin / assign</span>
+            </div>
+          </div>
+          <div class="admin-analytics__pipeline-grid">
+            <article class="admin-panel">
+              <h3 class="admin-panel__subtitle">Transitions this month</h3>
+              <div class="admin-chart-canvas-wrap admin-chart-canvas-wrap--pipeline">
+                <canvas id="akh-analytics-pipeline" role="img" aria-label="Status transitions"></canvas>
+              </div>
+              <div class="admin-table-wrap admin-analytics__pipeline-table-wrap">
+                <table class="admin-table admin-table--compact">
+                  <thead>
+                    <tr>
+                      <th scope="col">Transition</th>
+                      <th scope="col">Count</th>
+                      <th scope="col">Avg step time</th>
+                      <th scope="col">Median</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <?php foreach ($pipelineTransitions as $row): ?>
+                      <tr>
+                        <td><?php echo h((string) ($row['label'] ?? '')); ?></td>
+                        <td><?php echo (int) ($row['count'] ?? 0); ?></td>
+                        <td><?php echo h(akh_task_status_log_format_hours(isset($row['avg_hours']) ? (float) $row['avg_hours'] : null)); ?></td>
+                        <td><?php echo h(akh_task_status_log_format_hours(isset($row['median_hours']) ? (float) $row['median_hours'] : null)); ?></td>
+                      </tr>
+                    <?php endforeach; ?>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+            <article class="admin-panel">
+              <h3 class="admin-panel__subtitle">Milestone turnaround</h3>
+              <p class="portal-muted admin-analytics__pipeline-note">Tasks that reached the milestone in <?php echo h($report['month_label']); ?>.</p>
+              <div class="admin-table-wrap">
+                <table class="admin-table admin-table--compact">
+                  <thead>
+                    <tr>
+                      <th scope="col">Stage</th>
+                      <th scope="col">Tasks</th>
+                      <th scope="col">Avg time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <?php foreach ($pipelineStages as $row): ?>
+                      <tr>
+                        <td><?php echo h((string) ($row['label'] ?? '')); ?></td>
+                        <td><?php echo (int) ($row['sample'] ?? 0); ?></td>
+                        <td><?php echo h(akh_task_status_log_format_hours(isset($row['avg_hours']) ? (float) $row['avg_hours'] : null)); ?></td>
+                      </tr>
+                    <?php endforeach; ?>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        <?php endif; ?>
+      </section>
 
       <section class="admin-charts-grid admin-fade-stagger" aria-label="Monthly charts">
         <article class="admin-chart-card admin-panel admin-panel--wide">

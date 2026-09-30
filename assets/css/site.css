@@ -5155,6 +5155,83 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   margin: 0 0 0.75rem;
 }
 
+.admin-analytics {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-analytics .portal-title,
+.admin-analytics .admin-panel__title,
+.admin-analytics .admin-panel__subtitle,
+.admin-analytics .admin-stat__label,
+.admin-analytics .admin-table {
+  font-family: inherit;
+}
+
+.admin-analytics .portal-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.admin-analytics__pipeline {
+  margin: 0 0 1.75rem;
+}
+
+.admin-analytics__pipeline-lead {
+  margin: 0 0 1rem;
+  max-width: 52rem;
+}
+
+.admin-analytics__pipeline-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.admin-stat--compact .admin-stat__value {
+  font-size: 1.35rem;
+}
+
+.admin-stat--compact .admin-stat__label {
+  font-size: 0.8rem;
+}
+
+.admin-analytics__pipeline-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+@media (min-width: 960px) {
+  .admin-analytics__pipeline-grid {
+    grid-template-columns: 1.2fr 0.8fr;
+  }
+}
+
+.admin-chart-canvas-wrap--pipeline {
+  height: min(220px, 40vw);
+  min-height: 180px;
+  margin-bottom: 1rem;
+}
+
+.admin-analytics__pipeline-table-wrap {
+  margin-top: 0.25rem;
+}
+
+.admin-table--compact th,
+.admin-table--compact td {
+  font-size: 0.875rem;
+  padding: 0.45rem 0.6rem;
+}
+
+.admin-analytics__pipeline-note {
+  font-size: 0.875rem;
+  margin: 0 0 0.75rem;
+}
+
 .admin-chart-canvas-wrap--bar {
   height: min(340px, 58vw);
   min-height: 260px;

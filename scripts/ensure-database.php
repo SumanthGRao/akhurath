@@ -247,6 +247,21 @@ if (is_file($migrationWaCustomerActivity) && !akh_ensure_table_exists($pdo, $sch
     }
 }
 
+$migrationStatusLog = AKH_ROOT . '/sql/migrations/016_task_status_changes.sql';
+if (is_file($migrationStatusLog) && !akh_ensure_table_exists($pdo, $schema, 'task_status_changes')) {
+    echo "Applying sql/migrations/016_task_status_changes.sql ...\n";
+    $sqlLog = file_get_contents($migrationStatusLog);
+    if (is_string($sqlLog) && trim($sqlLog) !== '') {
+        $pdo->exec($sqlLog);
+    }
+}
+
+require_once AKH_ROOT . '/includes/task-status-log.php';
+$backfilled = akh_task_status_log_backfill_from_task_updates();
+if ($backfilled > 0) {
+    echo "Backfilled {$backfilled} rows into task_status_changes from task_updates.\n";
+}
+
 echo "Schema patches are up to date.\n";
 
 if (!$migrateCustomers && !$migrateEditors) {

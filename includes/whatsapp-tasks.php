@@ -572,7 +572,7 @@ function akh_wa_sync_status_to_studio_board(string $taskCode, string $waStatus):
     }
     $studioStatus = akh_wa_map_status_to_studio($norm);
 
-    return akh_task_admin_set_status($taskCode, $studioStatus);
+    return akh_task_admin_set_status($taskCode, $studioStatus, 'whatsapp');
 }
 
 /**

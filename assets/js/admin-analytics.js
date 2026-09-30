@@ -9,7 +9,7 @@
     return;
   }
 
-  var fontFamily = "'Source Sans 3', system-ui, sans-serif";
+  var fontFamily = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
   Chart.defaults.font.family = fontFamily;
   Chart.defaults.color = '#5c5650';
 
@@ -102,6 +102,30 @@
         ],
       },
       options: barOptions(false),
+    });
+  }
+
+  var pipelineEl = document.getElementById('akh-analytics-pipeline');
+  if (pipelineEl && cfg.pipeline && (cfg.pipeline.labels || []).length) {
+    new Chart(pipelineEl, {
+      type: 'bar',
+      data: {
+        labels: cfg.pipeline.labels,
+        datasets: [
+          {
+            label: 'Transitions',
+            data: cfg.pipeline.counts,
+            backgroundColor: 'hsl(218, 38%, 42%)',
+          },
+        ],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+      },
     });
   }
 

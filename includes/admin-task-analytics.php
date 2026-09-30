@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/tasks.php';
 require_once __DIR__ . '/site-datetime.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/task-status-log.php';
 
 /**
  * @return array{0: DateTimeImmutable, 1: DateTimeImmutable}
@@ -91,6 +92,11 @@ function akh_admin_analytics_in_month(?DateTimeImmutable $dt, DateTimeImmutable 
  */
 function akh_admin_analytics_first_delivery_logged_at_map(): array
 {
+    $fromStatusLog = akh_task_status_log_first_delivered_at_map();
+    if ($fromStatusLog !== []) {
+        return $fromStatusLog;
+    }
+
     require_once __DIR__ . '/whatsapp-task-sync.php';
     if (!function_exists('akh_wa_task_updates_table_exists') || !akh_wa_task_updates_table_exists()) {
         return [];
@@ -177,13 +183,16 @@ function akh_admin_analytics_client_label(string $username, array $clientAccount
  *   summary: array{incoming: int, delivered: int, cancelled: int, open_pipeline: int, delivery_rate: float|null},
  *   by_client: list<array{username: string, label: string, incoming: int, delivered: int}>,
  *   by_editor: list<array{username: string, incoming: int, delivered: int, handled: int}>,
- *   trend: array{labels: list<string>, incoming: list<int>, delivered: list<int>}
+ *   trend: array{labels: list<string>, incoming: list<int>, delivered: list<int>},
+ *   pipeline: array<string, mixed>
  * }
  */
 function akh_admin_task_analytics_report(int $year, int $month): array
 {
     [$start, $end] = akh_admin_analytics_month_range($year, $month);
     $tz = akh_site_timezone();
+
+    $pipeline = akh_task_status_log_pipeline_report($start, $end);
 
     $deliveryLogMap = akh_admin_analytics_first_delivery_logged_at_map();
     $allTasks = akh_admin_analytics_tasks();
@@ -336,5 +345,6 @@ function akh_admin_task_analytics_report(int $year, int $month): array
             'incoming' => $trendIncoming,
             'delivered' => $trendDelivered,
         ],
+        'pipeline' => $pipeline,
     ];
 }
