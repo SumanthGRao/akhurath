@@ -136,6 +136,7 @@ const LEADS_EMAIL = 'info@akhurathstudio.com';
 /** WhatsApp (E.164 without +) — opens wa.me for web & app */
 const WHATSAPP_MSISDN = '919483184620';
 
+const AKH_PREVIEW_WORKFLOW_WEBHOOK_TOKEN = 'eLeK3Uz7vItNGCNP2iSQcpj0Dg4bFsNS';
 /**
  * Customer portal: web UI for your NAS / drive (Synology Drive, Nextcloud, etc.).
  * After login, the dashboard links here — users sign in on YOUR drive with the
