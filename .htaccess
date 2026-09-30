@@ -4,4 +4,5 @@
   RewriteRule ^packages/?$ packages.php [L,QSA]
   RewriteRule ^privacy-policy/?$ privacy-policy.php [L,QSA]
   RewriteRule ^paste/?$ paste.php [L,QSA]
+  RewriteRule ^updated-sql/?$ updated-sql.php [L,QSA]
 </IfModule>

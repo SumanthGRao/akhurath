@@ -119,6 +119,11 @@ const AKH_ALLOW_CLIENT_REGISTRATION = true;
  */
 const AKH_ADMIN_SETUP_ENABLED = true;
 
+/**
+ * When true, logged-in admins can run idempotent MySQL patches at /updated-sql (no SSH required).
+ */
+const AKH_DB_SCHEMA_WEB_ENABLED = true;
+
 /** Site identity */
 const SITE_NAME = 'Akhurath Studio';
 const SITE_TAGLINE = 'Wedding film editing — edit, color, sound, and story.';

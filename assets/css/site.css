@@ -5232,6 +5232,74 @@ body.page-home .site-header:not(.site-header--solid) .site-menu__list .site-menu
   margin: 0 0 0.75rem;
 }
 
+.admin-updated-sql {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.9375rem;
+}
+
+.admin-updated-sql__check {
+  margin: 0 0 1.5rem;
+}
+
+.admin-updated-sql__checklist {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.admin-updated-sql__check-item {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 6px;
+  background: var(--surface-2, #f5f3ef);
+  font-size: 0.875rem;
+}
+
+.admin-updated-sql__check-item.is-ok .admin-updated-sql__check-state {
+  color: hsl(132, 40%, 32%);
+}
+
+.admin-updated-sql__check-item.is-missing .admin-updated-sql__check-state {
+  color: hsl(28, 55%, 38%);
+}
+
+.admin-updated-sql__form {
+  margin: 1rem 0;
+}
+
+.admin-updated-sql__options {
+  border: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.admin-updated-sql__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.admin-updated-sql__log {
+  margin: 1rem 0 0;
+  padding: 1rem;
+  background: #1e1e1e;
+  color: #e8e6e3;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .admin-chart-canvas-wrap--bar {
   height: min(340px, 58vw);
   min-height: 260px;

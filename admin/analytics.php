@@ -122,7 +122,7 @@ require_once AKH_ROOT . '/includes/header.php';
           Stage times use the <em>first</em> time each milestone was reached (steps in between are allowed).
         </p>
         <?php if (!($pipeline['available'] ?? false)): ?>
-          <p class="portal-muted">Status log table is not available yet. Run <code>php scripts/ensure-database.php</code> on the server, then change statuses to start collecting data.</p>
+          <p class="portal-muted">Status log table is not available yet. Open <a class="text-link" href="<?php echo h(base_path('updated-sql')); ?>">Database schema updates</a> while signed in as admin, then change statuses to start collecting data.</p>
         <?php else: ?>
           <div class="admin-analytics__pipeline-stats">
             <div class="admin-stat admin-stat--compact">
