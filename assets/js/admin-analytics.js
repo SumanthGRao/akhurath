@@ -178,4 +178,12 @@
       options: barOptions(false),
     });
   }
+
+  var refreshMs = 90000;
+  setInterval(function () {
+    if (document.hidden) {
+      return;
+    }
+    window.location.reload();
+  }, refreshMs);
 })();

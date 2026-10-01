@@ -106,6 +106,7 @@ require_once AKH_ROOT . '/includes/header.php';
           <strong>Delivered</strong> = first logged Delivered/Closed transition.
           <strong>Pipeline</strong> = status-change log (editor desk + WhatsApp + admin).
           Status log times are read as <strong>GMT/UTC</strong> and shown in <?php echo h($report['timezone']); ?>.
+          This page auto-refreshes every 90 seconds while open (or reload after you mark a task delivered).
         </p>
       </form>
 

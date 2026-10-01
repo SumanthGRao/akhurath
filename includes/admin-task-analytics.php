@@ -104,21 +104,25 @@ function akh_admin_analytics_first_delivery_logged_at_map(): array
 
     try {
         $st = akh_db()->query(
-            "SELECT task_id, MIN(created_at) AS delivered_at
-             FROM task_updates
-             WHERE LOWER(TRIM(status)) IN ('delivered', 'closed')
-             GROUP BY task_id"
+            'SELECT task_id, status, created_at FROM task_updates ORDER BY task_id ASC, created_at ASC'
         );
         if ($st === false) {
             return $out;
         }
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $norm = akh_task_status_log_label_to_status((string) ($row['status'] ?? ''));
+            if (!in_array($norm, ['delivered', 'closed'], true)) {
+                continue;
+            }
             $code = akh_task_normalize_id((string) ($row['task_id'] ?? ''));
-            $raw = trim((string) ($row['delivered_at'] ?? ''));
+            $raw = trim((string) ($row['created_at'] ?? ''));
             if ($code === '' || $raw === '') {
                 continue;
             }
             $dt = akh_analytics_parse_log_timestamp($raw);
+            if ($dt === null) {
+                $dt = akh_parse_datetime_to_site($raw);
+            }
             if ($dt === null) {
                 continue;
             }
@@ -134,6 +138,87 @@ function akh_admin_analytics_first_delivery_logged_at_map(): array
 }
 
 /**
+ * @param array<string, DateTimeImmutable> $deliveryLogMap
+ */
+function akh_admin_analytics_delivery_map_lookup(string $taskCode, array $deliveryLogMap): ?DateTimeImmutable
+{
+    $code = akh_task_normalize_id($taskCode);
+    if ($code !== '' && isset($deliveryLogMap[$code])) {
+        return $deliveryLogMap[$code];
+    }
+    foreach (akh_task_id_match_variants($taskCode) as $variant) {
+        $norm = akh_task_normalize_id($variant);
+        if ($norm !== '' && isset($deliveryLogMap[$norm])) {
+            return $deliveryLogMap[$norm];
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Per-task delivery instant when not in the pre-built map (just-delivered tasks).
+ */
+function akh_admin_analytics_lazy_delivered_at(string $taskCode): ?DateTimeImmutable
+{
+    $code = akh_task_normalize_id($taskCode);
+    if ($code === '') {
+        return null;
+    }
+
+    if (akh_task_status_log_table_exists()) {
+        try {
+            foreach (akh_task_id_match_variants($code) as $variant) {
+                $st = akh_db()->prepare(
+                    "SELECT created_at FROM task_status_changes
+                     WHERE task_id = ? AND to_status IN ('delivered', 'closed')
+                     ORDER BY created_at ASC LIMIT 1"
+                );
+                $st->execute([akh_task_normalize_id($variant)]);
+                $raw = $st->fetchColumn();
+                if (is_string($raw) && trim($raw) !== '') {
+                    $dt = akh_analytics_parse_log_timestamp($raw);
+                    if ($dt !== null) {
+                        return $dt;
+                    }
+                }
+            }
+        } catch (Throwable) {
+            // fall through
+        }
+    }
+
+    require_once __DIR__ . '/whatsapp-task-sync.php';
+    if (function_exists('akh_wa_task_updates_table_exists') && akh_wa_task_updates_table_exists() && akh_db_is_pdo()) {
+        try {
+            foreach (akh_task_id_match_variants($code) as $variant) {
+                $st = akh_db()->prepare(
+                    'SELECT status, created_at FROM task_updates WHERE task_id = ? ORDER BY created_at ASC'
+                );
+                $st->execute([akh_task_normalize_id($variant)]);
+                foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                    $norm = akh_task_status_log_label_to_status((string) ($row['status'] ?? ''));
+                    if (!in_array($norm, ['delivered', 'closed'], true)) {
+                        continue;
+                    }
+                    $raw = trim((string) ($row['created_at'] ?? ''));
+                    if ($raw === '') {
+                        continue;
+                    }
+                    $dt = akh_analytics_parse_log_timestamp($raw) ?? akh_parse_datetime_to_site($raw);
+
+                    return $dt;
+                }
+            }
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    return null;
+}
+
+/**
  * When a task counts as "delivered" for monthly analytics (not the same as last board touch).
  *
  * @param array<string, DateTimeImmutable> $deliveryLogMap
@@ -145,11 +230,53 @@ function akh_admin_analytics_task_delivered_at(array $task, array $deliveryLogMa
         return null;
     }
     $code = akh_task_normalize_id((string) ($task['id'] ?? ''));
-    if ($code !== '' && isset($deliveryLogMap[$code])) {
-        return $deliveryLogMap[$code];
+    if ($code === '') {
+        return null;
     }
 
-    return null;
+    $dt = akh_admin_analytics_delivery_map_lookup($code, $deliveryLogMap);
+    if ($dt !== null) {
+        return $dt;
+    }
+
+    return akh_admin_analytics_lazy_delivered_at($code);
+}
+
+/**
+ * Stable bucket for by-client charts (WhatsApp tasks use customer_name, not client_username "whatsapp").
+ *
+ * @param array<string, mixed> $task
+ */
+function akh_admin_analytics_client_bucket(array $task): string
+{
+    $display = trim(akh_task_customer_display_name($task));
+    if ($display !== '') {
+        return 'name:' . mb_strtolower($display);
+    }
+
+    $user = strtolower(trim((string) ($task['client_username'] ?? '')));
+    if ($user !== '') {
+        return 'user:' . $user;
+    }
+
+    return '_unknown';
+}
+
+/**
+ * @param array<string, mixed> $task
+ * @param array<string, string> $clientAccounts
+ */
+function akh_admin_analytics_client_label_for_task(array $task, array $clientAccounts): string
+{
+    $display = trim(akh_task_customer_display_name($task));
+    if ($display !== '') {
+        return $display;
+    }
+
+    return akh_admin_analytics_client_label(
+        strtolower(trim((string) ($task['client_username'] ?? ''))),
+        $clientAccounts
+    );
 }
 
 /**
@@ -224,10 +351,8 @@ function akh_admin_task_analytics_report(int $year, int $month): array
         $updated = akh_admin_analytics_task_updated_at($t);
         $deliveredAt = akh_admin_analytics_task_delivered_at($t, $deliveryLogMap);
         $status = strtolower(trim((string) ($t['status'] ?? 'new')));
-        $clientKey = strtolower(trim((string) ($t['client_username'] ?? '')));
-        if ($clientKey === '') {
-            $clientKey = '_unknown';
-        }
+        $clientKey = akh_admin_analytics_client_bucket($t);
+        $clientLabel = akh_admin_analytics_client_label_for_task($t, $clientAccounts);
         $editorKey = strtolower(trim((string) ($t['assigned_editor'] ?? '')));
 
         $incomingThisMonth = akh_admin_analytics_in_month($created, $start, $end);
@@ -249,8 +374,8 @@ function akh_admin_task_analytics_report(int $year, int $month): array
 
         if (!isset($byClient[$clientKey])) {
             $byClient[$clientKey] = [
-                'username' => $clientKey === '_unknown' ? '' : $clientKey,
-                'label' => akh_admin_analytics_client_label($clientKey === '_unknown' ? '' : $clientKey, $clientAccounts),
+                'username' => str_starts_with($clientKey, 'user:') ? substr($clientKey, 5) : '',
+                'label' => $clientLabel,
                 'incoming' => 0,
                 'delivered' => 0,
             ];
