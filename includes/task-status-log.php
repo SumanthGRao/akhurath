@@ -72,6 +72,7 @@ function akh_task_status_log_label_to_status(string $label): string
         'delivered' => 'delivered',
         'closed' => 'closed',
         'cancelled' => 'cancelled',
+        'canceled' => 'cancelled',
         'reverted' => 'reverted',
     ];
 
@@ -847,6 +848,46 @@ function akh_task_status_log_repair_reverted_mislogged_as_closed(): int
         error_log('akh_task_status_log_repair_reverted_mislogged_as_closed: ' . $e->getMessage());
 
         return 0;
+    }
+}
+
+/**
+ * @return array<string, DateTimeImmutable> task code => first cancelled
+ */
+function akh_task_status_log_first_cancelled_at_map(): array
+{
+    if (!akh_task_status_log_table_exists()) {
+        return [];
+    }
+
+    require_once __DIR__ . '/tasks.php';
+
+    try {
+        $st = akh_db()->query(
+            "SELECT task_id, MIN(created_at) AS cancelled_at
+             FROM task_status_changes
+             WHERE to_status = 'cancelled'
+             GROUP BY task_id"
+        );
+        if ($st === false) {
+            return [];
+        }
+        $out = [];
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $code = akh_task_normalize_id((string) ($row['task_id'] ?? ''));
+            $raw = trim((string) ($row['cancelled_at'] ?? ''));
+            if ($code === '' || $raw === '') {
+                continue;
+            }
+            $dt = akh_analytics_parse_log_timestamp($raw);
+            if ($dt !== null) {
+                $out[$code] = $dt;
+            }
+        }
+
+        return $out;
+    } catch (Throwable) {
+        return [];
     }
 }
 

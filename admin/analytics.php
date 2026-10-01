@@ -104,6 +104,7 @@ require_once AKH_ROOT . '/includes/header.php';
         <p class="portal-muted admin-analytics__hint">
           <strong>Incoming</strong> = tasks created in the month.
           <strong>Delivered</strong> = first logged Delivered/Closed transition.
+          <strong>Cancelled</strong> = first logged cancel (not last board touch).
           <strong>Pipeline</strong> = status-change log (editor desk + WhatsApp + admin).
           Status log times are read as <strong>GMT/UTC</strong> and shown in <?php echo h($report['timezone']); ?>.
           This page auto-refreshes every 90 seconds while open (or reload after you mark a task delivered).
@@ -125,7 +126,7 @@ require_once AKH_ROOT . '/includes/header.php';
         </div>
         <div class="admin-stat admin-stat--lift">
           <span class="admin-stat__value"><?php echo (int) $summary['cancelled']; ?></span>
-          <span class="admin-stat__label">Cancelled (updated in month)</span>
+          <span class="admin-stat__label">Cancelled in month</span>
         </div>
       </div>
 

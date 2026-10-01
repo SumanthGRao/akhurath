@@ -154,6 +154,70 @@ function akh_admin_analytics_merge_delivery_timestamp(array $out, string $code, 
     return $out;
 }
 
+/**
+ * @return array<string, DateTimeImmutable>
+ */
+function akh_admin_analytics_first_cancelled_logged_at_map(): array
+{
+    $out = akh_task_status_log_first_cancelled_at_map();
+
+    $pdo = akh_admin_analytics_pdo();
+    if ($pdo === null) {
+        return $out;
+    }
+
+    require_once __DIR__ . '/whatsapp-task-sync.php';
+    if (!function_exists('akh_wa_task_updates_table_exists') || !akh_wa_task_updates_table_exists()) {
+        return $out;
+    }
+
+    try {
+        $tbl = $pdo->query("SHOW TABLES LIKE 'task_updates'");
+        if ($tbl === false || $tbl->fetch(PDO::FETCH_NUM) === false) {
+            return $out;
+        }
+        $st = $pdo->query(
+            'SELECT task_id, status, created_at FROM task_updates ORDER BY task_id ASC, created_at ASC'
+        );
+        if ($st === false) {
+            return $out;
+        }
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $norm = akh_task_status_log_resolve_code((string) ($row['status'] ?? ''));
+            if ($norm !== 'cancelled') {
+                continue;
+            }
+            $code = akh_task_normalize_id((string) ($row['task_id'] ?? ''));
+            $raw = trim((string) ($row['created_at'] ?? ''));
+            if ($code === '' || $raw === '') {
+                continue;
+            }
+            $dt = akh_parse_datetime_to_site($raw);
+            if ($dt === null) {
+                continue;
+            }
+            $out = akh_admin_analytics_merge_delivery_timestamp($out, $code, $dt);
+        }
+
+        return $out;
+    } catch (Throwable) {
+        return $out;
+    }
+}
+
+function akh_admin_analytics_task_cancelled_at(array $task, array $cancelledLogMap): ?DateTimeImmutable
+{
+    if (strtolower(trim((string) ($task['status'] ?? ''))) !== 'cancelled') {
+        return null;
+    }
+    $code = akh_task_normalize_id((string) ($task['id'] ?? ''));
+    if ($code === '') {
+        return null;
+    }
+
+    return akh_admin_analytics_delivery_map_lookup($code, $cancelledLogMap);
+}
+
 function akh_admin_analytics_first_delivery_logged_at_map(): array
 {
     $out = akh_task_status_log_first_delivered_at_map();
@@ -416,6 +480,7 @@ function akh_admin_task_analytics_report(int $year, int $month): array
     $editorPerformance = akh_task_status_log_editor_performance_report($start, $end);
 
     $deliveryLogMap = akh_admin_analytics_first_delivery_logged_at_map();
+    $cancelledLogMap = akh_admin_analytics_first_cancelled_logged_at_map();
     $allTasks = akh_admin_analytics_tasks();
 
     $clientAccounts = [];
@@ -444,6 +509,7 @@ function akh_admin_task_analytics_report(int $year, int $month): array
         $created = akh_admin_analytics_task_created_at($t);
         $updated = akh_admin_analytics_task_updated_at($t);
         $deliveredAt = akh_admin_analytics_task_delivered_at($t, $deliveryLogMap);
+        $cancelledAt = akh_admin_analytics_task_cancelled_at($t, $cancelledLogMap);
         $status = strtolower(trim((string) ($t['status'] ?? 'new')));
         $clientKey = akh_admin_analytics_client_bucket($t);
         $clientLabel = akh_admin_analytics_client_label_for_task($t, $clientAccounts);
@@ -451,7 +517,7 @@ function akh_admin_task_analytics_report(int $year, int $month): array
 
         $incomingThisMonth = akh_admin_analytics_in_month($created, $start, $end);
         $deliveredThisMonth = $deliveredAt !== null && akh_admin_analytics_in_month($deliveredAt, $start, $end);
-        $cancelledThisMonth = $status === 'cancelled' && akh_admin_analytics_in_month($updated, $start, $end);
+        $cancelledThisMonth = $cancelledAt !== null && akh_admin_analytics_in_month($cancelledAt, $start, $end);
 
         if ($incomingThisMonth) {
             ++$summary['incoming'];
@@ -496,7 +562,14 @@ function akh_admin_task_analytics_report(int $year, int $month): array
             if ($deliveredThisMonth) {
                 ++$byEditor[$editorKey]['delivered'];
             }
-            if ($incomingThisMonth || ($updated !== null && akh_admin_analytics_in_month($updated, $start, $end))) {
+            $handledThisMonth = $incomingThisMonth;
+            if (!$handledThisMonth && $status !== 'cancelled' && $updated !== null && akh_admin_analytics_in_month($updated, $start, $end)) {
+                $handledThisMonth = true;
+            }
+            if (!$handledThisMonth && $cancelledAt !== null && akh_admin_analytics_in_month($cancelledAt, $start, $end)) {
+                $handledThisMonth = true;
+            }
+            if ($handledThisMonth) {
                 ++$byEditor[$editorKey]['handled'];
             }
         }

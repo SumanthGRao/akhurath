@@ -182,11 +182,14 @@ function akh_editor_task_view_model(
             if ($waDrive !== '') {
                 $t['drive_link'] = $waDrive;
             }
-            $waUpdated = trim((string) ($waRow['updated_at'] ?? ''));
-            if ($waUpdated !== '') {
-                $taskUpdated = trim((string) ($t['updated_at'] ?? ''));
-                if ($taskUpdated === '' || strcmp($waUpdated, $taskUpdated) > 0) {
-                    $t['updated_at'] = $waUpdated;
+            $waRowStatus = strtolower(trim((string) ($waRow['status'] ?? '')));
+            if (!in_array($waRowStatus, ['cancelled', 'closed'], true) && !akh_task_status_is_archive($st)) {
+                $waUpdated = trim((string) ($waRow['updated_at'] ?? ''));
+                if ($waUpdated !== '') {
+                    $taskUpdated = trim((string) ($t['updated_at'] ?? ''));
+                    if ($taskUpdated === '' || strcmp($waUpdated, $taskUpdated) > 0) {
+                        $t['updated_at'] = $waUpdated;
+                    }
                 }
             }
         }

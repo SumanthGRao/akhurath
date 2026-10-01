@@ -691,6 +691,11 @@ function akh_wa_dashboard_operator_label(): string
     return $operator;
 }
 
+function akh_wa_task_status_is_terminal(string $status): bool
+{
+    return in_array(strtolower(trim($status)), ['cancelled', 'closed'], true);
+}
+
 function akh_wa_map_status_to_studio(string $waStatus): string
 {
     $key = strtolower(trim($waStatus));
@@ -1402,14 +1407,45 @@ function akh_wa_sync_to_studio(array $waRow): ?string
         return 'Assigned editor was not found.';
     }
 
+    $waStatus = akh_wa_task_normalize_status((string) ($waRow['status'] ?? 'new')) ?? 'new';
+    $studioStatus = akh_wa_map_status_to_studio($waStatus);
+
+    $studioBefore = akh_task_by_id($studioId);
+    $studioStBefore = is_array($studioBefore)
+        ? strtolower(trim((string) ($studioBefore['status'] ?? '')))
+        : '';
+
+    if (akh_wa_task_status_is_terminal($waStatus)) {
+        if ($studioStBefore !== $studioStatus) {
+            $statusErr = akh_wa_sync_status_to_studio_board($taskCode, $waStatus);
+            if ($statusErr !== null) {
+                return $statusErr;
+            }
+        }
+
+        return null;
+    }
+
+    if ($studioStBefore !== '' && akh_task_status_is_archive($studioStBefore)) {
+        $waTarget = akh_wa_map_status_from_studio($studioStBefore);
+        if ($waTarget !== null && $waStatus !== $waTarget && $waId > 0 && akh_wa_tasks_table_exists()) {
+            try {
+                akh_db()->prepare('UPDATE whatsapp_tasks SET status = ? WHERE id = ?')
+                    ->execute([$waTarget, $waId]);
+            } catch (Throwable $e) {
+                error_log('akh_wa_sync_to_studio: align WA to archived studio status: ' . $e->getMessage());
+            }
+        }
+
+        return null;
+    }
+
     $inputs = akh_wa_prepare_studio_task_inputs($waRow);
     $title = $inputs['title'];
     $description = $inputs['description'];
     $deliveryMode = $inputs['delivery_mode'];
     $driveLink = $inputs['drive_link'];
     $referenceLink = $inputs['reference_link'];
-    $waStatus = akh_wa_task_normalize_status((string) ($waRow['status'] ?? 'new')) ?? 'new';
-    $studioStatus = akh_wa_map_status_to_studio($waStatus);
 
     $studioBefore = akh_task_by_id($studioId);
     if (
@@ -1464,7 +1500,9 @@ function akh_wa_sync_to_studio(array $waRow): ?string
             $list[$i]['delivery_mode'] = $deliveryMode;
             $list[$i]['drive_link'] = $newDrive;
             $list[$i]['whatsapp_task_type'] = $newWaType;
-            $list[$i]['updated_at'] = gmdate('c');
+            if (!akh_task_status_is_archive((string) ($list[$i]['status'] ?? ''))) {
+                $list[$i]['updated_at'] = gmdate('c');
+            }
             $updated = true;
             break;
         }
@@ -1650,6 +1688,24 @@ function akh_wa_task_row_for_json(array $row, array $editors): array
     $recentUpdates = akh_task_status_updates_for_display($taskCode, 2);
     $lastProgressAt = (string) ($progressMeta['last_at'] ?? '');
 
+    $updatedRaw = (string) ($row['updated_at'] ?? '');
+    if (strtolower($status) === 'cancelled' && $taskCode !== '') {
+        require_once __DIR__ . '/task-status-log.php';
+        $cancelMap = akh_task_status_log_first_cancelled_at_map();
+        $cancelHit = $cancelMap[$taskCode] ?? null;
+        if ($cancelHit === null) {
+            foreach ($cancelMap as $key => $dt) {
+                if (akh_task_ids_match((string) $key, $taskCode)) {
+                    $cancelHit = $dt;
+                    break;
+                }
+            }
+        }
+        if ($cancelHit instanceof DateTimeImmutable) {
+            $updatedRaw = $cancelHit->format('Y-m-d H:i:s');
+        }
+    }
+
     return [
         'id' => (int) ($row['id'] ?? 0),
         'task_code' => (string) ($row['task_code'] ?? ''),
@@ -1672,8 +1728,8 @@ function akh_wa_task_row_for_json(array $row, array $editors): array
         'can_chat' => akh_wa_task_can_chat($row),
         'created_at' => (string) ($row['created_at'] ?? ''),
         'created_at_label' => akh_wa_task_format_datetime_ist((string) ($row['created_at'] ?? '')),
-        'updated_at' => (string) ($row['updated_at'] ?? ''),
-        'updated_at_label' => akh_wa_task_format_datetime_ist((string) ($row['updated_at'] ?? '')),
+        'updated_at' => $updatedRaw,
+        'updated_at_label' => akh_wa_task_format_datetime_ist($updatedRaw),
         'recent_updates' => $recentUpdates,
         'progress_stale' => (bool) ($progressMeta['stale'] ?? false),
         'progress_stale_label' => (string) ($progressMeta['label'] ?? ''),
