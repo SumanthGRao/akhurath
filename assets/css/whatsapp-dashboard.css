@@ -583,6 +583,7 @@ body.page-wa-dashboard .site-footer {
 .wa-badge--editing { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
 .wa-badge--review { background: rgba(56, 189, 248, 0.2); color: #7dd3fc; }
 .wa-badge--preview_sent { background: rgba(192, 132, 252, 0.2); color: #d8b4fe; }
+.wa-badge--reverted { background: rgba(245, 158, 11, 0.22); color: #fdba74; }
 .wa-badge--delivered { background: rgba(52, 211, 153, 0.2); color: #6ee7b7; }
 .wa-badge--closed { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
 .wa-badge--cancelled { background: rgba(248, 113, 113, 0.2); color: #fecaca; }

@@ -229,7 +229,7 @@ function akh_task_statuses_requiring_progress_updates(): array
 /** @return list<string> */
 function akh_wa_statuses_requiring_progress_updates(): array
 {
-    return ['assigned', 'editing', 'review', 'preview_sent'];
+    return ['assigned', 'editing', 'review', 'preview_sent', 'reverted'];
 }
 
 /**

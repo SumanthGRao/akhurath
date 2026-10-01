@@ -5,7 +5,7 @@ declare(strict_types=1);
 /** @return list<string> */
 function akh_wa_task_statuses(): array
 {
-    return ['new', 'assigned', 'editing', 'review', 'preview_sent', 'delivered', 'closed', 'cancelled'];
+    return ['new', 'assigned', 'editing', 'review', 'preview_sent', 'reverted', 'delivered', 'closed', 'cancelled'];
 }
 
 function akh_wa_task_status_label(string $status): string
@@ -17,6 +17,7 @@ function akh_wa_task_status_label(string $status): string
         'editing' => 'Editing',
         'review' => 'Review',
         'preview_sent' => 'Preview sent',
+        'reverted' => 'Returned for revision',
         'delivered' => 'Delivered',
         'closed' => 'Closed',
         'cancelled' => 'Cancelled',
@@ -699,6 +700,7 @@ function akh_wa_map_status_to_studio(string $waStatus): string
         'editing' => 'in_progress',
         'review' => 'review',
         'preview_sent' => 'preview_sent',
+        'reverted' => 'reverted',
         'delivered' => 'delivered',
         'closed' => 'closed',
         'cancelled' => 'cancelled',
@@ -762,7 +764,7 @@ function akh_wa_map_status_from_studio(string $studioStatus): ?string
         'review' => 'review',
         'preview_sent' => 'preview_sent',
         'delivered' => 'delivered',
-        'reverted' => 'review',
+        'reverted' => 'reverted',
         'closed' => 'closed',
         'cancelled' => 'cancelled',
     ];
@@ -1408,6 +1410,24 @@ function akh_wa_sync_to_studio(array $waRow): ?string
     $referenceLink = $inputs['reference_link'];
     $waStatus = akh_wa_task_normalize_status((string) ($waRow['status'] ?? 'new')) ?? 'new';
     $studioStatus = akh_wa_map_status_to_studio($waStatus);
+
+    $studioBefore = akh_task_by_id($studioId);
+    if (
+        is_array($studioBefore)
+        && strtolower(trim((string) ($studioBefore['status'] ?? ''))) === 'reverted'
+        && $waStatus === 'review'
+    ) {
+        $waStatus = 'reverted';
+        $studioStatus = 'reverted';
+        if ($waId > 0 && akh_wa_tasks_table_exists()) {
+            try {
+                akh_db()->prepare('UPDATE whatsapp_tasks SET status = ?, updated_at = NOW() WHERE id = ?')
+                    ->execute(['reverted', $waId]);
+            } catch (Throwable $e) {
+                error_log('akh_wa_sync_to_studio: reconcile reverted status: ' . $e->getMessage());
+            }
+        }
+    }
 
     if (akh_task_by_id($studioId) === null) {
         $created = akh_wa_insert_studio_task_direct($inputs, $taskCode);
