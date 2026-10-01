@@ -819,7 +819,9 @@
       }
       var createdCmp = String(b.created_at || '').localeCompare(String(a.created_at || ''));
       if (createdCmp !== 0) return createdCmp;
-      return String(b.updated_at).localeCompare(String(a.updated_at));
+      var updCmp = String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+      if (updCmp !== 0) return updCmp;
+      return String(a.task_code || '').localeCompare(String(b.task_code || ''));
     });
     return list;
   }
@@ -1094,7 +1096,9 @@
         sortTasksByColumn(archiveList, archiveKind);
       } else {
         archiveList.sort(function (a, b) {
-          return String(b.updated_at).localeCompare(String(a.updated_at));
+          var u = String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+          if (u !== 0) return u;
+          return String(a.task_code || '').localeCompare(String(b.task_code || ''));
         });
       }
       var aq = (archiveKind === 'closed' ? closedQ : cancelledQ).toLowerCase().trim();

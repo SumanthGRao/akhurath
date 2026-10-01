@@ -2752,14 +2752,24 @@ function akh_task_admin_assign(string $taskId, ?string $editorUsername, bool $re
         $prevSt = (string) ($t['status'] ?? 'new');
         $prevEd = strtolower(trim((string) ($t['assigned_editor'] ?? '')));
         if ($editorUsername === '') {
+            if ($prevEd === '') {
+                return null;
+            }
             $list[$i]['assigned_editor'] = null;
             $list[$i]['status'] = 'new';
         } else {
+            if ($prevEd === $editorUsername) {
+                return null;
+            }
             $list[$i]['assigned_editor'] = $editorUsername;
-            $list[$i]['status'] = 'assigned';
+            if ($prevEd === '' || $prevSt === 'new') {
+                $list[$i]['status'] = 'assigned';
+            }
         }
         $nextSt = (string) ($list[$i]['status'] ?? 'new');
-        $list[$i]['updated_at'] = gmdate('c');
+        if ($prevSt !== $nextSt || $prevEd !== strtolower(trim((string) ($list[$i]['assigned_editor'] ?? '')))) {
+            $list[$i]['updated_at'] = gmdate('c');
+        }
         $newEd = strtolower(trim((string) ($list[$i]['assigned_editor'] ?? '')));
         $cu = strtolower(trim((string) ($list[$i]['client_username'] ?? '')));
         if ($cu !== '' && $prevEd !== $newEd) {
