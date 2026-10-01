@@ -45,19 +45,71 @@ function akh_admin_analytics_include_task(array $task): bool
 }
 
 /**
+ * MySQL for analytics (task_updates / status log) even when tasks load from n8n bridge.
+ */
+function akh_admin_analytics_pdo(): ?PDO
+{
+    if (function_exists('akh_notify_db_is_available') && akh_notify_db_is_available()) {
+        $pdo = akh_notify_db();
+
+        return $pdo instanceof PDO ? $pdo : null;
+    }
+    if (function_exists('akh_db_is_pdo') && akh_db_is_pdo()) {
+        $main = akh_db();
+
+        return $main instanceof PDO ? $main : null;
+    }
+
+    return null;
+}
+
+/**
+ * Board tasks with persisted app_kv status (deliveries show before n8n bridge catches up).
+ *
  * @return list<array<string, mixed>>
  */
 function akh_admin_analytics_tasks(): array
 {
-    $out = [];
+    /** @var array<string, array<string, mixed>> */
+    $persistedById = [];
+    foreach (akh_tasks_load_persisted() as $t) {
+        if (!is_array($t) || !akh_admin_analytics_include_task($t)) {
+            continue;
+        }
+        $id = akh_task_normalize_id((string) ($t['id'] ?? ''));
+        if ($id !== '') {
+            $persistedById[$id] = $t;
+        }
+    }
+
+    /** @var array<string, array<string, mixed>> */
+    $merged = [];
     foreach (akh_tasks_load() as $t) {
         if (!is_array($t) || !akh_admin_analytics_include_task($t)) {
             continue;
         }
-        $out[] = $t;
+        $id = akh_task_normalize_id((string) ($t['id'] ?? ''));
+        if ($id === '') {
+            continue;
+        }
+        if (isset($persistedById[$id])) {
+            $p = $persistedById[$id];
+            $t['status'] = (string) ($p['status'] ?? $t['status'] ?? '');
+            $t['updated_at'] = (string) ($p['updated_at'] ?? $t['updated_at'] ?? '');
+            if (trim((string) ($p['customer_name'] ?? '')) !== '') {
+                $t['customer_name'] = (string) $p['customer_name'];
+            }
+        }
+        $merged[$id] = $t;
     }
 
-    return $out;
+    foreach ($persistedById as $id => $t) {
+        if (!isset($merged[$id])) {
+            $merged[$id] = $t;
+        }
+    }
+
+    return array_values($merged);
 }
 
 /**
@@ -90,20 +142,58 @@ function akh_admin_analytics_in_month(?DateTimeImmutable $dt, DateTimeImmutable 
  *
  * @return array<string, DateTimeImmutable> task code => site-local instant
  */
+function akh_admin_analytics_merge_delivery_timestamp(array $out, string $code, ?DateTimeImmutable $dt): array
+{
+    if ($code === '' || $dt === null) {
+        return $out;
+    }
+    if (!isset($out[$code]) || $dt < $out[$code]) {
+        $out[$code] = $dt;
+    }
+
+    return $out;
+}
+
 function akh_admin_analytics_first_delivery_logged_at_map(): array
 {
     $out = akh_task_status_log_first_delivered_at_map();
 
-    require_once __DIR__ . '/whatsapp-task-sync.php';
-    if (!function_exists('akh_wa_task_updates_table_exists') || !akh_wa_task_updates_table_exists()) {
-        return $out;
-    }
-    if (!function_exists('akh_db') || !akh_db_is_pdo()) {
+    $pdo = akh_admin_analytics_pdo();
+    if ($pdo === null) {
         return $out;
     }
 
     try {
-        $st = akh_db()->query(
+        $chk = $pdo->query("SHOW TABLES LIKE 'task_status_changes'");
+        if ($chk !== false && $chk->fetch(PDO::FETCH_NUM) !== false) {
+            $st = $pdo->query(
+                "SELECT task_id, MIN(created_at) AS delivered_at
+                 FROM task_status_changes
+                 WHERE to_status IN ('delivered', 'closed')
+                 GROUP BY task_id"
+            );
+            if ($st !== false) {
+                foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                    $code = akh_task_normalize_id((string) ($row['task_id'] ?? ''));
+                    $raw = trim((string) ($row['delivered_at'] ?? ''));
+                    if ($code === '' || $raw === '') {
+                        continue;
+                    }
+                    $dt = akh_analytics_parse_log_timestamp($raw);
+                    $out = akh_admin_analytics_merge_delivery_timestamp($out, $code, $dt);
+                }
+            }
+        }
+    } catch (Throwable) {
+        // continue to task_updates
+    }
+
+    try {
+        $tbl = $pdo->query("SHOW TABLES LIKE 'task_updates'");
+        if ($tbl === false || $tbl->fetch(PDO::FETCH_NUM) === false) {
+            return $out;
+        }
+        $st = $pdo->query(
             'SELECT task_id, status, created_at FROM task_updates ORDER BY task_id ASC, created_at ASC'
         );
         if ($st === false) {
@@ -119,16 +209,9 @@ function akh_admin_analytics_first_delivery_logged_at_map(): array
             if ($code === '' || $raw === '') {
                 continue;
             }
-            $dt = akh_analytics_parse_log_timestamp($raw);
-            if ($dt === null) {
-                $dt = akh_parse_datetime_to_site($raw);
-            }
-            if ($dt === null) {
-                continue;
-            }
-            if (!isset($out[$code]) || $dt < $out[$code]) {
-                $out[$code] = $dt;
-            }
+            // task_updates timestamps are site-local (IST), not UTC status-log times.
+            $dt = akh_parse_datetime_to_site($raw);
+            $out = akh_admin_analytics_merge_delivery_timestamp($out, $code, $dt);
         }
 
         return $out;
@@ -166,10 +249,11 @@ function akh_admin_analytics_lazy_delivered_at(string $taskCode): ?DateTimeImmut
         return null;
     }
 
-    if (akh_task_status_log_table_exists()) {
+    $pdo = akh_admin_analytics_pdo();
+    if ($pdo !== null) {
         try {
             foreach (akh_task_id_match_variants($code) as $variant) {
-                $st = akh_db()->prepare(
+                $st = $pdo->prepare(
                     "SELECT created_at FROM task_status_changes
                      WHERE task_id = ? AND to_status IN ('delivered', 'closed')
                      ORDER BY created_at ASC LIMIT 1"
@@ -188,11 +272,14 @@ function akh_admin_analytics_lazy_delivered_at(string $taskCode): ?DateTimeImmut
         }
     }
 
-    require_once __DIR__ . '/whatsapp-task-sync.php';
-    if (function_exists('akh_wa_task_updates_table_exists') && akh_wa_task_updates_table_exists() && akh_db_is_pdo()) {
+    if ($pdo !== null) {
         try {
+            $tbl = $pdo->query("SHOW TABLES LIKE 'task_updates'");
+            if ($tbl === false || $tbl->fetch(PDO::FETCH_NUM) === false) {
+                return null;
+            }
             foreach (akh_task_id_match_variants($code) as $variant) {
-                $st = akh_db()->prepare(
+                $st = $pdo->prepare(
                     'SELECT status, created_at FROM task_updates WHERE task_id = ? ORDER BY created_at ASC'
                 );
                 $st->execute([akh_task_normalize_id($variant)]);
@@ -205,9 +292,10 @@ function akh_admin_analytics_lazy_delivered_at(string $taskCode): ?DateTimeImmut
                     if ($raw === '') {
                         continue;
                     }
-                    $dt = akh_analytics_parse_log_timestamp($raw) ?? akh_parse_datetime_to_site($raw);
-
-                    return $dt;
+                    $dt = akh_parse_datetime_to_site($raw);
+                    if ($dt !== null) {
+                        return $dt;
+                    }
                 }
             }
         } catch (Throwable) {
@@ -239,7 +327,13 @@ function akh_admin_analytics_task_delivered_at(array $task, array $deliveryLogMa
         return $dt;
     }
 
-    return akh_admin_analytics_lazy_delivered_at($code);
+    $dt = akh_admin_analytics_lazy_delivered_at($code);
+    if ($dt !== null) {
+        return $dt;
+    }
+
+    // Delivered on board but no log row yet (e.g. just saved) — use last touch in site TZ.
+    return akh_admin_analytics_task_updated_at($task);
 }
 
 /**
