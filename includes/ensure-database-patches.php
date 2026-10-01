@@ -295,6 +295,10 @@ function akh_ensure_database_apply_patches(PDO $pdo, array $options = []): array
         if ($backfilled > 0) {
             $log("Backfilled {$backfilled} rows into task_status_changes from task_updates.");
         }
+        $repaired = akh_task_status_log_repair_reverted_mislogged_as_closed();
+        if ($repaired > 0) {
+            $log("Repaired {$repaired} task_status_changes rows (closed → reverted for returns).");
+        }
 
         require_once AKH_ROOT . '/includes/db-schema-patches.php';
         akh_db_apply_runtime_patches($pdo);

@@ -200,7 +200,7 @@ function akh_admin_analytics_first_delivery_logged_at_map(): array
             return $out;
         }
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $norm = akh_task_status_log_label_to_status((string) ($row['status'] ?? ''));
+            $norm = akh_task_status_log_resolve_code((string) ($row['status'] ?? ''));
             if (!in_array($norm, ['delivered', 'closed'], true)) {
                 continue;
             }
@@ -284,7 +284,7 @@ function akh_admin_analytics_lazy_delivered_at(string $taskCode): ?DateTimeImmut
                 );
                 $st->execute([akh_task_normalize_id($variant)]);
                 foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                    $norm = akh_task_status_log_label_to_status((string) ($row['status'] ?? ''));
+                    $norm = akh_task_status_log_resolve_code((string) ($row['status'] ?? ''));
                     if (!in_array($norm, ['delivered', 'closed'], true)) {
                         continue;
                     }

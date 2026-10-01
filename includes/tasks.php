@@ -2266,6 +2266,7 @@ function akh_task_client_save_post_delivery(
     $list = akh_tasks_load();
     $found = false;
     $savedRow = null;
+    $prevSt = '';
     foreach ($list as $i => $t) {
         if (!akh_task_ids_match((string) ($t['id'] ?? ''), $taskId)) {
             continue;
@@ -2278,6 +2279,7 @@ function akh_task_client_save_post_delivery(
             return 'Feedback and meeting options are only available after delivery or while the task is returned for revision.';
         }
         $found = true;
+        $prevSt = (string) ($t['status'] ?? '');
         $list[$i]['client_feedback'] = $feedback;
         if ($hasMeeting) {
             $list[$i]['client_meeting_date'] = $meetingDate;
@@ -2311,6 +2313,17 @@ function akh_task_client_save_post_delivery(
     }
     if (!akh_tasks_save_locked($list)) {
         return 'Could not save.';
+    }
+    if ($prevSt !== '' && $prevSt !== 'reverted') {
+        require_once __DIR__ . '/task-status-log.php';
+        akh_task_status_log_record(
+            (string) ($savedRow['id'] ?? $taskId),
+            $prevSt,
+            'reverted',
+            'editor',
+            $clientUsername,
+            'Client returned task for revision (feedback / meeting).'
+        );
     }
     if (($savedRow['editor_feedback_notify'] ?? false) === true) {
         akh_task_write_editor_feedback_notification($savedRow);

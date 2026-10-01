@@ -36,14 +36,36 @@ function akh_task_status_log_normalize(string $status): string
     return in_array($s, $allowed, true) ? $s : '';
 }
 
+/**
+ * Canonical studio status code from a log column or task_updates label.
+ */
+function akh_task_status_log_resolve_code(string $raw): string
+{
+    $raw = trim($raw);
+    if ($raw === '') {
+        return '';
+    }
+
+    $norm = akh_task_status_log_normalize($raw);
+    if ($norm !== '') {
+        return $norm;
+    }
+
+    return akh_task_status_log_label_to_status($raw);
+}
+
 function akh_task_status_log_label_to_status(string $label): string
 {
     $key = strtolower(trim($label));
+    if ($key === 'returned for revision' || str_contains($key, 'returned for revision')) {
+        return 'reverted';
+    }
     $map = [
         'new' => 'new',
         'assigned' => 'assigned',
         'editing' => 'in_progress',
         'in progress' => 'in_progress',
+        'internal review' => 'review',
         'review' => 'review',
         'preview sent' => 'preview_sent',
         'preview_sent' => 'preview_sent',
@@ -55,6 +77,10 @@ function akh_task_status_log_label_to_status(string $label): string
 
     if (isset($map[$key])) {
         return $map[$key];
+    }
+
+    if (str_contains($key, 'revert') || str_contains($key, 'revision')) {
+        return 'reverted';
     }
 
     return akh_task_status_log_normalize($key);
@@ -142,8 +168,8 @@ function akh_task_status_log_record(
     }
 
     $taskId = akh_task_normalize_id(trim($taskId));
-    $from = akh_task_status_log_normalize($fromStatus);
-    $to = akh_task_status_log_normalize($toStatus);
+    $from = akh_task_status_log_resolve_code($fromStatus);
+    $to = akh_task_status_log_resolve_code($toStatus);
     if ($from === '') {
         $from = 'new';
     }
@@ -210,7 +236,7 @@ function akh_task_status_log_backfill_from_task_updates(): int
         $n = 0;
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $code = akh_task_normalize_id((string) ($row['task_id'] ?? ''));
-            $to = akh_task_status_log_label_to_status((string) ($row['status'] ?? ''));
+            $to = akh_task_status_log_resolve_code((string) ($row['status'] ?? ''));
             if ($code === '' || $to === '') {
                 continue;
             }
@@ -246,7 +272,11 @@ function akh_task_status_log_backfill_from_task_updates(): int
  */
 function akh_task_status_log_pipeline_definitions(): array
 {
-    return akh_task_status_log_editor_stage_definitions();
+    return array_merge(akh_task_status_log_editor_stage_definitions(), [
+        ['key' => 'preview_reverted', 'label' => 'Preview → Returned', 'from' => 'preview_sent', 'to' => 'reverted'],
+        ['key' => 'delivered_reverted', 'label' => 'Delivered → Returned', 'from' => 'delivered', 'to' => 'reverted'],
+        ['key' => 'review_reverted', 'label' => 'Review → Returned', 'from' => 'review', 'to' => 'reverted'],
+    ]);
 }
 
 /**
@@ -319,8 +349,8 @@ function akh_task_status_log_pipeline_report(DateTimeImmutable $start, DateTimeI
         if (isset($bySource[$src])) {
             ++$bySource[$src];
         }
-        $from = akh_task_status_log_normalize((string) ($row['from_status'] ?? ''));
-        $to = akh_task_status_log_normalize((string) ($row['to_status'] ?? ''));
+        $from = akh_task_status_log_resolve_code((string) ($row['from_status'] ?? ''));
+        $to = akh_task_status_log_resolve_code((string) ($row['to_status'] ?? ''));
         $key = $from . '|' . $to;
         if (isset($defIndex[$key])) {
             $defKey = $defIndex[$key]['key'];
@@ -410,7 +440,7 @@ function akh_task_status_log_first_status_hits_by_task(): array
         $firstHit = [];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $code = akh_task_normalize_id((string) ($row['task_id'] ?? ''));
-            $to = akh_task_status_log_normalize((string) ($row['to_status'] ?? ''));
+            $to = akh_task_status_log_resolve_code((string) ($row['to_status'] ?? ''));
             $dt = akh_analytics_parse_log_timestamp((string) ($row['created_at'] ?? ''));
             if ($code === '' || $to === '' || $dt === null) {
                 continue;
@@ -505,13 +535,10 @@ function akh_task_status_log_editor_performance_report(DateTimeImmutable $start,
             continue;
         }
         $hits = $firstHit[$code];
-        if (!isset($hits['delivered']) && isset($hits['closed'])) {
-            $hits['delivered'] = $hits['closed'];
-        }
-        if (!isset($hits['delivered'])) {
+        $deliveredDt = akh_task_status_log_delivery_milestone_at($hits);
+        if ($deliveredDt === null) {
             continue;
         }
-        $deliveredDt = $hits['delivered'];
         if ($deliveredDt < $start || $deliveredDt >= $end) {
             continue;
         }
@@ -710,7 +737,30 @@ function akh_task_status_log_milestone_durations(DateTimeImmutable $start, DateT
 }
 
 /**
- * @return array<string, DateTimeImmutable> task code => first delivered/closed
+ * First delivery instant for reporting; ignores delivery if the task was later returned for revision.
+ *
+ * @param array<string, DateTimeImmutable> $hits
+ */
+function akh_task_status_log_delivery_milestone_at(array $hits): ?DateTimeImmutable
+{
+    $delivered = null;
+    if (isset($hits['delivered'])) {
+        $delivered = $hits['delivered'];
+    } elseif (isset($hits['closed'])) {
+        $delivered = $hits['closed'];
+    }
+    if ($delivered === null) {
+        return null;
+    }
+    if (isset($hits['reverted']) && $hits['reverted'] >= $delivered) {
+        return null;
+    }
+
+    return $delivered;
+}
+
+/**
+ * @return array<string, DateTimeImmutable> task code => first delivered/closed (not voided by reverted)
  */
 function akh_task_status_log_first_delivered_at_map(): array
 {
@@ -741,9 +791,62 @@ function akh_task_status_log_first_delivered_at_map(): array
             }
         }
 
+        $revSt = akh_db()->query(
+            "SELECT task_id, MIN(created_at) AS reverted_at
+             FROM task_status_changes
+             WHERE to_status = 'reverted'
+             GROUP BY task_id"
+        );
+        if ($revSt !== false) {
+            foreach ($revSt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $code = akh_task_normalize_id((string) ($row['task_id'] ?? ''));
+                $raw = trim((string) ($row['reverted_at'] ?? ''));
+                if ($code === '' || $raw === '' || !isset($out[$code])) {
+                    continue;
+                }
+                $revDt = akh_analytics_parse_log_timestamp($raw);
+                if ($revDt !== null && $revDt >= $out[$code]) {
+                    unset($out[$code]);
+                }
+            }
+        }
+
         return $out;
     } catch (Throwable) {
         return [];
+    }
+}
+
+/**
+ * Fix legacy rows where "returned for revision" was stored as closed in task_status_changes.
+ */
+function akh_task_status_log_repair_reverted_mislogged_as_closed(): int
+{
+    if (!akh_task_status_log_table_exists()) {
+        return 0;
+    }
+
+    try {
+        $st = akh_db()->prepare(
+            "UPDATE task_status_changes
+             SET to_status = 'reverted'
+             WHERE to_status = 'closed'
+               AND from_status IN ('preview_sent', 'delivered', 'review', 'in_progress', 'assigned')
+               AND (
+                 comment LIKE '%revision%'
+                 OR comment LIKE '%revert%'
+                 OR comment LIKE '%feedback%'
+                 OR comment LIKE '%preview%'
+                 OR comment LIKE '%returned%'
+               )"
+        );
+        $st->execute();
+
+        return (int) $st->rowCount();
+    } catch (Throwable $e) {
+        error_log('akh_task_status_log_repair_reverted_mislogged_as_closed: ' . $e->getMessage());
+
+        return 0;
     }
 }
 
