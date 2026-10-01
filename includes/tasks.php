@@ -2604,6 +2604,18 @@ function akh_task_set_status(
     if ($out === null) {
         return null;
     }
+    $waStatusWouldChange = false;
+    if ($prevSt !== $newStatus) {
+        require_once __DIR__ . '/whatsapp-task-sync.php';
+        if (akh_wa_tasks_table_exists()) {
+            $waRowForLog = akh_wa_find_row_for_studio_task($out);
+            if ($waRowForLog !== null) {
+                $prevWa = akh_wa_task_normalize_status((string) ($waRowForLog['status'] ?? '')) ?? 'new';
+                $nextWa = akh_wa_map_status_from_studio($newStatus);
+                $waStatusWouldChange = $nextWa !== null && $prevWa !== $nextWa;
+            }
+        }
+    }
     $syncWaStatus = ($prevSt !== $newStatus) || ($statusComment !== '');
     if ($syncWaStatus) {
         if (!akh_whatsapp_record_task_status_update($out, $newStatus, $editorUsername, $statusComment)) {
@@ -2613,7 +2625,7 @@ function akh_task_set_status(
     if (!akh_tasks_save_locked($list)) {
         return null;
     }
-    if ($prevSt !== $newStatus) {
+    if ($prevSt !== $newStatus && !$waStatusWouldChange) {
         require_once __DIR__ . '/task-status-log.php';
         akh_task_status_log_record(
             (string) ($out['id'] ?? $taskId),
@@ -2957,6 +2969,30 @@ function akh_task_automation_apply_status(string $taskRef, string $newStatus, st
     }
 
     $canonical = akh_task_normalize_id((string) ($out['id'] ?? $code));
+    if ($prevSt === $newStatus) {
+        require_once __DIR__ . '/whatsapp-task-sync.php';
+        if (akh_wa_tasks_table_exists()) {
+            $waRow = akh_wa_find_row_for_studio_task($out);
+            if ($waRow !== null) {
+                $nextWa = akh_wa_map_status_from_studio($newStatus);
+                $prevWa = akh_wa_task_normalize_status((string) ($waRow['status'] ?? '')) ?? 'new';
+                if ($nextWa !== null && $prevWa !== $nextWa) {
+                    if (!akh_whatsapp_record_task_status_update($out, $newStatus, 'preview_automation', $comment)) {
+                        error_log(
+                            'akh_task_automation_apply_status: WhatsApp align failed for '
+                            . $canonical
+                            . ': '
+                            . akh_whatsapp_task_sync_last_error()
+                        );
+
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
     if ($prevSt !== $newStatus) {
         if (!akh_whatsapp_record_task_status_update($out, $newStatus, 'preview_automation', $comment)) {
             error_log(
@@ -2979,15 +3015,7 @@ function akh_task_automation_apply_status(string $taskRef, string $newStatus, st
     }
 
     if ($prevSt !== $newStatus) {
-        require_once __DIR__ . '/task-status-log.php';
-        akh_task_status_log_record(
-            $canonical,
-            $prevSt,
-            $newStatus,
-            'whatsapp',
-            'Preview automation',
-            $comment
-        );
+        // Status log is written when whatsapp_tasks is updated (akh_whatsapp_record_task_status_update).
         // Do not call task-status n8n webhook for preview automation — it can create false
         // "preview approved" notification rows that surface once status becomes preview_sent.
         if ($newStatus === 'preview_sent') {

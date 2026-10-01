@@ -538,6 +538,10 @@ function akh_whatsapp_record_task_status_update(
     $waRow = $waTable ? akh_wa_find_row_for_studio_task($studioTask) : null;
     $statusLabel = akh_wa_task_status_label($waStatus);
     $updatedBy = akh_wa_editor_display_name($editorUsername);
+    $prevWaStatus = '';
+    if ($waRow !== null) {
+        $prevWaStatus = akh_wa_task_normalize_status((string) ($waRow['status'] ?? '')) ?? 'new';
+    }
 
     try {
         $pdo = akh_db();
@@ -558,6 +562,20 @@ function akh_whatsapp_record_task_status_update(
         }
 
         $pdo->commit();
+
+        if ($prevWaStatus !== '' && $prevWaStatus !== $waStatus) {
+            require_once __DIR__ . '/task-status-log.php';
+            $logSource = strtolower(trim($editorUsername)) === 'preview_automation' ? 'whatsapp' : 'editor';
+            $logBy = $logSource === 'whatsapp' ? 'Preview automation' : $updatedBy;
+            akh_task_status_log_record(
+                $taskCode,
+                akh_wa_map_status_to_studio($prevWaStatus),
+                akh_wa_map_status_to_studio($waStatus),
+                $logSource,
+                $logBy,
+                $comment
+            );
+        }
 
         return true;
     } catch (Throwable $e) {

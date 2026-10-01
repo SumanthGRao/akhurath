@@ -4,13 +4,33 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/site-datetime.php';
 
+/**
+ * MySQL for task_status_changes (same host as whatsapp_tasks / task_updates when tasks load from n8n bridge).
+ */
+function akh_task_status_log_pdo(): ?PDO
+{
+    if (function_exists('akh_notify_db_is_available') && akh_notify_db_is_available()) {
+        $pdo = akh_notify_db();
+
+        return $pdo instanceof PDO ? $pdo : null;
+    }
+    if (function_exists('akh_db_is_pdo') && akh_db_is_pdo()) {
+        $main = akh_db();
+
+        return $main instanceof PDO ? $main : null;
+    }
+
+    return null;
+}
+
 function akh_task_status_log_table_exists(): bool
 {
-    if (!function_exists('akh_db') || !akh_db_is_pdo()) {
+    $pdo = akh_task_status_log_pdo();
+    if ($pdo === null) {
         return false;
     }
     try {
-        $st = akh_db()->query("SHOW TABLES LIKE 'task_status_changes'");
+        $st = $pdo->query("SHOW TABLES LIKE 'task_status_changes'");
 
         return $st !== false && $st->fetch(PDO::FETCH_NUM) !== false;
     } catch (Throwable) {
@@ -185,8 +205,13 @@ function akh_task_status_log_record(
         $comment = mb_substr($comment, 0, 3997) . '…';
     }
 
+    $pdo = akh_task_status_log_pdo();
+    if ($pdo === null) {
+        return;
+    }
+
     try {
-        akh_db()->prepare(
+        $pdo->prepare(
             'INSERT INTO task_status_changes (task_id, from_status, to_status, source, changed_by, comment)
              VALUES (?, ?, ?, ?, ?, ?)'
         )->execute([

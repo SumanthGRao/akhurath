@@ -650,6 +650,19 @@ function akh_wa_task_has_assigned_editor(array $row): bool
 /**
  * Log a WhatsApp queue status change into task_status_changes (studio status codes).
  */
+/**
+ * Log when whatsapp_tasks.status was updated outside akh_wa_task_update / editor sync.
+ */
+function akh_wa_log_whatsapp_row_status_change(
+    string $taskCode,
+    string $prevWaStatus,
+    string $nextWaStatus,
+    string $changedBy = 'WhatsApp sync',
+    string $comment = 'WhatsApp queue status aligned with editor board.'
+): void {
+    akh_wa_task_status_log_transition($taskCode, $prevWaStatus, $nextWaStatus, $changedBy, $comment);
+}
+
 function akh_wa_task_status_log_transition(
     string $taskCode,
     string $prevWaStatus,
@@ -1467,12 +1480,14 @@ function akh_wa_sync_to_studio(array $waRow): ?string
         && strtolower(trim((string) ($studioBefore['status'] ?? ''))) === 'reverted'
         && $waStatus !== 'reverted'
     ) {
+        $prevWaForLog = $waStatus;
         $waStatus = 'reverted';
         $studioStatus = 'reverted';
         if ($waId > 0 && akh_wa_tasks_table_exists()) {
             try {
                 akh_db()->prepare('UPDATE whatsapp_tasks SET status = ? WHERE id = ?')
                     ->execute(['reverted', $waId]);
+                akh_wa_log_whatsapp_row_status_change($taskCode, $prevWaForLog, 'reverted');
             } catch (Throwable $e) {
                 error_log('akh_wa_sync_to_studio: reconcile reverted status: ' . $e->getMessage());
             }
@@ -1542,8 +1557,10 @@ function akh_wa_sync_to_studio(array $waRow): ?string
         if ($studioStNow === 'reverted') {
             if ($waStatus !== 'reverted' && $waId > 0) {
                 try {
+                    $prevWaForLog = $waStatus;
                     akh_db()->prepare('UPDATE whatsapp_tasks SET status = ? WHERE id = ?')
                         ->execute(['reverted', $waId]);
+                    akh_wa_log_whatsapp_row_status_change($taskCode, $prevWaForLog, 'reverted');
                 } catch (Throwable $e) {
                     error_log('akh_wa_sync_to_studio: keep WA reverted: ' . $e->getMessage());
                 }
