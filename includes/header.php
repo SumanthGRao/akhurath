@@ -17,15 +17,25 @@ $bodyClass = $bodyClass ?? '';
     $akhFav192 = $akhBrandDir . '/akhurath-favicon-192.png';
     $akhFav48 = $akhBrandDir . '/akhurath-favicon-48.png';
     $akhApple = $akhBrandDir . '/apple-touch-icon.png';
+    $isWaDashboard = str_contains($bodyClass, 'page-wa-dashboard');
     if (is_file($akhFav192) && is_file($akhFav48)) {
         $v192 = (string) filemtime($akhFav192);
         $v48 = (string) filemtime($akhFav48);
         $href192 = base_path('assets/images/brand/akhurath-favicon-192.png') . '?v=' . rawurlencode($v192);
         $href48 = base_path('assets/images/brand/akhurath-favicon-48.png') . '?v=' . rawurlencode($v48);
         ?>
+        <?php if ($isWaDashboard) {
+            $waIconPath = $akhBrandDir . '/whatsapp-dashboard-icon.svg';
+            $waIconHref = base_path('assets/images/brand/whatsapp-dashboard-icon.svg') . '?v=' . (is_file($waIconPath) ? (string) filemtime($waIconPath) : '1');
+            ?>
+  <link rel="icon" type="image/svg+xml" href="<?php echo h($waIconHref); ?>" />
+            <?php
+        } else {
+            ?>
   <link rel="icon" type="image/png" sizes="48x48" href="<?php echo h($href48); ?>" />
   <link rel="icon" type="image/png" sizes="192x192" href="<?php echo h($href192); ?>" />
-        <?php
+            <?php
+        }
         if (is_file($akhApple)) {
             $va = (string) filemtime($akhApple);
             $hrefApple = base_path('assets/images/brand/apple-touch-icon.png') . '?v=' . rawurlencode($va);
