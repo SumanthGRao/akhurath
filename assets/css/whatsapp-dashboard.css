@@ -452,6 +452,39 @@ body.page-wa-dashboard .site-footer {
   font-size: 0.92rem;
 }
 
+/* Keep the main dashboard table inside the content panel on desktop. */
+#wa-tasks-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+#wa-tasks-table th:nth-child(1) { width: 8%; }
+#wa-tasks-table th:nth-child(2) { width: 11%; }
+#wa-tasks-table th:nth-child(3) { width: 12%; }
+#wa-tasks-table th:nth-child(4) { width: 8%; }
+#wa-tasks-table th:nth-child(5) { width: 8%; }
+#wa-tasks-table th:nth-child(6) { width: 8%; }
+#wa-tasks-table th:nth-child(7) { width: 12%; }
+#wa-tasks-table th:nth-child(8) { width: 12%; }
+#wa-tasks-table th:nth-child(9) { width: 12%; }
+#wa-tasks-table th:nth-child(10) { width: 9%; }
+
+#wa-tasks-table th,
+#wa-tasks-table td {
+  padding: 0.75rem 0.6rem;
+  overflow-wrap: anywhere;
+}
+
+#wa-tasks-table .wa-th {
+  min-width: 0;
+}
+
+#wa-tasks-table td:nth-child(7),
+#wa-tasks-table td:nth-child(8) {
+  white-space: nowrap;
+}
+
 .wa-table th,
 .wa-table td {
   padding: 0.85rem 1rem;
@@ -1142,6 +1175,13 @@ body.page-wa-dashboard .site-footer {
   flex-wrap: wrap;
   gap: 0.35rem;
   justify-content: flex-end;
+}
+
+#wa-tasks-table td.wa-table__actions {
+  display: table-cell;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .wa-btn--chat {
