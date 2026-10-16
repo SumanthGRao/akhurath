@@ -7,8 +7,6 @@ require_once AKH_ROOT . '/includes/admin-auth.php';
 require_once AKH_ROOT . '/includes/csrf.php';
 require_once AKH_ROOT . '/includes/invoices.php';
 require_once AKH_ROOT . '/includes/invoice-clients.php';
-require_once AKH_ROOT . '/includes/invoice-mail.php';
-require_once AKH_ROOT . '/includes/invoice-services.php';
 require_once AKH_ROOT . '/includes/invoice-access.php';
 
 akh_require_invoice_access();
@@ -17,11 +15,20 @@ $error = '';
 $flash = '';
 $billing = null;
 $invoice = null;
-$db = function_exists('akh_db') ? akh_db() : null;
+try {
+    $db = function_exists('akh_db') ? akh_db() : null;
+} catch (Throwable $e) {
+    error_log('Billing invoice builder database connection failed: ' . $e->getMessage());
+    $db = null;
+    http_response_code(503);
+    $error = 'The billing database is temporarily unavailable. Please return to the billing dashboard and try again.';
+}
 
 if (!$db instanceof PDO || $billingId < 1) {
-    http_response_code(400);
-    $error = 'A valid billing record is required.';
+    if ($error === '') {
+        http_response_code(400);
+        $error = 'A valid billing record is required.';
+    }
 } else {
     try {
         $st = $db->prepare('SELECT * FROM final_delivery_billing WHERE id=? LIMIT 1');
@@ -146,6 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                 }
             }
         } elseif ($action === 'send_invoice' && !empty($billing['source_invoice_id'])) {
+            require_once AKH_ROOT . '/includes/invoice-mail.php';
             $invoiceId = (int) $billing['source_invoice_id'];
             $override = trim((string) ($_POST['send_email'] ?? ''));
             $mail = akh_invoice_email_to_client($invoiceId, $override !== '' ? $override : null);
@@ -169,7 +177,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
 
 if ($billing !== null) {
     if ((int) ($billing['source_invoice_id'] ?? 0) > 0) {
-        $invoice = akh_invoice_get((int) $billing['source_invoice_id']);
+        try {
+            $invoice = akh_invoice_get((int) $billing['source_invoice_id']);
+        } catch (Throwable $e) {
+            error_log('Billing invoice builder could not load linked invoice: ' . $e->getMessage());
+            $error = $error !== '' ? $error : 'The invoice could not be loaded. Check that the studio invoice tables are installed.';
+        }
         if ($invoice === null) $error = $error !== '' ? $error : 'The linked invoice could not be loaded.';
     }
 }
@@ -200,7 +213,12 @@ $csrf = akh_csrf_token();
       <?php endif; ?>
     </section>
   <?php elseif ($billing !== null && (string) $billing['invoice_status'] === 'pending' && empty($billing['source_invoice_id'])): ?>
-    <?php if (!akh_invoices_schema_ready()): ?><p class="error">The studio invoice tables are not installed yet. An administrator must finish the existing invoice setup before an accountant can create invoices.</p><?php else: ?>
+    <?php
+      $invoiceSchemaReady = false;
+      try { $invoiceSchemaReady = akh_invoices_schema_ready(); }
+      catch (Throwable $e) { error_log('Billing invoice schema check failed: ' . $e->getMessage()); }
+    ?>
+    <?php if (!$invoiceSchemaReady): ?><p class="error">The studio invoice tables could not be verified. An administrator must finish the existing invoice setup and confirm database access before an accountant can create invoices.</p><?php else: ?>
       <form method="post" id="create-invoice-form"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><input type="hidden" name="action" value="create_invoice">
         <div class="grid"><label class="field"><span>Client email (optional; required to email the PDF)</span><input type="email" name="client_email" maxlength="255" placeholder="client@example.com"></label><label class="field"><span>GST / tax rate (%)</span><input type="number" name="tax_percent" min="0" max="50" step="0.01" value="<?php echo h(number_format((int) $studioProfile['default_tax_bps'] / 100, 2, '.', '')); ?>"></label></div>
         <label class="field"><span>Final delivery line</span><input type="text" name="delivery_description" maxlength="500" required value="<?php echo h(trim((string) $billing['project_name'] . ' — ' . (string) ($billing['task_type'] ?? 'Final video') . ' (' . (string) $billing['file_name'] . ')')); ?>"></label>
