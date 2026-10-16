@@ -21,8 +21,10 @@ $error = '';
 $wa = akh_dashboard_credentials_wa();
 $hrAccounts = akh_hr_accounts();
 ksort($hrAccounts, SORT_STRING);
+$billingRoleReady = akh_billing_role_schema_ensure();
 $billingAccounts = akh_billing_accounts();
 ksort($billingAccounts, SORT_STRING);
+$billingOrphans = akh_billing_orphan_accounts();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
@@ -75,8 +77,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = $err;
             } else {
                 $flash = 'Accountant account created. They can sign in to the billing dashboard now.';
-                $billingAccounts = akh_billing_accounts();
-                ksort($billingAccounts, SORT_STRING);
             }
         } elseif ($action === 'delete_billing') {
             $u = strtolower(trim((string) ($_POST['username'] ?? '')));
@@ -86,13 +86,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'Could not remove that accountant account.';
             } else {
                 $flash = 'Accountant account removed.';
-                $billingAccounts = akh_billing_accounts();
-                ksort($billingAccounts, SORT_STRING);
+            }
+        } elseif ($action === 'repair_billing') {
+            $u = strtolower(trim((string) ($_POST['username'] ?? '')));
+            if ($u === '' || !akh_billing_account_repair($u)) {
+                $error = 'Could not assign accountant access to that legacy account.';
+            } else {
+                $flash = 'Legacy account assigned the accountant role and can now sign in.';
             }
         } else {
             $error = 'Unknown action.';
         }
     }
+    $billingRoleReady = akh_billing_role_schema_ensure();
+    $billingAccounts = akh_billing_accounts();
+    ksort($billingAccounts, SORT_STRING);
+    $billingOrphans = akh_billing_orphan_accounts();
 }
 
 require_once AKH_ROOT . '/includes/header.php';
@@ -152,7 +161,10 @@ require_once AKH_ROOT . '/includes/header.php';
       <section class="portal-section" id="billing" aria-labelledby="billing-access-h">
         <h2 id="billing-access-h" class="portal-section__title">Accountant billing dashboard</h2>
         <p class="portal-muted">Create separate logins for staff who manage invoices and payment clearance. These accounts can access the billing dashboard only.</p>
-        <p class="portal-note">Dashboard sign-in: <a class="text-link" href="<?php echo h(base_path('billing-dashboard/')); ?>">billing-dashboard/</a>. Ensure the accountant role migration has been applied before creating accounts.</p>
+        <p class="portal-note">Dashboard sign-in: <a class="text-link" href="<?php echo h(base_path('billing-dashboard/')); ?>">billing-dashboard/</a>.</p>
+        <?php if (!$billingRoleReady): ?>
+          <p class="banner banner--err" role="alert">The accountant role is not available in the users table. Allow the site database user to alter the table, or run <code>billing-dashboard/sql/002_php_hosting_accountant_role.sql</code> in phpMyAdmin.</p>
+        <?php endif; ?>
         <h3 class="portal-section__sub" style="margin:1rem 0 0.75rem;font-size:1rem;font-weight:600">Add accountant</h3>
         <form method="post" action="#billing" class="portal-form">
           <input type="hidden" name="csrf_token" value="<?php echo h(akh_csrf_token()); ?>" />
@@ -199,6 +211,25 @@ require_once AKH_ROOT . '/includes/header.php';
           </div>
         <?php endif; ?>
       </section>
+
+      <?php if ($billingOrphans !== []): ?>
+        <section class="portal-section" aria-labelledby="billing-repair-h">
+          <h3 id="billing-repair-h" class="portal-section__sub" style="margin:0 0 0.75rem;font-size:1rem;font-weight:600">Accounts needing a role</h3>
+          <p class="portal-muted">These users were saved while the database did not support the accountant role. Assign accountant access only to the intended staff account.</p>
+          <div class="admin-table-wrap"><table class="admin-table">
+            <thead><tr><th scope="col">Username</th><th scope="col">Actions</th></tr></thead>
+            <tbody><?php foreach ($billingOrphans as $uname): ?><tr>
+              <td class="admin-table__mono"><?php echo h($uname); ?></td>
+              <td><form method="post" action="#billing" class="admin-inline-form" onsubmit="return confirm('Grant accountant dashboard access to <?php echo h($uname); ?>?');">
+                <input type="hidden" name="csrf_token" value="<?php echo h(akh_csrf_token()); ?>" />
+                <input type="hidden" name="action" value="repair_billing" />
+                <input type="hidden" name="username" value="<?php echo h($uname); ?>" />
+                <button type="submit" class="btn btn--primary btn--sm">Make accountant</button>
+              </form></td>
+            </tr><?php endforeach; ?></tbody>
+          </table></div>
+        </section>
+      <?php endif; ?>
 
       <section class="portal-section" id="hr" aria-labelledby="hr-access-h">
         <h2 id="hr-access-h" class="portal-section__title">HR dashboard</h2>

@@ -8,8 +8,8 @@ The main Akhurath site is PHP/Apache hosted. For the website URL `/billing-dashb
 2. Confirm the live site has `billing-dashboard/index.php`, `billing-dashboard/api.php`, `billing-dashboard/public/`, and the existing root `includes/` files.
 3. Confirm the site's existing `includes/config.php` or `config/database.local.php` connects PHP to the MariaDB database.
 4. Select the site database in phpMyAdmin and run `billing-dashboard/sql/001_php_hostinger.sql`.
-5. Run `billing-dashboard/sql/002_php_hosting_accountant_role.sql` once to allow the dedicated accountant role.
-6. Open `/admin/dashboard-access.php` as an administrator and use the **Accountant billing dashboard** section to create or remove accountant logins. Existing administrators can also sign in.
+5. The Access page attempts the additive accountant-role migration automatically. If the site database user cannot alter `users.role`, run `billing-dashboard/sql/002_php_hosting_accountant_role.sql` once in phpMyAdmin.
+6. Open `/admin/dashboard-access.php` as an administrator and use the **Accountant billing dashboard** section to create or remove accountant logins. Existing administrators can also sign in. Accounts created before the role migration may appear under **Accounts needing a role**; explicitly choose **Make accountant** for the intended account to preserve its existing password hash.
 7. Set `AKH_BILLING_N8N_TOKEN` as a server environment secret or define it in the untracked `includes/config.php`. Never add its value to Git.
 8. Re-test `https://akhurathstudio.com/billing-dashboard/` and the login, invoice and clearance flows.
 
