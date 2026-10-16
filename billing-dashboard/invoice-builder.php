@@ -21,8 +21,8 @@ function billing_invoice_audit(PDO $db, int $billingId, string $actor, string $a
     }
 }
 
-/** Dispatch a newly linked invoice to n8n for the WhatsApp notification workflow. */
-function billing_invoice_dispatch_created_webhook(array $billing, array $invoice): bool
+/** Dispatch an invoice lifecycle event to n8n for the WhatsApp notification workflow. */
+function billing_invoice_dispatch_webhook(string $event, string $eventId, array $billing, array $invoice, array $extra = []): bool
 {
     $url = defined('AKH_N8N_INVOICE_CREATED_WEBHOOK_URL') ? trim((string) AKH_N8N_INVOICE_CREATED_WEBHOOK_URL) : '';
     $secret = defined('AKH_N8N_INVOICE_WEBHOOK_SECRET') ? trim((string) AKH_N8N_INVOICE_WEBHOOK_SECRET) : '';
@@ -47,8 +47,8 @@ function billing_invoice_dispatch_created_webhook(array $billing, array $invoice
     }
     $invoiceId = (int) ($invoice['id'] ?? 0);
     $payload = [
-        'event' => 'billing.invoice.created',
-        'event_id' => 'invoice-created-' . $invoiceId,
+        'event' => $event,
+        'event_id' => $eventId,
         'billing_id' => (int) ($billing['id'] ?? 0),
         'task_code' => (string) ($billing['task_code'] ?? ''),
         'customer_name' => (string) ($billing['customer_name'] ?? ''),
@@ -66,7 +66,7 @@ function billing_invoice_dispatch_created_webhook(array $billing, array $invoice
         'total_inr' => number_format(((int) ($invoice['total_paise'] ?? 0)) / 100, 2, '.', ''),
         'due_at' => (string) ($invoice['due_at'] ?? ''),
         'lines' => $lines,
-    ];
+    ] + $extra;
     $json = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
     if (!is_string($json)) {
         error_log('Billing invoice n8n webhook failed: could not encode event payload.');
@@ -220,12 +220,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                                     $billing['invoice_number'] = $invoiceNumber;
                                     $billing['invoice_file_url'] = $pdfUrl;
                                     $error = 'The invoice was created and linked, but the audit table is missing, incompatible, or not writable. Run billing-dashboard/sql/004_billing_audit_log.sql and confirm the site database user can INSERT into billing_audit_log. Refresh the billing dashboard; do not create another invoice for this delivery.';
-                                } elseif (!billing_invoice_dispatch_created_webhook($billing, $createdInvoice ?? [])) {
-                                    $billing['source_invoice_id'] = $invoiceId;
-                                    $billing['bill_amount'] = $totalInr;
-                                    $billing['invoice_number'] = $invoiceNumber;
-                                    $billing['invoice_file_url'] = $pdfUrl;
-                                    $error = 'The invoice was created and linked, but n8n did not confirm the WhatsApp event. Check the webhook settings and n8n execution; do not create another invoice for this delivery.';
                                 } else {
                                     header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId));
                                     exit;
@@ -255,6 +249,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                         $billing['invoice_status'] = 'sent';
                         if (!$auditOk) {
                             $error = 'The invoice is marked sent, but the audit table is missing, incompatible, or not writable. Run billing-dashboard/sql/004_billing_audit_log.sql and confirm the site database user can INSERT into billing_audit_log. Refresh the billing dashboard and verify the record.';
+                        } elseif (!billing_invoice_dispatch_webhook(
+                            'billing.invoice.sent_manual',
+                            'invoice-sent-manual-' . $billingId . '-' . $invoiceId,
+                            $billing,
+                            akh_invoice_get($invoiceId) ?? [],
+                            ['send_reference' => $reference]
+                        )) {
+                            $error = 'The invoice is marked sent manually, but n8n did not confirm the WhatsApp event. Check the live webhook settings and n8n execution; the event was attempted once.';
                         } else {
                             header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId . '&sent=1'));
                             exit;
