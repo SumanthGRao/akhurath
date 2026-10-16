@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f5f4f0"><title>Akhurath Studio · Billing</title><link rel="stylesheet" href="/styles.css"></head>
+<body>
+  <main id="login-view" class="login-wrap" hidden>
+    <section class="login-card"><div class="brand-mark">AS</div><p class="eyebrow">AKHURATH STUDIO</p><h1>Billing, made clear.</h1><p class="muted">Sign in to manage invoices and payment records.</p><form id="login-form"><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="primary full">Sign in <span>→</span></button><p id="login-error" class="error"></p></form><p class="fine">Secure accountant workspace</p></section>
+  </main>
+  <div id="app-view" hidden>
+    <aside class="sidebar"><div class="side-brand"><div class="brand-mark">AS</div><div><strong>Akhurath</strong><small>STUDIO</small></div></div><div class="workspace-label">WORKSPACE</div><a class="nav-item active"><span>▦</span> Billing</a><div class="side-bottom"><span class="avatar">AS</span><div class="user-meta"><strong id="user-name">Accountant</strong><small id="user-role">Finance</small></div><button id="logout" class="icon-button" aria-label="Sign out">↗</button></div></aside>
+    <main class="main"><header class="topbar"><div><p class="eyebrow">AKHURATH STUDIO / FINANCE</p><h1>Billing dashboard</h1></div><div class="top-actions"><span id="mode-badge" class="mode-badge">Demo mode</span><span class="today" id="today"></span></div></header>
+      <section class="welcome"><div><p class="eyebrow light">ACCOUNTS OVERVIEW</p><h2>Good work deserves a clear finish.</h2><p>Track final deliveries, invoices and payment clearance in one place.</p></div><div class="welcome-art"><div class="art-circle circle-one"></div><div class="art-circle circle-two"></div><div class="art-line"></div><span>01<br><small>FINANCE</small></span></div></section>
+      <section class="metrics" id="metrics"></section>
+      <section class="queue-head"><div><p class="eyebrow">CLIENT DELIVERIES</p><h2>Billing queue</h2></div><div class="queue-tools"><label class="search"><span>⌕</span><input id="search" placeholder="Search client or project" aria-label="Search"></label><select id="filter" aria-label="Filter billing queue"><option value="all">All records</option><option value="invoice">Invoice needed</option><option value="payment">Awaiting payment</option><option value="ready">Ready to deliver</option><option value="delivered">Delivered</option></select></div></section>
+      <section class="table-card"><div class="table-scroll"><table><thead><tr><th>CLIENT / PROJECT</th><th>TASK</th><th>INVOICE</th><th>PAYMENT</th><th>DELIVERY</th><th></th></tr></thead><tbody id="rows"></tbody></table></div><div id="empty" class="empty" hidden>No billing records found.</div></section>
+      <footer>Payment clearance is recorded here. Final file sharing and WhatsApp delivery are handled by the authenticated n8n workflow.</footer>
+    </main>
+  </div>
+  <dialog id="detail-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form><div id="detail-content"></div></dialog>
+  <script src="/app.js" defer></script>
+</body></html>

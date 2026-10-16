@@ -1,0 +1,10 @@
+{
+  "name": "akhurath-billing-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Accountant billing dashboard with MariaDB and clearance-gated n8n delivery handoff",
+  "type": "module",
+  "scripts": {"start":"node src/server.js", "dev":"node --watch src/server.js", "check":"node --check src/server.js && node --check src/store.js && node --check src/auth.js"},
+  "engines": {"node": ">=20"},
+  "dependencies": {"bcryptjs":"^2.4.3", "dotenv":"^16.4.7", "express":"^4.21.2", "express-rate-limit":"^7.5.0", "helmet":"^8.0.0", "mariadb":"^3.4.0"}
+}
