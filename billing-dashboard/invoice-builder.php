@@ -9,6 +9,18 @@ require_once AKH_ROOT . '/includes/invoices.php';
 require_once AKH_ROOT . '/includes/invoice-clients.php';
 require_once AKH_ROOT . '/includes/invoice-access.php';
 
+function billing_invoice_audit(PDO $db, int $billingId, string $actor, string $action, array $details): bool
+{
+    try {
+        $st = $db->prepare('INSERT INTO billing_audit_log (billing_id, actor, action, details) VALUES (?, ?, ?, ?)');
+        $st->execute([$billingId, $actor, $action, json_encode($details, JSON_UNESCAPED_SLASHES)]);
+        return true;
+    } catch (Throwable $e) {
+        error_log('Billing invoice audit write failed for billing id ' . $billingId . ': ' . $e->getMessage());
+        return false;
+    }
+}
+
 akh_require_invoice_access();
 $billingId = max(0, (int) ($_GET['id'] ?? $_POST['billing_id'] ?? 0));
 $error = '';
@@ -123,9 +135,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                                 $error = 'Invoice was created but the delivery changed before it could be linked. Refresh the billing dashboard and contact an administrator if the draft remains.';
                             } else {
                                 $actor = (string) ($_SESSION['akh_billing_user'] ?? akh_admin_current() ?? 'admin');
-                                $db->prepare("INSERT INTO billing_audit_log (billing_id, actor, action, details) VALUES (?, ?, 'invoice_draft_created', ?)")->execute([$billingId, $actor, json_encode(['invoice_id' => $invoiceId, 'invoice_number' => $invoiceNumber], JSON_UNESCAPED_SLASHES)]);
-                                header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId));
-                                exit;
+                                $auditOk = billing_invoice_audit($db, $billingId, $actor, 'invoice_draft_created', ['invoice_id' => $invoiceId, 'invoice_number' => $invoiceNumber]);
+                                if (!$auditOk) {
+                                    $billing['source_invoice_id'] = $invoiceId;
+                                    $billing['bill_amount'] = $totalInr;
+                                    $billing['invoice_number'] = $invoiceNumber;
+                                    $billing['invoice_file_url'] = $pdfUrl;
+                                    $error = 'The invoice was created and linked, but its audit entry could not be saved. Refresh the billing dashboard; do not create another invoice for this delivery.';
+                                } else {
+                                    header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId));
+                                    exit;
+                                }
                             }
                         }
                     }
@@ -147,9 +167,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                         $error = 'Invoice marked sent, but the billing record changed. Refresh and verify the delivery before continuing.';
                     } else {
                         $actor = (string) ($_SESSION['akh_billing_user'] ?? akh_admin_current() ?? 'admin');
-                        $db->prepare("INSERT INTO billing_audit_log (billing_id, actor, action, details) VALUES (?, ?, 'invoice_sent_manual', ?)")->execute([$billingId, $actor, json_encode(['invoice_id' => $invoiceId, 'reference' => $reference], JSON_UNESCAPED_SLASHES)]);
-                        header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId . '&sent=1'));
-                        exit;
+                        $auditOk = billing_invoice_audit($db, $billingId, $actor, 'invoice_sent_manual', ['invoice_id' => $invoiceId, 'reference' => $reference]);
+                        $billing['invoice_status'] = 'sent';
+                        if (!$auditOk) {
+                            $error = 'The invoice is marked sent, but its audit entry could not be saved. Refresh the billing dashboard and verify the record.';
+                        } else {
+                            header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId . '&sent=1'));
+                            exit;
+                        }
                     }
                 }
             }
@@ -167,9 +192,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                     $error = 'The invoice was emailed, but this delivery record changed before its status could be updated. Refresh and verify the record.';
                 } else {
                     $actor = (string) ($_SESSION['akh_billing_user'] ?? akh_admin_current() ?? 'admin');
-                    $db->prepare("INSERT INTO billing_audit_log (billing_id, actor, action, details) VALUES (?, ?, 'invoice_sent', ?)")->execute([$billingId, $actor, json_encode(['invoice_id' => $invoiceId], JSON_UNESCAPED_SLASHES)]);
-                    header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId . '&sent=1'));
-                    exit;
+                    $auditOk = billing_invoice_audit($db, $billingId, $actor, 'invoice_sent', ['invoice_id' => $invoiceId]);
+                    $billing['invoice_status'] = 'sent';
+                    if (!$auditOk) {
+                        $error = 'The invoice email was sent, but its audit entry could not be saved. Refresh the billing dashboard and verify the record.';
+                    } else {
+                        header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId . '&sent=1'));
+                        exit;
+                    }
                 }
             }
         }
