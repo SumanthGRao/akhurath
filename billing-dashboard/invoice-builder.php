@@ -141,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                                     $billing['bill_amount'] = $totalInr;
                                     $billing['invoice_number'] = $invoiceNumber;
                                     $billing['invoice_file_url'] = $pdfUrl;
-                                    $error = 'The invoice was created and linked, but its audit entry could not be saved. Refresh the billing dashboard; do not create another invoice for this delivery.';
+                                    $error = 'The invoice was created and linked, but the audit table is missing, incompatible, or not writable. Run billing-dashboard/sql/004_billing_audit_log.sql and confirm the site database user can INSERT into billing_audit_log. Refresh the billing dashboard; do not create another invoice for this delivery.';
                                 } else {
                                     header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId));
                                     exit;
@@ -170,7 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                         $auditOk = billing_invoice_audit($db, $billingId, $actor, 'invoice_sent_manual', ['invoice_id' => $invoiceId, 'reference' => $reference]);
                         $billing['invoice_status'] = 'sent';
                         if (!$auditOk) {
-                            $error = 'The invoice is marked sent, but its audit entry could not be saved. Refresh the billing dashboard and verify the record.';
+                            $error = 'The invoice is marked sent, but the audit table is missing, incompatible, or not writable. Run billing-dashboard/sql/004_billing_audit_log.sql and confirm the site database user can INSERT into billing_audit_log. Refresh the billing dashboard and verify the record.';
                         } else {
                             header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId . '&sent=1'));
                             exit;
@@ -195,7 +195,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                     $auditOk = billing_invoice_audit($db, $billingId, $actor, 'invoice_sent', ['invoice_id' => $invoiceId]);
                     $billing['invoice_status'] = 'sent';
                     if (!$auditOk) {
-                        $error = 'The invoice email was sent, but its audit entry could not be saved. Refresh the billing dashboard and verify the record.';
+                        $error = 'The invoice email was sent, but the audit table is missing, incompatible, or not writable. Run billing-dashboard/sql/004_billing_audit_log.sql and confirm the site database user can INSERT into billing_audit_log. Refresh the billing dashboard and verify the record.';
                     } else {
                         header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId . '&sent=1'));
                         exit;
