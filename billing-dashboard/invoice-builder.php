@@ -46,6 +46,7 @@ if (!$db instanceof PDO || $billingId < 1) {
 $clientSlug = 'delivery_' . $billingId;
 $studioProfile = akh_invoice_studio_profile();
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
+    try {
     if (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
         $error = 'Security check failed. Refresh and try again.';
     } else {
@@ -172,6 +173,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                 }
             }
         }
+    }
+    } catch (Throwable $e) {
+        error_log('Billing invoice builder submission failed for billing id ' . $billingId . ': ' . $e->getMessage());
+        $error = 'The invoice could not be saved because of a server-side setup error. Please check the hosting PHP error log, then refresh this record before retrying.';
     }
 }
 
