@@ -21,6 +21,84 @@ function billing_invoice_audit(PDO $db, int $billingId, string $actor, string $a
     }
 }
 
+/** Dispatch a newly linked invoice to n8n for the WhatsApp notification workflow. */
+function billing_invoice_dispatch_created_webhook(array $billing, array $invoice): bool
+{
+    $url = defined('AKH_N8N_INVOICE_CREATED_WEBHOOK_URL') ? trim((string) AKH_N8N_INVOICE_CREATED_WEBHOOK_URL) : '';
+    $secret = defined('AKH_N8N_INVOICE_WEBHOOK_SECRET') ? trim((string) AKH_N8N_INVOICE_WEBHOOK_SECRET) : '';
+    if ($url === '' || !filter_var($url, FILTER_VALIDATE_URL) || !str_starts_with($url, 'https://') || $secret === '') {
+        error_log('Billing invoice n8n webhook skipped: configure its HTTPS URL and shared secret in includes/config.php.');
+        return false;
+    }
+    if (!function_exists('curl_init')) {
+        error_log('Billing invoice n8n webhook failed: PHP cURL extension is unavailable.');
+        return false;
+    }
+
+    $lines = [];
+    foreach (($invoice['lines'] ?? []) as $line) {
+        if (!is_array($line)) continue;
+        $lines[] = [
+            'description' => (string) ($line['description'] ?? ''),
+            'quantity' => (int) ($line['quantity'] ?? 1),
+            'unit_amount_paise' => (int) ($line['unit_amount_paise'] ?? 0),
+            'line_total_paise' => (int) ($line['line_total_paise'] ?? 0),
+        ];
+    }
+    $invoiceId = (int) ($invoice['id'] ?? 0);
+    $payload = [
+        'event' => 'billing.invoice.created',
+        'event_id' => 'invoice-created-' . $invoiceId,
+        'billing_id' => (int) ($billing['id'] ?? 0),
+        'task_code' => (string) ($billing['task_code'] ?? ''),
+        'customer_name' => (string) ($billing['customer_name'] ?? ''),
+        'phone' => (string) ($billing['phone'] ?? ''),
+        'project_name' => (string) ($billing['project_name'] ?? ''),
+        'task_type' => (string) ($billing['task_type'] ?? ''),
+        'invoice_id' => $invoiceId,
+        'invoice_number' => (string) ($invoice['invoice_number'] ?? ''),
+        'invoice_status' => (string) ($invoice['status'] ?? 'draft'),
+        'currency' => (string) ($invoice['currency'] ?? 'INR'),
+        'subtotal_paise' => (int) ($invoice['subtotal_paise'] ?? 0),
+        'tax_rate_bps' => (int) ($invoice['tax_rate_bps'] ?? 0),
+        'tax_paise' => (int) ($invoice['tax_paise'] ?? 0),
+        'total_paise' => (int) ($invoice['total_paise'] ?? 0),
+        'total_inr' => number_format(((int) ($invoice['total_paise'] ?? 0)) / 100, 2, '.', ''),
+        'due_at' => (string) ($invoice['due_at'] ?? ''),
+        'lines' => $lines,
+    ];
+    $json = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+    if (!is_string($json)) {
+        error_log('Billing invoice n8n webhook failed: could not encode event payload.');
+        return false;
+    }
+
+    try {
+        $ch = curl_init($url);
+        if ($ch === false) return false;
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $json,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-Webhook-Secret: ' . $secret],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 3,
+            CURLOPT_TIMEOUT => 8,
+        ]);
+        curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+        if ($status < 200 || $status >= 300) {
+            error_log('Billing invoice n8n webhook failed: HTTP ' . $status . ($curlError !== '' ? ' (' . $curlError . ')' : ''));
+            return false;
+        }
+        return true;
+    } catch (Throwable $e) {
+        error_log('Billing invoice n8n webhook exception: ' . $e->getMessage());
+        return false;
+    }
+}
+
 akh_require_invoice_access();
 $billingId = max(0, (int) ($_GET['id'] ?? $_POST['billing_id'] ?? 0));
 $error = '';
@@ -142,6 +220,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                                     $billing['invoice_number'] = $invoiceNumber;
                                     $billing['invoice_file_url'] = $pdfUrl;
                                     $error = 'The invoice was created and linked, but the audit table is missing, incompatible, or not writable. Run billing-dashboard/sql/004_billing_audit_log.sql and confirm the site database user can INSERT into billing_audit_log. Refresh the billing dashboard; do not create another invoice for this delivery.';
+                                } elseif (!billing_invoice_dispatch_created_webhook($billing, $createdInvoice ?? [])) {
+                                    $billing['source_invoice_id'] = $invoiceId;
+                                    $billing['bill_amount'] = $totalInr;
+                                    $billing['invoice_number'] = $invoiceNumber;
+                                    $billing['invoice_file_url'] = $pdfUrl;
+                                    $error = 'The invoice was created and linked, but n8n did not confirm the WhatsApp event. Check the webhook settings and n8n execution; do not create another invoice for this delivery.';
                                 } else {
                                     header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId));
                                     exit;
