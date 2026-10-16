@@ -6,6 +6,7 @@ require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once AKH_ROOT . '/includes/admin-auth.php';
 require_once AKH_ROOT . '/includes/dashboard-credentials.php';
 require_once AKH_ROOT . '/includes/hr-auth.php';
+require_once AKH_ROOT . '/includes/billing-accounts.php';
 require_once AKH_ROOT . '/includes/csrf.php';
 
 akh_require_admin();
@@ -20,6 +21,8 @@ $error = '';
 $wa = akh_dashboard_credentials_wa();
 $hrAccounts = akh_hr_accounts();
 ksort($hrAccounts, SORT_STRING);
+$billingAccounts = akh_billing_accounts();
+ksort($billingAccounts, SORT_STRING);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
@@ -62,6 +65,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $hrAccounts = akh_hr_accounts();
                 ksort($hrAccounts, SORT_STRING);
             }
+        } elseif ($action === 'add_billing') {
+            $err = akh_billing_account_add(
+                trim((string) ($_POST['billing_username'] ?? '')),
+                (string) ($_POST['billing_password'] ?? ''),
+                (string) ($_POST['billing_password_confirm'] ?? '')
+            );
+            if ($err !== null) {
+                $error = $err;
+            } else {
+                $flash = 'Accountant account created. They can sign in to the billing dashboard now.';
+                $billingAccounts = akh_billing_accounts();
+                ksort($billingAccounts, SORT_STRING);
+            }
+        } elseif ($action === 'delete_billing') {
+            $u = strtolower(trim((string) ($_POST['username'] ?? '')));
+            if ($u === '') {
+                $error = 'Missing username.';
+            } elseif (!akh_billing_account_delete($u)) {
+                $error = 'Could not remove that accountant account.';
+            } else {
+                $flash = 'Accountant account removed.';
+                $billingAccounts = akh_billing_accounts();
+                ksort($billingAccounts, SORT_STRING);
+            }
         } else {
             $error = 'Unknown action.';
         }
@@ -76,7 +103,7 @@ require_once AKH_ROOT . '/includes/header.php';
       <header class="admin-head">
         <div>
           <h1 class="portal-title">Access</h1>
-          <p class="portal-lead admin-head__meta">Manage logins for the <a class="text-link" href="<?php echo h(base_path('whatsapp/login.php')); ?>">WhatsApp task board</a> and <a class="text-link" href="<?php echo h(base_path('hr/login.php')); ?>">HR attendance dashboard</a>.</p>
+          <p class="portal-lead admin-head__meta">Manage logins for the <a class="text-link" href="<?php echo h(base_path('whatsapp/login.php')); ?>">WhatsApp task board</a>, <a class="text-link" href="<?php echo h(base_path('hr/login.php')); ?>">HR attendance dashboard</a>, and the <a class="text-link" href="<?php echo h(base_path('billing-dashboard/')); ?>">accountant billing dashboard</a>.</p>
         </div>
         <div class="admin-head__actions">
           <?php require __DIR__ . '/includes/admin-console-sidebar.php'; ?>
@@ -120,6 +147,57 @@ require_once AKH_ROOT . '/includes/header.php';
           </div>
         </form>
         <p class="portal-note">Saved to <code>data/dashboard-credentials.json</code> on the server.</p>
+      </section>
+
+      <section class="portal-section" id="billing" aria-labelledby="billing-access-h">
+        <h2 id="billing-access-h" class="portal-section__title">Accountant billing dashboard</h2>
+        <p class="portal-muted">Create separate logins for staff who manage invoices and payment clearance. These accounts can access the billing dashboard only.</p>
+        <p class="portal-note">Dashboard sign-in: <a class="text-link" href="<?php echo h(base_path('billing-dashboard/')); ?>">billing-dashboard/</a>. Ensure the accountant role migration has been applied before creating accounts.</p>
+        <h3 class="portal-section__sub" style="margin:1rem 0 0.75rem;font-size:1rem;font-weight:600">Add accountant</h3>
+        <form method="post" action="#billing" class="portal-form">
+          <input type="hidden" name="csrf_token" value="<?php echo h(akh_csrf_token()); ?>" />
+          <input type="hidden" name="action" value="add_billing" />
+          <div class="admin-form-row">
+            <label class="field">
+              <span>Username</span>
+              <input type="text" name="billing_username" required maxlength="32" pattern="[a-z][a-z0-9_]{2,31}" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Password</span>
+              <input type="password" name="billing_password" required minlength="8" maxlength="128" autocomplete="new-password" />
+            </label>
+            <label class="field">
+              <span>Confirm password</span>
+              <input type="password" name="billing_password_confirm" required minlength="8" maxlength="128" autocomplete="new-password" />
+            </label>
+            <button type="submit" class="btn btn--primary">Create accountant</button>
+          </div>
+        </form>
+        <h3 class="portal-section__sub" style="margin:1.25rem 0 0.75rem;font-size:1rem;font-weight:600">Accountants (<?php echo count($billingAccounts); ?>)</h3>
+        <?php if ($billingAccounts === []): ?>
+          <p class="portal-muted">No accountant accounts yet.</p>
+        <?php else: ?>
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead><tr><th scope="col">Username</th><th scope="col">Actions</th></tr></thead>
+              <tbody>
+                <?php foreach ($billingAccounts as $uname => $_hash): ?>
+                  <tr>
+                    <td class="admin-table__mono"><?php echo h((string) $uname); ?></td>
+                    <td>
+                      <form method="post" action="#billing" class="admin-inline-form" onsubmit="return confirm('Remove accountant account <?php echo h((string) $uname); ?>?');">
+                        <input type="hidden" name="csrf_token" value="<?php echo h(akh_csrf_token()); ?>" />
+                        <input type="hidden" name="action" value="delete_billing" />
+                        <input type="hidden" name="username" value="<?php echo h((string) $uname); ?>" />
+                        <button type="submit" class="btn btn--ghost btn--sm">Remove</button>
+                      </form>
+                    </td>
+                  </tr>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          </div>
+        <?php endif; ?>
       </section>
 
       <section class="portal-section" id="hr" aria-labelledby="hr-access-h">
