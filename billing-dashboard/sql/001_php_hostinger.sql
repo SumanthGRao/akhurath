@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS final_delivery_billing (
   bill_amount DECIMAL(12,2) NULL,
   invoice_number VARCHAR(100) NULL,
   invoice_file_url TEXT NULL,
+  source_invoice_id BIGINT UNSIGNED NULL,
   invoice_status ENUM('pending','sent') NOT NULL DEFAULT 'pending',
   payment_status ENUM('unpaid','cleared') NOT NULL DEFAULT 'unpaid',
   payment_reference VARCHAR(255) NULL,

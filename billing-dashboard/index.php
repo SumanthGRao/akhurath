@@ -8,7 +8,7 @@ $html = file_get_contents(__DIR__ . '/public/index.html');
 if (!is_string($html)) { http_response_code(500); exit('Billing dashboard files are missing.'); }
 $html = str_replace('href="/styles.css"', 'href="public/styles.css"', $html);
 $html = str_replace('src="/app.js"', 'src="public/app.js"', $html);
-$bootstrap = '<script>window.BILLING_API_BASE="api.php?action=";window.BILLING_CSRF=' . json_encode(akh_csrf_token(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';</script><script src="public/app.js?v=20261016-2" defer></script>';
+$bootstrap = '<script>window.BILLING_API_BASE="api.php?action=";window.BILLING_CSRF=' . json_encode(akh_csrf_token(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';</script><script src="public/app.js?v=20261016-4" defer></script>';
 $html = str_replace('<script src="public/app.js" defer></script>', $bootstrap, $html);
 header('Content-Type: text/html; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');

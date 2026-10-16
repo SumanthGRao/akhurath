@@ -2,7 +2,7 @@
 
 > **Existing Akhurath website (Hostinger/PHP):** the live website URL is served by `index.php` and `api.php` in this folder. Follow [README-Hostinger.md](README-Hostinger.md) to apply the MariaDB schema and role migration. The standalone Node instructions below are for a separate Node-capable deployment.
 
-A deployable accountant dashboard for final video billing. It includes a Node.js backend, MariaDB schema and adapter, role-aware sign-in, invoice and payment clearance actions, and a separate authenticated n8n delivery handoff. Demo mode works without a database. No live MariaDB or n8n connection is configured by this project.
+A deployable accountant dashboard for final video billing. It includes a Node.js backend, a PHP-hosting adapter, MariaDB schema, role-aware sign-in, invoice and payment clearance actions, and a separate authenticated n8n delivery handoff. The PHP billing flow uses the studio invoice generation services to create tax-aware multi-line invoices, link PDFs, and email them before marking a billing record as invoiced. Demo mode works without a database. No live MariaDB or n8n connection is configured by this project.
 
 ## Workflow and safety boundary
 
@@ -81,7 +81,7 @@ The claim endpoint checks clearance atomically when n8n claims the row, and the 
 
 - `POST /api/login`, `POST /api/logout`, `GET /api/me`
 - `GET /api/billing`
-- `POST /api/billing/:id/invoice` (accountant)
+- PHP hosting: use `billing-dashboard/invoice-builder.php` from a billing record to create and link a studio invoice; the former metadata-only API route is disabled.
 - `POST /api/billing/:id/clear` (accountant; requires sent invoice and payment reference)
 - `GET /api/n8n/eligible`, `POST /api/n8n/claim/:id`, `POST /api/n8n/complete/:id` (separate bearer credential)
 - `GET /api/health`
