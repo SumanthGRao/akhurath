@@ -1,5 +1,7 @@
 # Akhurath Studio billing dashboard
 
+> **Existing Akhurath website (Hostinger/PHP):** the live website URL is served by `index.php` and `api.php` in this folder. Follow [README-Hostinger.md](README-Hostinger.md) to apply the MariaDB schema and role migration. The standalone Node instructions below are for a separate Node-capable deployment.
+
 A deployable accountant dashboard for final video billing. It includes a Node.js backend, MariaDB schema and adapter, role-aware sign-in, invoice and payment clearance actions, and a separate authenticated n8n delivery handoff. Demo mode works without a database. No live MariaDB or n8n connection is configured by this project.
 
 ## Workflow and safety boundary
