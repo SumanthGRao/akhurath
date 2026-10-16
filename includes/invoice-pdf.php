@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/invoice-text.php';
 require_once __DIR__ . '/simple-pdf.php';
 require_once __DIR__ . '/invoice-template.php';
 require_once __DIR__ . '/invoice-services.php';
@@ -50,15 +51,15 @@ function akh_invoice_pdf_wrap_text(string $text, int $maxChars = 52): array
         return [];
     }
     $out = [];
-    while (mb_strlen($text) > $maxChars) {
-        $chunk = mb_substr($text, 0, $maxChars);
-        $break = mb_strrpos($chunk, ' ');
+    while (akh_invoice_text_strlen($text) > $maxChars) {
+        $chunk = akh_invoice_text_substr($text, 0, $maxChars);
+        $break = akh_invoice_text_strrpos($chunk, ' ');
         if ($break !== false && $break > 20) {
-            $out[] = mb_substr($text, 0, $break);
-            $text = trim(mb_substr($text, $break + 1));
+            $out[] = akh_invoice_text_substr($text, 0, $break);
+            $text = trim(akh_invoice_text_substr($text, $break + 1));
         } else {
             $out[] = $chunk;
-            $text = trim(mb_substr($text, $maxChars));
+            $text = trim(akh_invoice_text_substr($text, $maxChars));
         }
     }
     if ($text !== '') {
@@ -243,12 +244,12 @@ function akh_invoice_pdf_bytes(array $invoice): string
             if ($bLine === '') {
                 continue;
             }
-            $pdf->text($left, $footY, mb_substr($bLine, 0, 95), 8, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
+            $pdf->text($left, $footY, akh_invoice_text_substr($bLine, 0, 95), 8, false, AkhInvoicePdfTheme::INK_R, AkhInvoicePdfTheme::INK_G, AkhInvoicePdfTheme::INK_B);
             $footY += 10;
         }
     }
     if ($vm['terms'] !== '') {
-        $pdf->text($left, $footY + 4, 'Terms: ' . mb_substr(str_replace("\n", ' ', $vm['terms']), 0, 110), 8, false, AkhInvoicePdfTheme::MUTED_R, AkhInvoicePdfTheme::MUTED_G, AkhInvoicePdfTheme::MUTED_B);
+        $pdf->text($left, $footY + 4, 'Terms: ' . akh_invoice_text_substr(str_replace("\n", ' ', $vm['terms']), 0, 110), 8, false, AkhInvoicePdfTheme::MUTED_R, AkhInvoicePdfTheme::MUTED_G, AkhInvoicePdfTheme::MUTED_B);
     }
 
     return $pdf->bytes();

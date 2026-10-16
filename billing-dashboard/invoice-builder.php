@@ -85,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                         $error = 'Could not prepare the customer for invoicing. Check server write access to data/invoice-clients.json.';
                     } else {
                         $lines = [[
-                            'description' => mb_substr($baseDescription, 0, 500),
+                            'description' => akh_invoice_text_substr($baseDescription, 0, 500),
                             'quantity' => 1,
                             'unit_amount_paise' => $baseAmount,
                             'source_kind' => 'billing_delivery',
@@ -102,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                                 $qty = max(1, min(99, (int) ($quantities[$i] ?? 1)));
                                 $unit = akh_invoice_inr_to_paise((string) ($rates[$i] ?? ''));
                                 if ($description !== '' && $unit > 0) {
-                                    $lines[] = ['description' => mb_substr($description, 0, 500), 'quantity' => $qty, 'unit_amount_paise' => $unit, 'source_kind' => 'billing_extra', 'source_ref' => (string) $billingId, 'task_code' => ''];
+                                    $lines[] = ['description' => akh_invoice_text_substr($description, 0, 500), 'quantity' => $qty, 'unit_amount_paise' => $unit, 'source_kind' => 'billing_extra', 'source_ref' => (string) $billingId, 'task_code' => ''];
                                 }
                             }
                         }

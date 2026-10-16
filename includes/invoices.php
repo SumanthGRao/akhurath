@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/tasks.php';
 require_once __DIR__ . '/invoice-clients.php';
+require_once __DIR__ . '/invoice-text.php';
 require_once __DIR__ . '/site-datetime.php';
 
 /**
@@ -122,7 +123,7 @@ function akh_invoice_billable_default_description(array $row): string
         return $code;
     }
 
-    return mb_substr($out, 0, 500);
+    return akh_invoice_text_substr($out, 0, 500);
 }
 
 /**
@@ -182,7 +183,7 @@ function akh_invoice_lines_from_create_post(array $post): array
                     continue;
                 }
                 $fromJson[] = [
-                    'description' => mb_substr($desc, 0, 500),
+                    'description' => akh_invoice_text_substr($desc, 0, 500),
                     'quantity' => $qty,
                     'unit_amount_paise' => $unit,
                     'source_kind' => trim((string) ($item['source_kind'] ?? 'manual')),
@@ -327,8 +328,8 @@ function akh_invoice_sync_completed_tasks_from_board(): int
         $upsert->execute([
             $code,
             $client,
-            mb_substr($title, 0, 500),
-            mb_substr((string) ($t['edit_type'] ?? ''), 0, 64),
+            akh_invoice_text_substr($title, 0, 500),
+            akh_invoice_text_substr((string) ($t['edit_type'] ?? ''), 0, 64),
             $completedAt,
         ]);
         ++$count;
@@ -489,7 +490,7 @@ function akh_invoice_create(
             'source_kind' => trim((string) ($line['source_kind'] ?? 'manual')),
             'source_ref' => trim((string) ($line['source_ref'] ?? '')),
             'task_code' => akh_task_normalize_id((string) ($line['task_code'] ?? '')),
-            'description' => mb_substr($desc, 0, 500),
+            'description' => akh_invoice_text_substr($desc, 0, 500),
             'quantity' => $qty,
             'unit_amount_paise' => $unit,
             'line_total_paise' => $lineTotal,
@@ -531,7 +532,7 @@ function akh_invoice_create(
             $num,
             $clientUsername,
             $email !== '' ? $email : null,
-            $clientDisplayName !== null && trim($clientDisplayName) !== '' ? mb_substr(trim($clientDisplayName), 0, 255) : null,
+            $clientDisplayName !== null && trim($clientDisplayName) !== '' ? akh_invoice_text_substr(trim($clientDisplayName), 0, 255) : null,
             $subtotal,
             $taxRateBps,
             $taxPaise,

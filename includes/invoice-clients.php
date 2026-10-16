@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/invoice-text.php';
+
 /**
  * Invoice billing clients — maintained in the admin invoice console (not portal users / users table).
  */
@@ -94,11 +96,11 @@ function akh_invoice_client_normalize_row(array $row): array
     }
 
     return [
-        'display_name' => mb_substr(trim((string) ($row['display_name'] ?? '')), 0, 255),
-        'email' => mb_substr($email, 0, 255),
-        'phone' => mb_substr(trim((string) ($row['phone'] ?? '')), 0, 40),
-        'address' => mb_substr(trim((string) ($row['address'] ?? '')), 0, 2000),
-        'notes' => mb_substr(trim((string) ($row['notes'] ?? '')), 0, 2000),
+        'display_name' => akh_invoice_text_substr(trim((string) ($row['display_name'] ?? '')), 0, 255),
+        'email' => akh_invoice_text_substr($email, 0, 255),
+        'phone' => akh_invoice_text_substr(trim((string) ($row['phone'] ?? '')), 0, 40),
+        'address' => akh_invoice_text_substr(trim((string) ($row['address'] ?? '')), 0, 2000),
+        'notes' => akh_invoice_text_substr(trim((string) ($row['notes'] ?? '')), 0, 2000),
     ];
 }
 
