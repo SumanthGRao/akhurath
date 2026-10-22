@@ -311,6 +311,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null && $error === '')
                     }
                 }
             }
+        } elseif ($action === 'resend_payment_link' && !empty($billing['source_invoice_id'])) {
+            $invoiceId = (int) $billing['source_invoice_id'];
+            $linkedRowsReady = count($billingRows) > 0;
+            foreach ($billingRows as $row) {
+                if ((int) ($row['source_invoice_id'] ?? 0) !== $invoiceId || (string) ($row['invoice_status'] ?? '') !== 'sent' || (string) ($row['payment_status'] ?? '') !== 'unpaid') {
+                    $linkedRowsReady = false;
+                    break;
+                }
+            }
+            $linkedInvoice = akh_invoice_get($invoiceId);
+            if (!$linkedRowsReady || !is_array($linkedInvoice) || (string) ($linkedInvoice['status'] ?? '') !== 'sent' || strtoupper((string) ($linkedInvoice['currency'] ?? '')) !== 'INR') {
+                $error = 'Payment links can only be resent for an INR invoice that is sent and still awaiting payment. Refresh the billing dashboard to verify its status.';
+            } else {
+                try {
+                    $paymentLink = billing_payment_public_link($db, $invoiceId);
+                    if (($paymentLink['status'] ?? '') !== 'ready') {
+                        $missing = array_values(array_filter($paymentLink['missing'] ?? [], 'is_string'));
+                        $error = $missing !== []
+                            ? 'Payment link setup is incomplete. Add these settings to the live PHP config: ' . implode(', ', $missing) . '.'
+                            : 'The payment link could not be created. Check the PHP error log and confirm billing-dashboard/sql/006_upi_payment_claims.sql is installed.';
+                    }
+                } catch (Throwable $e) {
+                    error_log('Billing payment link resend setup failed for invoice ' . $invoiceId . ': ' . $e->getMessage());
+                    $error = 'The payment link could not be created. Check the PHP error log and confirm billing-dashboard/sql/006_upi_payment_claims.sql is installed.';
+                }
+                if ($error === '') {
+                    $actor = (string) ($_SESSION['akh_billing_user'] ?? akh_admin_current() ?? 'admin');
+                    $eventId = 'invoice-payment-link-resend-' . $invoiceId . '-' . bin2hex(random_bytes(8));
+                    $auditOk = true;
+                    foreach ($billingRows as $row) $auditOk = billing_invoice_audit($db, (int) $row['id'], $actor, 'payment_link_whatsapp_retry', ['invoice_id' => $invoiceId, 'event_id' => $eventId]) && $auditOk;
+                    if (!$auditOk) {
+                        $error = 'The payment link was created, but the audit entry could not be saved. Refresh and verify the invoice before retrying.';
+                    } elseif (!billing_invoice_dispatch_webhook(
+                        'billing.invoice.sent_manual',
+                        $eventId,
+                        $billing,
+                        $linkedInvoice,
+                        ['send_reference' => 'Payment link resend from billing dashboard', 'deliveries' => array_map(static fn($row) => ['billing_id' => (int) $row['id'], 'task_code' => (string) $row['task_code'], 'project_name' => (string) $row['project_name'], 'file_name' => (string) $row['file_name']], $billingRows)]
+                    )) {
+                        $error = 'The payment link is ready, but n8n did not confirm the WhatsApp event. Check the n8n execution; use the button again only after checking whether a message was sent.';
+                    } else {
+                        header('Location: ' . base_path('billing-dashboard/invoice-builder.php?ids=' . implode(',', $billingIds) . '&payment_link_sent=1'));
+                        exit;
+                    }
+                }
+            }
         } elseif ($action === 'mark_manual_sent' && !empty($billing['source_invoice_id'])) {
             $invoiceId = (int) $billing['source_invoice_id'];
             $reference = trim((string) ($_POST['send_reference'] ?? ''));
@@ -403,7 +449,8 @@ if ($billing !== null) {
         if ($invoice === null) $error = $error !== '' ? $error : 'The linked invoice could not be loaded.';
     }
 }
-if ((string) ($_GET['sent'] ?? '') === '1') $flash = 'Invoice emailed to the client with PDF attached.';
+if ((string) ($_GET['payment_link_sent'] ?? '') === '1') $flash = 'Payment link sent to n8n for WhatsApp delivery.';
+elseif ((string) ($_GET['sent'] ?? '') === '1') $flash = 'Invoice emailed to the client with PDF attached.';
 $csrf = akh_csrf_token();
 ?>
 <!doctype html>
@@ -424,6 +471,9 @@ $csrf = akh_csrf_token();
   <?php if ($invoice !== null): ?>
     <section class="invoice-summary"><p class="eyebrow">Invoice summary</p><p><strong><?php echo h((string) $invoice['invoice_number']); ?></strong> · Status: <?php echo h((string) $invoice['status']); ?> · Total: <?php echo h(akh_invoice_money_format_paise((int) $invoice['total_paise'], (string) $invoice['currency'])); ?></p>
       <div class="actions"><a class="btn alt" href="<?php echo h(base_path('billing-dashboard/invoice-pdf.php?id=' . (int) $invoice['id'])); ?>" target="_blank" rel="noopener">Preview / download PDF</a></div>
+      <?php if ((string) $invoice['status'] === 'sent' && count(array_filter($billingRows, static fn($row) => (string) ($row['invoice_status'] ?? '') === 'sent' && (string) ($row['payment_status'] ?? '') === 'unpaid')) === count($billingRows)): ?>
+        <form method="post" style="margin-top:18px"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><?php foreach ($billingIds as $rowId): ?><input type="hidden" name="billing_ids[]" value="<?php echo (int) $rowId; ?>"><?php endforeach; ?><input type="hidden" name="action" value="resend_payment_link"><button class="btn alt">Resend payment link via WhatsApp</button><p class="muted">Use after payment-link setup is complete. This sends a fresh WhatsApp event for this existing invoice; it does not create another invoice or clear payment.</p></form>
+      <?php endif; ?>
       <?php if ((string) $billing['invoice_status'] === 'pending' && (string) $invoice['status'] !== 'void'): ?>
         <form method="post"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><?php foreach ($billingIds as $rowId): ?><input type="hidden" name="billing_ids[]" value="<?php echo (int) $rowId; ?>"><?php endforeach; ?><input type="hidden" name="action" value="send_invoice"><div class="grid"><label class="field"><span>Send PDF invoice by email to</span><input type="email" name="send_email" value="<?php echo h((string) ($invoice['client_email'] ?? '')); ?>" placeholder="client@example.com"></label></div><button class="btn">Email invoice and mark as sent</button></form>
         <form method="post" style="margin-top:18px"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><?php foreach ($billingIds as $rowId): ?><input type="hidden" name="billing_ids[]" value="<?php echo (int) $rowId; ?>"><?php endforeach; ?><input type="hidden" name="action" value="mark_manual_sent"><label class="field"><span>Already sent this PDF outside the dashboard? Enter the recipient or reference</span><input type="text" name="send_reference" maxlength="255" placeholder="Client email or WhatsApp reference" required></label><button class="btn alt">Confirm sent manually</button><p class="muted">The billing queue becomes invoice-sent after email succeeds or you confirm manual sending here.</p></form>
