@@ -8,6 +8,8 @@ The open billing page automatically checks for database updates every five secon
 
 The PHP accountant dashboard can combine pending project rows into one invoice. Matching rows are suggested automatically by `folder_id` for the same customer and phone. Accountants can manually group or split eligible projects before invoicing. Payment clearance applies to all project rows linked to a combined invoice, while final files remain separate delivery jobs.
 
+The public payment page is implemented in `pay.php` and `payment-claim.php`. It uses opaque invoice tokens, reads totals from the existing studio invoice records, generates a local UPI QR, and records customer claims as `payment_claimed`. An accountant must verify the incoming bank credit before the dashboard changes the invoice to cleared or allows n8n delivery. The Hostinger migration and exact WhatsApp/n8n template mapping are documented in `docs/upi-payment-workflow.md`; verified UPI/payee configuration is intentionally empty in the tracked example.
+
 ## Workflow and safety boundary
 
 1. The existing upload workflow inserts each finished video into `final_delivery_billing`.

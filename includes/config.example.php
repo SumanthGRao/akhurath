@@ -307,3 +307,10 @@ function whatsapp_chat_url(?string $message = null): string
 
     return $url;
 }
+
+/** Public UPI invoice payment page. Leave empty until the accountant verifies the exact UPI ID/payee name. */
+const AKH_PUBLIC_PAYMENT_BASE_URL = ''; // Example only: https://akhurathstudio.com/billing-dashboard
+const AKH_STUDIO_UPI_ID = '';
+const AKH_STUDIO_UPI_PAYEE_NAME = '';
+/** Generate a unique random secret of at least 32 characters and keep it only in untracked includes/config.php. */
+const AKH_PUBLIC_PAYMENT_TOKEN_SECRET = '';

@@ -1,4 +1,4 @@
-<FilesMatch "^(\.env|\.env\.example|\.gitignore|package\.json|README.*\.md)$">
+<FilesMatch "^(\.env|\.env\.example|\.gitignore|package\.json|composer\.(json|lock)|README.*\.md)$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>

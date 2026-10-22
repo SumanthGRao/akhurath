@@ -8,6 +8,7 @@ require_once AKH_ROOT . '/includes/csrf.php';
 require_once AKH_ROOT . '/includes/invoices.php';
 require_once AKH_ROOT . '/includes/invoice-clients.php';
 require_once AKH_ROOT . '/includes/invoice-access.php';
+require_once __DIR__ . '/payment-common.php';
 
 function billing_invoice_audit(PDO $db, int $billingId, string $actor, string $action, array $details): bool
 {
@@ -46,6 +47,14 @@ function billing_invoice_dispatch_webhook(string $event, string $eventId, array 
         ];
     }
     $invoiceId = (int) ($invoice['id'] ?? 0);
+    $paymentLink = ['status' => 'setup_required', 'url' => '', 'suffix' => ''];
+    try {
+        if ($invoiceId > 0 && ($invoice['status'] ?? '') === 'sent' && ($invoice['currency'] ?? '') === 'INR' && function_exists('akh_db') && akh_db() instanceof PDO) {
+            $paymentLink = billing_payment_public_link(akh_db(), $invoiceId);
+        }
+    } catch (Throwable $e) {
+        error_log('Billing public payment link setup failed for invoice ' . $invoiceId . ': ' . $e->getMessage());
+    }
     $payload = [
         'event' => $event,
         'event_id' => $eventId,
@@ -65,6 +74,9 @@ function billing_invoice_dispatch_webhook(string $event, string $eventId, array 
         'total_paise' => (int) ($invoice['total_paise'] ?? 0),
         'total_inr' => number_format(((int) ($invoice['total_paise'] ?? 0)) / 100, 2, '.', ''),
         'due_at' => (string) ($invoice['due_at'] ?? ''),
+        'payment_url' => $paymentLink['url'],
+        'payment_url_suffix' => $paymentLink['suffix'],
+        'payment_url_status' => $paymentLink['status'],
         'lines' => $lines,
     ] + $extra;
     $json = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
@@ -351,8 +363,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null && $error === '')
                     if (!$auditOk) {
                         $error = 'The invoice email was sent, but the audit table is missing, incompatible, or not writable. Run billing-dashboard/sql/004_billing_audit_log.sql and confirm the site database user can INSERT into billing_audit_log. Refresh the billing dashboard and verify the record.';
                     } else {
-                        header('Location: ' . base_path('billing-dashboard/invoice-builder.php?ids=' . implode(',', $billingIds) . '&sent=1'));
-                        exit;
+                        if (!billing_invoice_dispatch_webhook(
+                            'billing.invoice.sent',
+                            'invoice-sent-email-' . $invoiceId,
+                            $billing,
+                            akh_invoice_get($invoiceId) ?? [],
+                            ['deliveries' => array_map(static fn($row) => ['billing_id' => (int) $row['id'], 'task_code' => (string) $row['task_code'], 'project_name' => (string) $row['project_name'], 'file_name' => (string) $row['file_name']], $billingRows)]
+                        )) {
+                            $error = 'The invoice email was sent, but n8n did not confirm the WhatsApp event. Check the live webhook settings and execution history; the invoice remains sent.';
+                        } else {
+                            header('Location: ' . base_path('billing-dashboard/invoice-builder.php?ids=' . implode(',', $billingIds) . '&sent=1'));
+                            exit;
+                        }
                     }
                 }
             }

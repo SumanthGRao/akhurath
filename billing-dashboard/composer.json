@@ -1,0 +1,13 @@
+{
+  "name": "akhurathstudio/billing-dashboard-payment-qr",
+  "description": "Local SVG QR generation for public invoice UPI payments",
+  "type": "project",
+  "require": {
+    "php": ">=8.1",
+    "chillerlan/php-qrcode": "^5.0"
+  },
+  "config": {
+    "sort-packages": true,
+    "optimize-autoloader": true
+  }
+}
