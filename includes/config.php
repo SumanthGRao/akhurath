@@ -140,6 +140,9 @@ const AKH_PREVIEW_WORKFLOW_WEBHOOK_TOKEN = 'eLeK3Uz7vItNGCNP2iSQcpj0Dg4bFsNS';
 
 const AKH_N8N_INVOICE_CREATED_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook/54764c72-70ef-4baf-b67a-b3a486294473';
 const AKH_N8N_INVOICE_WEBHOOK_SECRET = '9fG9Wt9j30J6';
+
+const AKH_PUBLIC_PAYMENT_BASE_URL = 'https://akhurathstudio.com/billing-dashboard';
+const AKH_PUBLIC_PAYMENT_TOKEN_SECRET = 'pTk9yUb23QG1';
 /**
  * Customer portal: web UI for your NAS / drive (Synology Drive, Nextcloud, etc.).
  * After login, the dashboard links here — users sign in on YOUR drive with the
