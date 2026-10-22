@@ -249,3 +249,7 @@ function whatsapp_chat_url(?string $message = null): string
 
     return $url;
 }
+
+const AKH_STUDIO_UPI_ID = '9483184620@ptyes';
+
+const AKH_STUDIO_UPI_PAYEE_NAME = 'Akhurath Studio';
