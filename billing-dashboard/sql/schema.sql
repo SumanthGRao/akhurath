@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS final_delivery_billing (
   invoice_number VARCHAR(100) NULL,
   invoice_file_url TEXT NULL,
   source_invoice_id BIGINT UNSIGNED NULL,
+  billing_group_mode ENUM('auto','single','manual') NOT NULL DEFAULT 'auto',
+  billing_group_key CHAR(36) NULL,
   invoice_status ENUM('pending','sent') NOT NULL DEFAULT 'pending',
   payment_status ENUM('unpaid','cleared') NOT NULL DEFAULT 'unpaid',
   payment_reference VARCHAR(255) NULL,
@@ -31,7 +33,9 @@ CREATE TABLE IF NOT EXISTS final_delivery_billing (
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   INDEX idx_billing_queue (payment_status, invoice_status, created_at),
-  INDEX idx_delivery_queue (delivery_status, payment_status)
+  INDEX idx_delivery_queue (delivery_status, payment_status),
+  INDEX idx_billing_folder_group (folder_id, billing_group_mode, invoice_status, payment_status),
+  INDEX idx_billing_manual_group (billing_group_key, billing_group_mode)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS billing_audit_log (

@@ -100,7 +100,13 @@ function billing_invoice_dispatch_webhook(string $event, string $eventId, array 
 }
 
 akh_require_invoice_access();
-$billingId = max(0, (int) ($_GET['id'] ?? $_POST['billing_id'] ?? 0));
+$requestedRaw = $_POST['billing_ids'] ?? $_GET['ids'] ?? null;
+if (is_string($requestedRaw)) $requestedIds = array_values(array_unique(array_filter(array_map('intval', explode(',', $requestedRaw)), static fn($id) => $id > 0)));
+elseif (is_array($requestedRaw)) $requestedIds = array_values(array_unique(array_filter(array_map('intval', $requestedRaw), static fn($id) => $id > 0)));
+else $requestedIds = [];
+$billingId = max(0, (int) ($_GET['id'] ?? $_POST['billing_id'] ?? ($requestedIds[0] ?? 0)));
+$billingIds = $requestedIds;
+$billingRows = [];
 $error = '';
 $flash = '';
 $billing = null;
@@ -124,8 +130,45 @@ if (!$db instanceof PDO || $billingId < 1) {
         $st = $db->prepare('SELECT * FROM final_delivery_billing WHERE id=? LIMIT 1');
         $st->execute([$billingId]);
         $billing = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($billing !== null) {
+            if ($billingIds === []) {
+                if (!empty($billing['source_invoice_id'])) {
+                    $group = $db->prepare('SELECT * FROM final_delivery_billing WHERE source_invoice_id=? ORDER BY id ASC');
+                    $group->execute([$billing['source_invoice_id']]);
+                    $billingRows = $group->fetchAll(PDO::FETCH_ASSOC);
+                } elseif (($billing['billing_group_mode'] ?? 'auto') === 'manual' && !empty($billing['billing_group_key'])) {
+                    $group = $db->prepare("SELECT * FROM final_delivery_billing WHERE billing_group_mode='manual' AND billing_group_key=? AND invoice_status='pending' AND payment_status='unpaid' AND source_invoice_id IS NULL ORDER BY id ASC");
+                    $group->execute([$billing['billing_group_key']]);
+                    $billingRows = $group->fetchAll(PDO::FETCH_ASSOC);
+                } elseif (($billing['billing_group_mode'] ?? 'auto') === 'auto' && !empty($billing['folder_id'])) {
+                    $group = $db->prepare("SELECT * FROM final_delivery_billing WHERE billing_group_mode='auto' AND folder_id=? AND customer_name=? AND phone=? AND invoice_status='pending' AND payment_status='unpaid' AND source_invoice_id IS NULL AND delivery_status='awaiting_payment' ORDER BY id ASC");
+                    $group->execute([$billing['folder_id'], $billing['customer_name'], $billing['phone']]);
+                    $billingRows = $group->fetchAll(PDO::FETCH_ASSOC);
+                }
+            } else {
+                if (count($billingIds) > 50) throw new RuntimeException('A combined invoice can include at most 50 projects.');
+                $marks = implode(',', array_fill(0, count($billingIds), '?'));
+                $group = $db->prepare("SELECT * FROM final_delivery_billing WHERE id IN ($marks) ORDER BY id ASC");
+                $group->execute($billingIds);
+                $billingRows = $group->fetchAll(PDO::FETCH_ASSOC);
+                if (count($billingRows) !== count($billingIds)) throw new RuntimeException('One or more selected projects no longer exist.');
+            }
+            if ($billingRows === []) $billingRows = [$billing];
+            $billing = $billingRows[0];
+            $billingId = (int) $billing['id'];
+            $billingIds = array_map(static fn($row) => (int) $row['id'], $billingRows);
+            foreach ($billingRows as $row) {
+                $sameCustomer = strtolower(trim((string) $row['customer_name'])) === strtolower(trim((string) $billing['customer_name'])) && strtolower(trim((string) $row['phone'])) === strtolower(trim((string) $billing['phone']));
+                $sameManual = ($row['billing_group_mode'] ?? 'auto') === 'manual' && ($billing['billing_group_mode'] ?? 'auto') === 'manual' && !empty($row['billing_group_key']) && hash_equals((string) $billing['billing_group_key'], (string) $row['billing_group_key']);
+                $sameFolder = ($row['billing_group_mode'] ?? 'auto') === 'auto' && ($billing['billing_group_mode'] ?? 'auto') === 'auto' && !empty($row['folder_id']) && hash_equals((string) $billing['folder_id'], (string) $row['folder_id']);
+                if (!$sameCustomer || (count($billingRows) > 1 && !$sameManual && !$sameFolder)) throw new RuntimeException('Selected projects must belong to the same customer and billing group. Group them from the billing queue first.');
+            }
+            $linkedInvoiceIds = array_values(array_unique(array_filter(array_map(static fn($row) => (int) ($row['source_invoice_id'] ?? 0), $billingRows))));
+            if (count($linkedInvoiceIds) > 1) throw new RuntimeException('Selected projects are linked to different invoices. Open one invoice at a time.');
+        }
     } catch (Throwable $e) {
-        $error = 'Billing schema is not ready. Import billing-dashboard/sql/003_link_invoices.sql, then reload this page.';
+        error_log('Billing invoice group load failed: ' . $e->getMessage());
+        $error = $e instanceof RuntimeException ? $e->getMessage() : 'Billing schema is not ready. Import billing-dashboard/sql/005_billing_groups.sql and billing-dashboard/sql/003_link_invoices.sql, then reload this page.';
     }
     if ($billing === null && $error === '') {
         http_response_code(404);
@@ -133,17 +176,18 @@ if (!$db instanceof PDO || $billingId < 1) {
     }
 }
 
-$clientSlug = 'delivery_' . $billingId;
+$clientSlug = count($billingIds) > 1 ? 'delivery_group_' . substr(hash('sha256', implode(',', $billingIds)), 0, 24) : 'delivery_' . $billingId;
 $studioProfile = akh_invoice_studio_profile();
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null && $error === '') {
     try {
     if (!akh_csrf_verify($_POST['csrf_token'] ?? null)) {
         $error = 'Security check failed. Refresh and try again.';
     } else {
         $action = (string) ($_POST['action'] ?? '');
         if ($action === 'create_invoice') {
-            if ((string) $billing['invoice_status'] !== 'pending' || (string) $billing['payment_status'] !== 'unpaid' || !empty($billing['source_invoice_id'])) {
-                $error = 'This delivery already has an invoice or is no longer awaiting one. Refresh the billing dashboard.';
+            $eligibleRows = array_filter($billingRows, static fn($row) => (string) $row['invoice_status'] === 'pending' && (string) $row['payment_status'] === 'unpaid' && empty($row['source_invoice_id']) && (string) $row['delivery_status'] === 'awaiting_payment');
+            if (count($eligibleRows) !== count($billingRows)) {
+                $error = 'One or more selected projects already have an invoice or are no longer awaiting one. Refresh the billing dashboard.';
             } else {
                 $emailRaw = $_POST['client_email'] ?? '';
                 $email = is_scalar($emailRaw) ? strtolower(trim((string) $emailRaw)) : '';
@@ -151,15 +195,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                 $taxRaw = is_scalar($taxInput) ? trim((string) $taxInput) : '';
                 $amountInput = $_POST['delivery_amount'] ?? '';
                 $descriptionInput = $_POST['delivery_description'] ?? '';
-                $baseAmount = is_scalar($amountInput) ? akh_invoice_inr_to_paise((string) $amountInput) : 0;
-                $baseDescription = is_scalar($descriptionInput) ? trim((string) $descriptionInput) : '';
+                $lineAmounts = [];
+                $lineDescriptions = [];
+                foreach ($billingRows as $row) {
+                    $rowId = (int) $row['id'];
+                    $rowAmount = is_array($amountInput) ? ($amountInput[$rowId] ?? '') : (count($billingRows) === 1 && is_scalar($amountInput) ? $amountInput : '');
+                    $rowDescription = is_array($descriptionInput) ? ($descriptionInput[$rowId] ?? '') : (count($billingRows) === 1 && is_scalar($descriptionInput) ? $descriptionInput : '');
+                    $lineAmounts[$rowId] = is_scalar($rowAmount) ? akh_invoice_inr_to_paise((string) $rowAmount) : 0;
+                    $lineDescriptions[$rowId] = is_scalar($rowDescription) ? trim((string) $rowDescription) : '';
+                }
                 $taxBps = $taxRaw === '' ? (int) $studioProfile['default_tax_bps'] : (is_numeric($taxRaw) ? (int) round((float) $taxRaw * 100) : -1);
                 if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                     $error = 'Enter a valid client email address, or leave it blank and download the PDF to send manually.';
                 } elseif ($taxBps < 0 || $taxBps > 5000) {
                     $error = 'Tax must be between 0% and 50%.';
-                } elseif ($baseAmount < 1 || $baseDescription === '') {
-                    $error = 'Enter a valid amount and description for the final delivery.';
+                } elseif (array_filter($lineAmounts, static fn($amount) => $amount < 1) || array_filter($lineDescriptions, static fn($description) => $description === '')) {
+                    $error = 'Enter a description and valid amount for each project on this invoice.';
                 } elseif (!akh_invoices_schema_ready()) {
                     $error = 'The studio invoice tables are not installed. An administrator must finish invoice setup first.';
                 } else {
@@ -174,14 +225,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                     if ($client === null) {
                         $error = 'Could not prepare the customer for invoicing. Check server write access to data/invoice-clients.json.';
                     } else {
-                        $lines = [[
-                            'description' => akh_invoice_text_substr($baseDescription, 0, 500),
-                            'quantity' => 1,
-                            'unit_amount_paise' => $baseAmount,
-                            'source_kind' => 'billing_delivery',
-                            'source_ref' => (string) $billingId,
-                            'task_code' => (string) $billing['task_code'],
-                        ]];
+                        $lines = [];
+                        foreach ($billingRows as $row) {
+                            $rowId = (int) $row['id'];
+                            $lines[] = ['description' => akh_invoice_text_substr($lineDescriptions[$rowId], 0, 500), 'quantity' => 1, 'unit_amount_paise' => $lineAmounts[$rowId], 'source_kind' => 'billing_delivery', 'source_ref' => (string) $rowId, 'task_code' => (string) $row['task_code']];
+                        }
                         $descriptions = $_POST['extra_description'] ?? [];
                         $quantities = $_POST['extra_quantity'] ?? [];
                         $rates = $_POST['extra_rate'] ?? [];
@@ -206,22 +254,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                             $totalInr = ((int) ($createdInvoice['total_paise'] ?? 0)) / 100;
                             $invoiceNumber = (string) ($createdInvoice['invoice_number'] ?? '');
                             $pdfUrl = base_path('billing-dashboard/invoice-pdf.php?id=' . $invoiceId);
-                            $link = $db->prepare("UPDATE final_delivery_billing SET source_invoice_id=?, bill_amount=?, invoice_number=?, invoice_file_url=? WHERE id=? AND invoice_status='pending' AND payment_status='unpaid' AND source_invoice_id IS NULL");
-                            $link->execute([$invoiceId, $totalInr, $invoiceNumber, $pdfUrl, $billingId]);
-                            if ($link->rowCount() !== 1) {
+                            $db->beginTransaction();
+                            $linkedCount = 0;
+                            try {
+                                $link = $db->prepare("UPDATE final_delivery_billing SET source_invoice_id=?, bill_amount=?, invoice_number=?, invoice_file_url=? WHERE id=? AND invoice_status='pending' AND payment_status='unpaid' AND source_invoice_id IS NULL");
+                                foreach ($billingRows as $row) {
+                                    $rowId = (int) $row['id'];
+                                    $link->execute([$invoiceId, $lineAmounts[$rowId] / 100, $invoiceNumber, $pdfUrl, $rowId]);
+                                    $linkedCount += $link->rowCount();
+                                }
+                                if ($linkedCount !== count($billingRows)) throw new RuntimeException('One or more projects changed before the invoice could be linked.');
+                                $db->commit();
+                            } catch (Throwable $e) {
+                                if ($db->inTransaction()) $db->rollBack();
+                            }
+                            if ($linkedCount !== count($billingRows)) {
                                 akh_invoice_void($invoiceId);
-                                $error = 'Invoice was created but the delivery changed before it could be linked. Refresh the billing dashboard and contact an administrator if the draft remains.';
+                                $error = 'Invoice was created but one or more projects changed before it could be linked. Refresh the billing dashboard and contact an administrator if the draft remains.';
                             } else {
                                 $actor = (string) ($_SESSION['akh_billing_user'] ?? akh_admin_current() ?? 'admin');
-                                $auditOk = billing_invoice_audit($db, $billingId, $actor, 'invoice_draft_created', ['invoice_id' => $invoiceId, 'invoice_number' => $invoiceNumber]);
+                                $auditOk = true;
+                                foreach ($billingRows as $row) {
+                                    $rowOk = billing_invoice_audit($db, (int) $row['id'], $actor, 'invoice_draft_created', ['invoice_id' => $invoiceId, 'invoice_number' => $invoiceNumber, 'group_count' => count($billingRows)]);
+                                    $auditOk = $rowOk && $auditOk;
+                                }
                                 if (!$auditOk) {
                                     $billing['source_invoice_id'] = $invoiceId;
-                                    $billing['bill_amount'] = $totalInr;
+                                    $billing['bill_amount'] = $lineAmounts[$billingId] / 100;
                                     $billing['invoice_number'] = $invoiceNumber;
                                     $billing['invoice_file_url'] = $pdfUrl;
                                     $error = 'The invoice was created and linked, but the audit table is missing, incompatible, or not writable. Run billing-dashboard/sql/004_billing_audit_log.sql and confirm the site database user can INSERT into billing_audit_log. Refresh the billing dashboard; do not create another invoice for this delivery.';
                                 } else {
-                                    header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId));
+                                    header('Location: ' . base_path('billing-dashboard/invoice-builder.php?ids=' . implode(',', $billingIds)));
                                     exit;
                                 }
                             }
@@ -239,26 +303,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
                 if (!($markInvoice['ok'] ?? false)) {
                     $error = (string) ($markInvoice['error'] ?? 'Could not mark the studio invoice as sent.');
                 } else {
-                    $mark = $db->prepare("UPDATE final_delivery_billing SET invoice_status='sent' WHERE id=? AND source_invoice_id=? AND invoice_status='pending' AND payment_status='unpaid'");
-                    $mark->execute([$billingId, $invoiceId]);
-                    if ($mark->rowCount() !== 1) {
-                        $error = 'Invoice marked sent, but the billing record changed. Refresh and verify the delivery before continuing.';
+                    $marks = implode(',', array_fill(0, count($billingIds), '?'));
+                    $mark = $db->prepare("UPDATE final_delivery_billing SET invoice_status='sent' WHERE id IN ($marks) AND source_invoice_id=? AND invoice_status='pending' AND payment_status='unpaid'");
+                    $mark->execute(array_merge($billingIds, [$invoiceId]));
+                    if ($mark->rowCount() !== count($billingIds)) {
+                        $error = 'Invoice marked sent, but one or more billing records changed. Refresh and verify the projects before continuing.';
                     } else {
                         $actor = (string) ($_SESSION['akh_billing_user'] ?? akh_admin_current() ?? 'admin');
-                        $auditOk = billing_invoice_audit($db, $billingId, $actor, 'invoice_sent_manual', ['invoice_id' => $invoiceId, 'reference' => $reference]);
+                        $auditOk = true;
+                        foreach ($billingRows as $row) $auditOk = billing_invoice_audit($db, (int) $row['id'], $actor, 'invoice_sent_manual', ['invoice_id' => $invoiceId, 'reference' => $reference, 'group_count' => count($billingRows)]) && $auditOk;
                         $billing['invoice_status'] = 'sent';
                         if (!$auditOk) {
                             $error = 'The invoice is marked sent, but the audit table is missing, incompatible, or not writable. Run billing-dashboard/sql/004_billing_audit_log.sql and confirm the site database user can INSERT into billing_audit_log. Refresh the billing dashboard and verify the record.';
                         } elseif (!billing_invoice_dispatch_webhook(
                             'billing.invoice.sent_manual',
-                            'invoice-sent-manual-' . $billingId . '-' . $invoiceId,
+                            'invoice-sent-manual-' . $invoiceId,
                             $billing,
                             akh_invoice_get($invoiceId) ?? [],
-                            ['send_reference' => $reference]
+                            ['send_reference' => $reference, 'deliveries' => array_map(static fn($row) => ['billing_id' => (int) $row['id'], 'task_code' => (string) $row['task_code'], 'project_name' => (string) $row['project_name'], 'file_name' => (string) $row['file_name']], $billingRows)]
                         )) {
                             $error = 'The invoice is marked sent manually, but n8n did not confirm the WhatsApp event. Check the live webhook settings and n8n execution; the event was attempted once.';
                         } else {
-                            header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId . '&sent=1'));
+                            header('Location: ' . base_path('billing-dashboard/invoice-builder.php?ids=' . implode(',', $billingIds) . '&sent=1'));
                             exit;
                         }
                     }
@@ -272,18 +338,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null) {
             if (($mail['skipped'] ?? false) || !($mail['ok'] ?? false)) {
                 $error = (string) ($mail['error'] ?? 'Could not send the invoice.');
             } else {
-                $mark = $db->prepare("UPDATE final_delivery_billing SET invoice_status='sent' WHERE id=? AND source_invoice_id=? AND invoice_status='pending' AND payment_status='unpaid'");
-                $mark->execute([$billingId, $invoiceId]);
-                if ($mark->rowCount() !== 1) {
-                    $error = 'The invoice was emailed, but this delivery record changed before its status could be updated. Refresh and verify the record.';
+                $marks = implode(',', array_fill(0, count($billingIds), '?'));
+                $mark = $db->prepare("UPDATE final_delivery_billing SET invoice_status='sent' WHERE id IN ($marks) AND source_invoice_id=? AND invoice_status='pending' AND payment_status='unpaid'");
+                $mark->execute(array_merge($billingIds, [$invoiceId]));
+                if ($mark->rowCount() !== count($billingIds)) {
+                    $error = 'The invoice was emailed, but one or more delivery records changed before their status could be updated. Refresh and verify the records.';
                 } else {
                     $actor = (string) ($_SESSION['akh_billing_user'] ?? akh_admin_current() ?? 'admin');
-                    $auditOk = billing_invoice_audit($db, $billingId, $actor, 'invoice_sent', ['invoice_id' => $invoiceId]);
+                    $auditOk = true;
+                    foreach ($billingRows as $row) $auditOk = billing_invoice_audit($db, (int) $row['id'], $actor, 'invoice_sent', ['invoice_id' => $invoiceId, 'group_count' => count($billingRows)]) && $auditOk;
                     $billing['invoice_status'] = 'sent';
                     if (!$auditOk) {
                         $error = 'The invoice email was sent, but the audit table is missing, incompatible, or not writable. Run billing-dashboard/sql/004_billing_audit_log.sql and confirm the site database user can INSERT into billing_audit_log. Refresh the billing dashboard and verify the record.';
                     } else {
-                        header('Location: ' . base_path('billing-dashboard/invoice-builder.php?id=' . $billingId . '&sent=1'));
+                        header('Location: ' . base_path('billing-dashboard/invoice-builder.php?ids=' . implode(',', $billingIds) . '&sent=1'));
                         exit;
                     }
                 }
@@ -324,26 +392,25 @@ $csrf = akh_csrf_token();
   <div class="top"><div><p class="eyebrow">Akhurath Studio · Billing</p><h1><?php echo $invoice ? 'Invoice ' . h((string) $invoice['invoice_number']) : 'Create invoice'; ?></h1></div><a class="btn alt" href="./">Back to billing</a></div>
   <?php if ($flash !== ''): ?><p class="ok"><?php echo h($flash); ?></p><?php endif; ?>
   <?php if ($error !== ''): ?><p class="error" role="alert"><?php echo h($error); ?></p><?php endif; ?>
-  <?php if ($billing !== null): ?><p class="muted"><strong><?php echo h((string) $billing['customer_name']); ?></strong> · <?php echo h((string) $billing['project_name']); ?> · <?php echo h((string) $billing['task_code']); ?></p><?php endif; ?>
+  <?php if ($billing !== null): ?><p class="muted"><strong><?php echo h((string) $billing['customer_name']); ?></strong> · <?php echo count($billingRows) > 1 ? count($billingRows) . ' projects on this invoice' : h((string) $billing['project_name']) . ' · ' . h((string) $billing['task_code']); ?></p><?php endif; ?>
   <?php if ($invoice !== null): ?>
     <section class="invoice-summary"><p class="eyebrow">Invoice summary</p><p><strong><?php echo h((string) $invoice['invoice_number']); ?></strong> · Status: <?php echo h((string) $invoice['status']); ?> · Total: <?php echo h(akh_invoice_money_format_paise((int) $invoice['total_paise'], (string) $invoice['currency'])); ?></p>
       <div class="actions"><a class="btn alt" href="<?php echo h(base_path('billing-dashboard/invoice-pdf.php?id=' . (int) $invoice['id'])); ?>" target="_blank" rel="noopener">Preview / download PDF</a></div>
       <?php if ((string) $billing['invoice_status'] === 'pending' && (string) $invoice['status'] !== 'void'): ?>
-        <form method="post"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><input type="hidden" name="action" value="send_invoice"><div class="grid"><label class="field"><span>Send PDF invoice by email to</span><input type="email" name="send_email" value="<?php echo h((string) ($invoice['client_email'] ?? '')); ?>" placeholder="client@example.com"></label></div><button class="btn">Email invoice and mark as sent</button></form>
-        <form method="post" style="margin-top:18px"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><input type="hidden" name="action" value="mark_manual_sent"><label class="field"><span>Already sent this PDF outside the dashboard? Enter the recipient or reference</span><input type="text" name="send_reference" maxlength="255" placeholder="Client email or WhatsApp reference" required></label><button class="btn alt">Confirm sent manually</button><p class="muted">The billing queue becomes invoice-sent after email succeeds or you confirm manual sending here.</p></form>
+        <form method="post"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><?php foreach ($billingIds as $rowId): ?><input type="hidden" name="billing_ids[]" value="<?php echo (int) $rowId; ?>"><?php endforeach; ?><input type="hidden" name="action" value="send_invoice"><div class="grid"><label class="field"><span>Send PDF invoice by email to</span><input type="email" name="send_email" value="<?php echo h((string) ($invoice['client_email'] ?? '')); ?>" placeholder="client@example.com"></label></div><button class="btn">Email invoice and mark as sent</button></form>
+        <form method="post" style="margin-top:18px"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><?php foreach ($billingIds as $rowId): ?><input type="hidden" name="billing_ids[]" value="<?php echo (int) $rowId; ?>"><?php endforeach; ?><input type="hidden" name="action" value="mark_manual_sent"><label class="field"><span>Already sent this PDF outside the dashboard? Enter the recipient or reference</span><input type="text" name="send_reference" maxlength="255" placeholder="Client email or WhatsApp reference" required></label><button class="btn alt">Confirm sent manually</button><p class="muted">The billing queue becomes invoice-sent after email succeeds or you confirm manual sending here.</p></form>
       <?php endif; ?>
     </section>
-  <?php elseif ($billing !== null && (string) $billing['invoice_status'] === 'pending' && empty($billing['source_invoice_id'])): ?>
+  <?php elseif ($billing !== null && array_filter($billingRows, static fn($row) => (string) $row['invoice_status'] === 'pending' && empty($row['source_invoice_id']))): ?>
     <?php
       $invoiceSchemaReady = false;
       try { $invoiceSchemaReady = akh_invoices_schema_ready(); }
       catch (Throwable $e) { error_log('Billing invoice schema check failed: ' . $e->getMessage()); }
     ?>
     <?php if (!$invoiceSchemaReady): ?><p class="error">The studio invoice tables could not be verified. An administrator must finish the existing invoice setup and confirm database access before an accountant can create invoices.</p><?php else: ?>
-      <form method="post" id="create-invoice-form"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><input type="hidden" name="action" value="create_invoice">
+      <form method="post" id="create-invoice-form"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><?php foreach ($billingIds as $rowId): ?><input type="hidden" name="billing_ids[]" value="<?php echo (int) $rowId; ?>"><?php endforeach; ?><input type="hidden" name="action" value="create_invoice">
         <div class="grid"><label class="field"><span>Client email (optional; required to email the PDF)</span><input type="email" name="client_email" maxlength="255" placeholder="client@example.com"></label><label class="field"><span>GST / tax rate (%)</span><input type="number" name="tax_percent" min="0" max="50" step="0.01" value="<?php echo h(number_format((int) $studioProfile['default_tax_bps'] / 100, 2, '.', '')); ?>"></label></div>
-        <label class="field"><span>Final delivery line</span><input type="text" name="delivery_description" maxlength="500" required value="<?php echo h(trim((string) $billing['project_name'] . ' — ' . (string) ($billing['task_type'] ?? 'Final video') . ' (' . (string) $billing['file_name'] . ')')); ?>"></label>
-        <label class="field"><span>Amount (INR)</span><input type="number" name="delivery_amount" min="0.01" step="0.01" required value="<?php echo h(number_format((float) ($billing['bill_amount'] ?? 0), 2, '.', '')); ?>"></label>
+        <?php foreach ($billingRows as $row): $rowId = (int) $row['id']; ?><div class="notice"><strong><?php echo h((string) $row['task_code']); ?> · <?php echo h((string) $row['project_name']); ?></strong><label class="field"><span>Invoice line</span><input type="text" name="delivery_description[<?php echo $rowId; ?>]" maxlength="500" required value="<?php echo h(trim((string) $row['project_name'] . ' — ' . (string) ($row['task_type'] ?? 'Final video') . ' (' . (string) $row['file_name'] . ')')); ?>"></label><label class="field"><span>Amount (INR)</span><input type="number" name="delivery_amount[<?php echo $rowId; ?>]" min="0.01" step="0.01" required value="<?php echo h(number_format((float) ($row['bill_amount'] ?? 0), 2, '.', '')); ?>"></label></div><?php endforeach; ?>
         <div id="extra-lines"></div><p><button type="button" class="btn alt" id="add-line">+ Add another line item</button></p>
         <label class="field"><span>Invoice notes / payment terms</span><textarea name="notes" rows="3" maxlength="2000" placeholder="Optional invoice notes"></textarea></label>
         <button class="btn">Create draft invoice</button>
