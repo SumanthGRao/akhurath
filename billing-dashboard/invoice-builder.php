@@ -47,12 +47,17 @@ function billing_invoice_dispatch_webhook(string $event, string $eventId, array 
         ];
     }
     $invoiceId = (int) ($invoice['id'] ?? 0);
-    $paymentLink = ['status' => 'setup_required', 'url' => '', 'suffix' => ''];
+    $paymentLink = ['status' => 'not_eligible', 'url' => '', 'suffix' => '', 'missing' => []];
     try {
-        if ($invoiceId > 0 && ($invoice['status'] ?? '') === 'sent' && ($invoice['currency'] ?? '') === 'INR' && function_exists('akh_db') && akh_db() instanceof PDO) {
-            $paymentLink = billing_payment_public_link(akh_db(), $invoiceId);
+        if ($invoiceId > 0 && ($invoice['status'] ?? '') === 'sent' && strtoupper((string) ($invoice['currency'] ?? '')) === 'INR') {
+            if (function_exists('akh_db') && akh_db() instanceof PDO) {
+                $paymentLink = billing_payment_public_link(akh_db(), $invoiceId);
+            } else {
+                $paymentLink['status'] = 'unavailable';
+            }
         }
     } catch (Throwable $e) {
+        $paymentLink = ['status' => 'unavailable', 'url' => '', 'suffix' => '', 'missing' => []];
         error_log('Billing public payment link setup failed for invoice ' . $invoiceId . ': ' . $e->getMessage());
     }
     $payload = [
@@ -77,6 +82,7 @@ function billing_invoice_dispatch_webhook(string $event, string $eventId, array 
         'payment_url' => $paymentLink['url'],
         'payment_url_suffix' => $paymentLink['suffix'],
         'payment_url_status' => $paymentLink['status'],
+        'payment_url_missing_config' => $paymentLink['missing'] ?? [],
         'lines' => $lines,
     ] + $extra;
     $json = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);

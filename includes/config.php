@@ -256,3 +256,5 @@ function whatsapp_chat_url(?string $message = null): string
 const AKH_STUDIO_UPI_ID = '9483184620@ptyes';
 
 const AKH_STUDIO_UPI_PAYEE_NAME = 'Akhurath Studio';
+
+const AKH_PUBLIC_PAYMENT_BASE_URL = 'https://akhurathstudio.com/billing-dashboard';

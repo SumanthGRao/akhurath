@@ -2,23 +2,14 @@
 
 ## Deployment state
 
-This repository now contains the public payment page, invoice-scoped claim endpoint, migration, and n8n/WhatsApp configuration. No business UPI ID or payee name exists in the tracked configuration, and no n8n workflow export is present here. The feature intentionally reports `payment_url_status: setup_required` and does not generate payment links until the verified business values below are configured. This change does not connect to or modify the production n8n instance.
+This repository contains the public payment page, invoice-scoped claim endpoint, migration, and n8n/WhatsApp setup instructions. The UPI ID, payee name, and HTTPS base URL are configured in the project config; the token secret is deliberately not stored in Git. Payment-link creation remains `setup_required` until a unique token secret is configured on the live PHP server and the migration below has been applied. No n8n workflow export is present here, and this repository does not connect to or modify the production n8n instance.
 
 ## Hostinger setup
 
 1. Make sure the studio invoice tables from `sql/migrations/014_invoices_and_completed_tasks.sql`, billing invoice-link migration `003_link_invoices.sql`, grouping migration `005_billing_groups.sql`, and audit migration `004_billing_audit_log.sql` are already applied.
 2. In phpMyAdmin, select the site database and run `billing-dashboard/sql/006_upi_payment_claims.sql` once. The migration extends `payment_status` with `payment_claimed`, creates encrypted public-link storage and rate-limit tables, and creates the idempotency table used by n8n.
 3. Install the local SVG QR dependency in `billing-dashboard`: run `composer install --no-dev --optimize-autoloader`. Commit and deploy the resulting `composer.lock`, then deploy `billing-dashboard/vendor/` to the same directory on Hostinger (the `vendor/` directory is intentionally ignored by Git). The QR image is generated locally by PHP; the invoice URI is not sent to a QR service.
-4. In the untracked production `includes/config.php`, add these constants. Replace the example base URL and empty payee values with verified business details only:
-
-```php
-const AKH_PUBLIC_PAYMENT_BASE_URL = 'https://akhurathstudio.com/billing-dashboard';
-const AKH_STUDIO_UPI_ID = '';
-const AKH_STUDIO_UPI_PAYEE_NAME = '';
-const AKH_PUBLIC_PAYMENT_TOKEN_SECRET = '';
-```
-
-Generate a unique secret with `php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"`. Keep it private, do not reuse the n8n webhook secret, and do not add it to Git. Do not invent the UPI ID or payee name. Keep both empty until the accountant verifies the exact values in the receiving bank/UPI account. The route redirects to the configured HTTPS origin.
+4. On the live Hostinger server, add `AKH_PUBLIC_PAYMENT_TOKEN_SECRET` to the PHP config loaded by the billing dashboard. Generate a unique secret with `php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"`. Keep it private, do not reuse the n8n webhook secret, and do not commit it to Git. The configured UPI ID, payee name, and HTTPS base URL must also be present in the live runtime. The route redirects to the configured HTTPS origin.
 5. Deploy `billing-dashboard/pay.php`, `payment-claim.php`, `payment-common.php`, the migration, and the Composer vendor files. Open an accountant session and load the billing queue; the client claim status and unverified UTR appear within the dashboard's five-second polling interval.
 
 Invoice number, total, currency, and due date are read from the existing studio `invoices` row. The public page does not accept an amount or invoice number from the browser, and it never queries or renders the final video URL. A token is 256 bits of randomness; only its SHA-256 hash is used for lookup, with an encrypted copy retained server-side so the stable URL can be resent. Links expire after 90 days. A claim changes the linked billing records to `payment_claimed`, leaves delivery `awaiting_payment`, and writes `payment_claimed` audit rows. It does not mark the studio invoice paid or make any delivery eligible.
@@ -35,7 +26,7 @@ The existing authenticated webhook continues to receive `billing.invoice.sent_ma
 }
 ```
 
-When payment configuration or migration is missing, `payment_url_status` is `setup_required`, and both URL fields are empty. n8n must not send a payment button in that case; it should notify the accountant/setup owner and stop the customer-payment branch. The token grants access to the payment page and is sensitive. Do not log or forward it to analytics, third-party QR providers, or unrelated nodes. The webhook still contains no final video link.
+When payment configuration is incomplete, `payment_url_status` is `setup_required`, both URL fields are empty, and `payment_url_missing_config` lists only the names of missing settings. If the link table cannot be read or written, the status is `unavailable`; check the PHP error log for the invoice-specific cause. A non-sent or non-INR invoice reports `not_eligible`. n8n must not send a payment button in that case; it should notify the accountant/setup owner and stop the customer-payment branch. The token grants access to the payment page and is sensitive. Do not log or forward it to analytics, third-party QR providers, or unrelated nodes. The webhook still contains no final video link.
 
 ## n8n workflow changes
 

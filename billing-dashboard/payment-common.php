@@ -14,7 +14,12 @@ function billing_payment_config(): array
         && strtolower((string) ($parts['scheme'] ?? '')) === 'https' && !empty($parts['host'])
         && !isset($parts['user']) && !isset($parts['pass']) && !isset($parts['query']) && !isset($parts['fragment']);
     $validUpi = $upi !== '' && preg_match('/^[A-Za-z0-9._-]{2,256}@[A-Za-z0-9.-]{2,64}$/', $upi) === 1;
-    return ['base_url' => $validBase ? $base : '', 'upi_id' => $validUpi ? $upi : '', 'payee_name' => $payee, 'secret' => strlen($secret) >= 32 ? $secret : ''];
+    $missing = [];
+    if (!$validBase) $missing[] = 'AKH_PUBLIC_PAYMENT_BASE_URL';
+    if (!$validUpi) $missing[] = 'AKH_STUDIO_UPI_ID';
+    if ($payee === '') $missing[] = 'AKH_STUDIO_UPI_PAYEE_NAME';
+    if (strlen($secret) < 32) $missing[] = 'AKH_PUBLIC_PAYMENT_TOKEN_SECRET';
+    return ['base_url' => $validBase ? $base : '', 'upi_id' => $validUpi ? $upi : '', 'payee_name' => $payee, 'secret' => strlen($secret) >= 32 ? $secret : '', 'missing' => $missing];
 }
 
 function billing_payment_key(): string
@@ -48,20 +53,20 @@ function billing_payment_token_is_valid(string $token): bool
 function billing_payment_public_link(PDO $db, int $invoiceId): array
 {
     $config = billing_payment_config();
-    if ($config['base_url'] === '' || $config['upi_id'] === '' || $config['payee_name'] === '' || $config['secret'] === '') return ['status' => 'setup_required', 'url' => '', 'suffix' => ''];
-    $select = $db->prepare('SELECT token_hash, token_ciphertext, expires_at FROM billing_invoice_payment_links WHERE invoice_id=? AND status IN (\'active\',\'claimed\') LIMIT 1');
+    if ($config['missing'] !== []) return ['status' => 'setup_required', 'url' => '', 'suffix' => '', 'missing' => $config['missing']];
+    $select = $db->prepare('SELECT token_hash, token_ciphertext, expires_at, status FROM billing_invoice_payment_links WHERE invoice_id=? AND status IN (\'active\',\'claimed\') LIMIT 1');
     $select->execute([$invoiceId]);
     $row = $select->fetch(PDO::FETCH_ASSOC);
     if (is_array($row) && ($row['status'] === 'claimed' || strtotime((string) $row['expires_at'] . ' UTC') > time())) {
         $token = billing_payment_decrypt_token((string) $row['token_ciphertext']);
-        if ($token !== null && hash_equals((string) $row['token_hash'], hash('sha256', $token))) return ['status' => 'ready', 'url' => $config['base_url'] . '/pay.php?t=' . rawurlencode($token), 'suffix' => $token];
+        if ($token !== null && hash_equals((string) $row['token_hash'], hash('sha256', $token))) return ['status' => 'ready', 'url' => $config['base_url'] . '/pay.php?t=' . rawurlencode($token), 'suffix' => $token, 'missing' => []];
     }
     $token = bin2hex(random_bytes(32));
     $hash = hash('sha256', $token);
     $encrypted = billing_payment_encrypt_token($token);
     $upsert = $db->prepare("INSERT INTO billing_invoice_payment_links (invoice_id, token_hash, token_ciphertext, expires_at, status) VALUES (?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 90 DAY), 'active') ON DUPLICATE KEY UPDATE token_hash=VALUES(token_hash), token_ciphertext=VALUES(token_ciphertext), expires_at=VALUES(expires_at), status='active'");
     $upsert->execute([$invoiceId, $hash, $encrypted]);
-    return ['status' => 'ready', 'url' => $config['base_url'] . '/pay.php?t=' . rawurlencode($token), 'suffix' => $token];
+    return ['status' => 'ready', 'url' => $config['base_url'] . '/pay.php?t=' . rawurlencode($token), 'suffix' => $token, 'missing' => []];
 }
 
 function billing_payment_lookup(PDO $db, string $token): ?array
