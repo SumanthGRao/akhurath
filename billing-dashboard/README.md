@@ -4,6 +4,8 @@
 
 A deployable accountant dashboard for final video billing. It includes a Node.js backend, a PHP-hosting adapter, MariaDB schema, role-aware sign-in, invoice and payment clearance actions, and a separate authenticated n8n delivery handoff. The PHP billing flow uses the studio invoice generation services to create tax-aware multi-line invoices, link PDFs, and email them before marking a billing record as invoiced. Demo mode works without a database. No live MariaDB or n8n connection is configured by this project.
 
+The open billing page automatically checks for database updates every five seconds and refreshes immediately when the browser tab becomes active again. The header shows the last successful sync time; a delayed sync is indicated if the server cannot be reached. This is near-live polling, so an inserted row typically appears within five seconds without manually reloading the page.
+
 The PHP accountant dashboard can combine pending project rows into one invoice. Matching rows are suggested automatically by `folder_id` for the same customer and phone. Accountants can manually group or split eligible projects before invoicing. Payment clearance applies to all project rows linked to a combined invoice, while final files remain separate delivery jobs.
 
 ## Workflow and safety boundary
