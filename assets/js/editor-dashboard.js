@@ -45,9 +45,9 @@
     { value: 'assigned', label: 'Assigned' },
     { value: 'in_progress', label: 'In progress' },
     { value: 'review', label: 'Internal review' },
-    { value: 'delivered', label: 'Delivered' },
-    { value: 'reverted', label: 'Returned for revision' },
     { value: 'preview_sent', label: 'Preview sent' },
+    { value: 'reverted', label: 'Returned for revision' },
+    { value: 'delivered', label: 'Delivered' },
     { value: 'closed', label: 'Closed' },
     { value: 'cancelled', label: 'Cancelled' },
   ];

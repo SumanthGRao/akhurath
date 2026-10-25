@@ -406,7 +406,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
     $meetingAlert = is_array($taskAlert) && str_starts_with((string) ($taskAlert['kind'] ?? ''), 'meeting_')
         ? $taskAlert
         : null;
-    $opts = ['assigned', 'in_progress', 'review', 'delivered', 'reverted', 'preview_sent', 'closed', 'cancelled'];
+    $opts = ['assigned', 'in_progress', 'review', 'preview_sent', 'reverted', 'delivered', 'closed', 'cancelled'];
     $pipelineOpts = $section === 'pool' ? ['new', 'assigned'] : $opts;
     ?>
     <article
