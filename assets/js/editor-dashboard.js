@@ -45,9 +45,9 @@
     { value: 'assigned', label: 'Assigned' },
     { value: 'in_progress', label: 'In progress' },
     { value: 'review', label: 'Internal review' },
-    { value: 'preview_sent', label: 'Preview sent' },
     { value: 'delivered', label: 'Delivered' },
     { value: 'reverted', label: 'Returned for revision' },
+    { value: 'preview_sent', label: 'Preview sent' },
     { value: 'closed', label: 'Closed' },
     { value: 'cancelled', label: 'Cancelled' },
   ];
@@ -1287,6 +1287,19 @@
 
   function mountPanelHtml(taskId, html) {
     if (!panelsHost || !html) return false;
+    var oldPanel = findPanel(taskId);
+    var oldInput = oldPanel && oldPanel.querySelector('.ticket__thread-form [name="thread_body"]');
+    var draft = null;
+    if (oldInput) {
+      draft = {
+        value: oldInput.value,
+        focused: document.activeElement === oldInput,
+        start: oldInput.selectionStart,
+        end: oldInput.selectionEnd,
+        direction: oldInput.selectionDirection,
+        scrollTop: oldInput.scrollTop,
+      };
+    }
     removePanelsForTask(taskId);
     var wrap = document.createElement('div');
     wrap.innerHTML = html.trim();
@@ -1296,6 +1309,17 @@
     if (!panel.hidden && emptyEl) emptyEl.hidden = true;
     panelsHost.appendChild(panel);
     bindPanelInteractions(panel);
+    var newInput = panel.querySelector('.ticket__thread-form [name="thread_body"]');
+    if (draft && newInput) {
+      newInput.value = draft.value;
+      newInput.scrollTop = draft.scrollTop;
+      if (draft.focused) {
+        newInput.focus({ preventScroll: true });
+        if (typeof draft.start === 'number' && typeof draft.end === 'number') {
+          newInput.setSelectionRange(draft.start, draft.end, draft.direction || 'none');
+        }
+      }
+    }
     if (normId(taskId) === normId(activeTaskId)) {
       syncActiveThreadPoll(taskId);
     }
@@ -1592,7 +1616,8 @@
               showToast((data && data.error) || 'Could not send message.', 'err');
               return;
             }
-            form.querySelector('[name="thread_body"]').value = '';
+            var sentInput = form.querySelector('[name="thread_body"]');
+            if (sentInput && sentInput.value === body) sentInput.value = '';
             showToast('Message sent.', 'ok');
             if (data.html) mountPanelHtml(tid, data.html);
             if (data.msg_sig) rememberThreadSig(tid, data.msg_sig);
