@@ -22,11 +22,12 @@ The existing authenticated webhook continues to receive `billing.invoice.sent_ma
 {
   "payment_url_status": "ready",
   "payment_url": "https://akhurathstudio.com/billing-dashboard/pay.php?t=<opaque-token>",
-  "payment_url_suffix": "<opaque-token>"
+  "payment_url_suffix": "<opaque-token>",
+  "invoice_pdf_url": "https://akhurathstudio.com/billing-dashboard/invoice-download.php?t=<opaque-token>"
 }
 ```
 
-When payment configuration is incomplete, `payment_url_status` is `setup_required`, both URL fields are empty, and `payment_url_missing_config` lists only the names of missing settings. If the link table cannot be read or written, the status is `unavailable`; check the PHP error log for the invoice-specific cause. A non-sent or non-INR invoice reports `not_eligible`. n8n must not send a payment button in that case; it should notify the accountant/setup owner and stop the customer-payment branch. The token grants access to the payment page and is sensitive. Do not log or forward it to analytics, third-party QR providers, or unrelated nodes. The webhook still contains no final video link.
+When payment configuration is incomplete, `payment_url_status` is `setup_required`, all three URL fields are empty, and `payment_url_missing_config` lists only the names of missing settings. If the link table cannot be read or written, the status is `unavailable`; check the PHP error log for the invoice-specific cause. A non-sent or non-INR invoice reports `not_eligible`. n8n must require `payment_url_status === 'ready'`, `payment_url_suffix`, and `invoice_pdf_url` before sending. The PDF endpoint uses the same opaque token, only serves a linked invoice in `sent` status, rejects revoked/expired links, and never exposes a final video URL. The token is a bearer secret: do not log it, include it in analytics, or forward it to unrelated nodes. Restrict n8n execution retention and editor access.
 
 ## n8n workflow changes
 
@@ -44,16 +45,17 @@ VALUES (?, ?, ?, 'processing');
 ```
 
 Continue only when the insert node reports one affected row. If it reports zero, this event ID was already seen; stop without sending. On WhatsApp success, update the event to `sent`, save the provider message ID, and set `completed_at=UTC_TIMESTAMP(3)`. On a definite failure, set `status='failed'` and `last_error`; do not retry automatically after an ambiguous provider timeout because that could send a duplicate. Review failed events and consciously reset them for a manual retry.
-4. In the client branch, add an IF node requiring `{{$json.payment_url_status === 'ready' && !!$json.payment_url_suffix}}`. If false, do not send a payment CTA.
+4. In the client branch, add an IF node requiring `{{$json.payment_url_status === 'ready' && !!$json.payment_url_suffix && !!$json.invoice_pdf_url}}`. If false, do not send; alert the accountant/setup owner.
 5. Add a WhatsApp Cloud API HTTP Request node using the existing WhatsApp credential, not a literal access token. Use the approved template configuration below. Normalize the recipient to digits with country code and no plus sign.
 6. Keep workflow execution-data retention restricted. The incoming payload includes a bearer-like payment-link suffix; disable saving successful execution payloads if the n8n retention policy permits, restrict workflow editors, and do not copy the token into execution notes.
 
 ### Meta template to create and submit for approval
 
-- Template name: `akhurath_invoice_payment_v1`
+- Template name: `akhurath_invoice_document_payment_v1`
 - Category: `UTILITY`
 - Language: `English (US)` / `en_US` (use the exact language code approved in Meta)
-- Body: `Hi {{1}}, invoice {{2}} for {{3}} is ready. Amount due: INR {{4}}. Due date: {{5}}. Open the secure payment page to pay by UPI.`
+- Header: `DOCUMENT` media header. Submit a valid sample PDF when Meta requests a template example. The n8n send supplies `invoice_pdf_url` as the document link and the invoice number as the filename.
+- Body: `Hi {{1}}, invoice {{2}} for {{3}} is ready. Amount due: INR {{4}}. Due date: {{5}}. Open the attached invoice and use the secure payment button below to pay by UPI.`
 - Body examples for approval: `R.K Photography`; `INV-2026-0020`; `Karthik prafulla`; `2000.00`; `06 Nov 2026`.
 - One URL button: label `Pay invoice`; static URL prefix `https://akhurathstudio.com/billing-dashboard/pay.php?t=`; dynamic suffix `{{1}}`.
 - Do not use a `upi://` URL in the WhatsApp button. The HTTPS payment page provides the UPI URI and QR.
@@ -66,9 +68,21 @@ Configure the WhatsApp HTTP Request `POST` URL as `https://graph.facebook.com/<c
   "to": "={{ String($json.phone || '').replace(/\\D/g, '') }}",
   "type": "template",
   "template": {
-    "name": "akhurath_invoice_payment_v1",
+    "name": "akhurath_invoice_document_payment_v1",
     "language": { "code": "en_US" },
     "components": [
+      {
+        "type": "header",
+        "parameters": [
+          {
+            "type": "document",
+            "document": {
+              "link": "={{ $json.invoice_pdf_url }}",
+              "filename": "={{ $json.invoice_number + '.pdf' }}"
+            }
+          }
+        ]
+      },
       {
         "type": "body",
         "parameters": [

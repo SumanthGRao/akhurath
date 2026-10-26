@@ -48,10 +48,14 @@ function billing_invoice_dispatch_webhook(string $event, string $eventId, array 
     }
     $invoiceId = (int) ($invoice['id'] ?? 0);
     $paymentLink = ['status' => 'not_eligible', 'url' => '', 'suffix' => '', 'missing' => []];
+    $invoicePdfUrl = '';
     try {
         if ($invoiceId > 0 && ($invoice['status'] ?? '') === 'sent' && strtoupper((string) ($invoice['currency'] ?? '')) === 'INR') {
             if (function_exists('akh_db') && akh_db() instanceof PDO) {
                 $paymentLink = billing_payment_public_link(akh_db(), $invoiceId);
+                if (($paymentLink['status'] ?? '') === 'ready') {
+                    $invoicePdfUrl = rtrim((string) billing_payment_config()['base_url'], '/') . '/invoice-download.php?t=' . rawurlencode((string) $paymentLink['suffix']);
+                }
             } else {
                 $paymentLink['status'] = 'unavailable';
             }
@@ -83,6 +87,7 @@ function billing_invoice_dispatch_webhook(string $event, string $eventId, array 
         'payment_url_suffix' => $paymentLink['suffix'],
         'payment_url_status' => $paymentLink['status'],
         'payment_url_missing_config' => $paymentLink['missing'] ?? [],
+        'invoice_pdf_url' => $invoicePdfUrl,
         'lines' => $lines,
     ] + $extra;
     $json = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
