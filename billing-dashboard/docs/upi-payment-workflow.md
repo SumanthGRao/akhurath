@@ -116,7 +116,7 @@ The billing detail panel displays claim time, client-submitted UTR (explicitly u
 
 ## Immediate payment-cleared webhook
 
-The billing clear action now sends one POST after its database transaction commits. For grouped invoices the payload contains every project's `billing_id`, task, phone, customer, Drive file ID, and filename in `deliveries`. It also includes `event_id`, `invoice_id`, invoice number, and the cleared/sent statuses. The bank/UPI reference is not sent to n8n. Each audit row stores the same `delivery_event_id` so an ambiguous HTTP timeout can be investigated and deduplicated.
+The billing clear action now sends one POST after its database transaction commits. For grouped invoices the payload contains every project's `billing_id`, task, phone, customer, Drive folder ID, Drive file ID, and filename in `deliveries`. It also includes `event_id`, `invoice_id`, invoice number, and the cleared/sent statuses. The bank/UPI reference is not sent to n8n. Each audit row stores the same `delivery_event_id` so an ambiguous HTTP timeout can be investigated and deduplicated.
 
 The delivery Webhook node must use **POST**, **Header Auth** with header name `X-Webhook-Secret`, and **Respond Immediately**. Its production URL is `https://n8n.akhurathstudio.com/webhook/c17bf7be-c286-46e6-b270-9914d11e67e4`. Activate the workflow before using the Production URL. Store the matching secret only in the live PHP `includes/config.php` or server environment as `AKH_N8N_DELIVERY_WEBHOOK_SECRET`; this is a separate secret from the invoice webhook secret. The code accepts an optional `AKH_N8N_DELIVERY_WEBHOOK_URL` override.
 
@@ -141,6 +141,7 @@ The incoming JSON is shaped like this (a grouped invoice has one item per delive
       "customer_name": "Client Name",
       "project_name": "Project Name",
       "task_type": "reel1",
+      "folder_id": "DRIVE_FOLDER_ID",
       "drive_file_id": "DRIVE_FILE_ID",
       "file_name": "final.mp4"
     }
@@ -148,7 +149,7 @@ The incoming JSON is shaped like this (a grouped invoice has one item per delive
 }
 ```
 
-Recommended workflow nodes: Webhook → deduplicate `event_id` → split `deliveries` into individual records → call the authenticated `api.php?action=n8n-claim-{billing_id}` endpoint for each → grant the intended client access in Drive → send the approved WhatsApp delivery template → call `api.php?action=n8n-complete-{billing_id}` with the claim token and final HTTPS link. Stop if a claim fails, and report a failure through the completion endpoint if processing fails after claim. Do not expose the file before a successful claim. Drive sharing is restricted: the billing row currently has the client's phone but no email, so collect/map a client email for person-specific Drive access; do not switch to public link access without an explicit business decision.
+Recommended workflow nodes: Webhook → deduplicate `event_id` → split `deliveries` into individual records → call the authenticated `api.php?action=n8n-claim-{billing_id}` endpoint for each → grant the intended client access in Drive using `folder_id` for folder sharing or `drive_file_id` for file sharing → send the approved WhatsApp delivery template → call `api.php?action=n8n-complete-{billing_id}` with the claim token and final HTTPS link. Stop if a claim fails, and report a failure through the completion endpoint if processing fails after claim. Do not expose the file before a successful claim. Drive sharing is restricted: the billing row currently has the client's phone but no email, so collect/map a client email for person-specific Drive access; do not switch to public link access without an explicit business decision.
 
 ## Safe non-production test plan
 

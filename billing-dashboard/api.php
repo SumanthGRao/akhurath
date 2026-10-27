@@ -59,7 +59,7 @@ if(preg_match('/^clear-(\d+)$/',$action,$m)&&$method==='POST'){
   $deliveryWebhookSent=false;
   try{
    $marks=implode(',',array_fill(0,count($ids),'?'));
-   $deliveryQuery=$db->prepare("SELECT id AS billing_id,task_code,phone,customer_name,project_name,task_type,drive_file_id,file_name,invoice_number FROM final_delivery_billing WHERE id IN ($marks) ORDER BY id ASC");
+   $deliveryQuery=$db->prepare("SELECT id AS billing_id,task_code,phone,customer_name,project_name,task_type,folder_id,drive_file_id,file_name,invoice_number FROM final_delivery_billing WHERE id IN ($marks) ORDER BY id ASC");
    $deliveryQuery->execute($ids);$deliveries=$deliveryQuery->fetchAll(PDO::FETCH_ASSOC);
    $invoice=[];if($invoiceId>0){$invoiceQuery=$db->prepare('SELECT invoice_number,status,currency,total_paise,due_at FROM invoices WHERE id=? LIMIT 1');$invoiceQuery->execute([$invoiceId]);$invoice=$invoiceQuery->fetch(PDO::FETCH_ASSOC)?:[];}
    $primary=$deliveries[0]??[];
