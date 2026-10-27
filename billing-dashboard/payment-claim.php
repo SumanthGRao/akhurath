@@ -18,20 +18,16 @@ if (preg_match('/^[a-f0-9]{64}$/', $token) !== 1) billing_claim_error(404, 'This
 if ($utr !== '' && preg_match('/^[A-Za-z0-9-]{6,80}$/', $utr) !== 1) billing_claim_error(400, 'Enter a valid transaction reference, or leave it blank and contact the accountant.');
 $config = billing_payment_config();
 if ($config['base_url'] === '' || $config['secret'] === '') billing_claim_error(503, 'Payment claims are not configured yet. Please contact Akhurath Studio.');
-$configuredHost = strtolower((string) parse_url($config['base_url'], PHP_URL_HOST));
-$allowedHosts = [$configuredHost];
-$allowedHosts[] = str_starts_with($configuredHost, 'www.') ? substr($configuredHost, 4) : 'www.' . $configuredHost;
-$originHeader = trim((string) ($_SERVER['HTTP_ORIGIN'] ?? ''));
-$refererHeader = trim((string) ($_SERVER['HTTP_REFERER'] ?? ''));
-$originToCheck = $originHeader !== '' ? $originHeader : $refererHeader;
-if ($originToCheck !== '') {
-    $originParts = parse_url($originToCheck);
-    $originScheme = strtolower((string) ($originParts['scheme'] ?? ''));
-    $originHost = strtolower((string) ($originParts['host'] ?? ''));
-    $originPort = (int) ($originParts['port'] ?? 443);
-    if ($originScheme !== 'https' || $originPort !== 443 || !in_array($originHost, $allowedHosts, true)) {
-        billing_claim_error(403, 'This payment claim came from an untrusted website. Return to the invoice page and try again.');
-    }
+$csrf = (string) ($_POST['csrf'] ?? '');
+$csrfKey = hash('sha256', $token);
+$csrfRecord = $_SESSION['billing_payment_claim_csrf'][$csrfKey] ?? null;
+unset($_SESSION['billing_payment_claim_csrf'][$csrfKey]);
+if (!is_array($csrfRecord)
+    || !isset($csrfRecord['value'], $csrfRecord['expires_at'])
+    || (int) $csrfRecord['expires_at'] < time()
+    || preg_match('/^[a-f0-9]{64}$/', $csrf) !== 1
+    || !hash_equals((string) $csrfRecord['value'], $csrf)) {
+    billing_claim_error(403, 'This payment form expired or could not be verified. Return to the invoice page and try again.');
 }
 $db = function_exists('akh_db') ? akh_db() : null;
 if (!$db instanceof PDO) billing_claim_error(503, 'The payment service is temporarily unavailable. Please contact Akhurath Studio.');
