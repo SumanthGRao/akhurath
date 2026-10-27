@@ -101,3 +101,46 @@ function billing_payment_dispatch_event(array $payload): bool
     if ($status < 200 || $status >= 300) { error_log('Billing payment webhook failed: HTTP ' . $status . ($err !== '' ? ' (' . $err . ')' : '')); return false; }
     return true;
 }
+
+/** Notify the dedicated n8n delivery workflow after accountant-confirmed clearance. */
+function billing_delivery_dispatch_event(array $payload): bool
+{
+    $defaultUrl = 'https://n8n.akhurathstudio.com/webhook/c17bf7be-c286-46e6-b270-9914d11e67e4';
+    $url = defined('AKH_N8N_DELIVERY_WEBHOOK_URL') ? trim((string) AKH_N8N_DELIVERY_WEBHOOK_URL) : $defaultUrl;
+    $secret = defined('AKH_N8N_DELIVERY_WEBHOOK_SECRET')
+        ? trim((string) AKH_N8N_DELIVERY_WEBHOOK_SECRET)
+        : trim((string) (getenv('AKH_N8N_DELIVERY_WEBHOOK_SECRET') ?: ''));
+    if ($url === '' || !filter_var($url, FILTER_VALIDATE_URL) || !str_starts_with($url, 'https://') || $secret === '' || !function_exists('curl_init')) {
+        error_log('Billing delivery webhook skipped: configure its HTTPS URL, shared secret, and PHP cURL.');
+        return false;
+    }
+    $body = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+    if (!is_string($body)) {
+        error_log('Billing delivery webhook failed: could not encode event payload.');
+        return false;
+    }
+    try {
+        $ch = curl_init($url);
+        if ($ch === false) return false;
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $body,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-Webhook-Secret: ' . $secret],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 3,
+            CURLOPT_TIMEOUT => 8,
+        ]);
+        curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+        if ($status < 200 || $status >= 300) {
+            error_log('Billing delivery webhook failed: HTTP ' . $status . ($curlError !== '' ? ' (' . $curlError . ')' : ''));
+            return false;
+        }
+        return true;
+    } catch (Throwable $e) {
+        error_log('Billing delivery webhook exception: ' . $e->getMessage());
+        return false;
+    }
+}

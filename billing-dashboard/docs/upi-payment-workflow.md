@@ -112,7 +112,43 @@ For `billing.invoice.payment_claimed`, use the same event-id deduplication. Rout
 
 ## Accountant verification and delivery gate
 
-The billing detail panel displays claim time, client-submitted UTR (explicitly unverified), and verification state. The accountant must enter a bank/UPI reference and check “I have confirmed the incoming credit in the bank account.” The authenticated, CSRF-protected clear endpoint records the accountant username and time, verifies the claim, updates all billing records linked to the invoice to `cleared`, and sets delivery `ready`. For invoices with no client claim, the same explicit bank confirmation is still required. The n8n delivery workflow must continue to poll only records with `invoice_status='sent'`, `payment_status='cleared'`, and `delivery_status='ready'`, then claim and re-check each record immediately before granting Drive access.
+The billing detail panel displays claim time, client-submitted UTR (explicitly unverified), and verification state. The accountant must enter a bank/UPI reference and check “I have confirmed the incoming credit in the bank account.” The authenticated, CSRF-protected clear endpoint records the accountant username and time, verifies the claim, updates all billing records linked to the invoice to `cleared`, and sets delivery `ready`. For invoices with no client claim, the same explicit bank confirmation is still required. The delivery workflow is triggered immediately by the payment-cleared webhook, then claims and re-checks each record immediately before granting Drive access; it does not need scheduled polling.
+
+## Immediate payment-cleared webhook
+
+The billing clear action now sends one POST after its database transaction commits. For grouped invoices the payload contains every project's `billing_id`, task, phone, customer, Drive file ID, and filename in `deliveries`. It also includes `event_id`, `invoice_id`, invoice number, and the cleared/sent statuses. The bank/UPI reference is not sent to n8n. Each audit row stores the same `delivery_event_id` so an ambiguous HTTP timeout can be investigated and deduplicated.
+
+The delivery Webhook node must use **POST**, **Header Auth** with header name `X-Webhook-Secret`, and **Respond Immediately**. Its production URL is `https://n8n.akhurathstudio.com/webhook/c17bf7be-c286-46e6-b270-9914d11e67e4`. Activate the workflow before using the Production URL. Store the matching secret only in the live PHP `includes/config.php` or server environment as `AKH_N8N_DELIVERY_WEBHOOK_SECRET`; this is a separate secret from the invoice webhook secret. The code accepts an optional `AKH_N8N_DELIVERY_WEBHOOK_URL` override.
+
+The incoming JSON is shaped like this (a grouped invoice has one item per delivery):
+
+```json
+{
+  "event": "billing.payment.cleared",
+  "event_id": "payment-cleared-24-<random-suffix>",
+  "billing_id": 24,
+  "invoice_id": 24,
+  "invoice_number": "INV-2026-0024",
+  "invoice_status": "sent",
+  "payment_status": "cleared",
+  "phone": "919XXXXXXXXX",
+  "customer_name": "Client Name",
+  "deliveries": [
+    {
+      "billing_id": 24,
+      "task_code": "AS0237",
+      "phone": "919XXXXXXXXX",
+      "customer_name": "Client Name",
+      "project_name": "Project Name",
+      "task_type": "reel1",
+      "drive_file_id": "DRIVE_FILE_ID",
+      "file_name": "final.mp4"
+    }
+  ]
+}
+```
+
+Recommended workflow nodes: Webhook → deduplicate `event_id` → split `deliveries` into individual records → call the authenticated `api.php?action=n8n-claim-{billing_id}` endpoint for each → grant the intended client access in Drive → send the approved WhatsApp delivery template → call `api.php?action=n8n-complete-{billing_id}` with the claim token and final HTTPS link. Stop if a claim fails, and report a failure through the completion endpoint if processing fails after claim. Do not expose the file before a successful claim. Drive sharing is restricted: the billing row currently has the client's phone but no email, so collect/map a client email for person-specific Drive access; do not switch to public link access without an explicit business decision.
 
 ## Safe non-production test plan
 

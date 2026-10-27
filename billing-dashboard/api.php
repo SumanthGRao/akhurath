@@ -5,6 +5,7 @@ require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once AKH_ROOT . '/includes/admin-auth.php';
 require_once AKH_ROOT . '/includes/csrf.php';
 require_once AKH_ROOT . '/includes/billing-accounts.php';
+require_once __DIR__ . '/payment-common.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
@@ -52,8 +53,21 @@ if(preg_match('/^clear-(\d+)$/',$action,$m)&&$method==='POST'){
   $marks=implode(',',array_fill(0,count($ids),'?'));$u=$db->prepare("UPDATE final_delivery_billing SET payment_status='cleared',payment_reference=?,cleared_by=?,cleared_at=UTC_TIMESTAMP(3),delivery_status='ready' WHERE id IN ($marks) AND invoice_status='sent' AND payment_status IN ('unpaid','payment_claimed')");$u->execute(array_merge([$ref,$username],$ids));
   if($u->rowCount()!==count($ids)){$db->rollBack();billing_json(409,['error'=>'Send an invoice before recording cleared payment.']);}
   $utr=$invoiceId>0?billing_payment_clear_claim($db,$invoiceId,$username):'';
-  foreach($ids as $clearedId)billing_audit($db,$clearedId,$username,'payment_cleared',['payment_reference'=>$ref,'client_utr_unverified'=>$utr,'actual_credit_confirmed'=>true,'invoice_id'=>$invoiceId?:null,'group_count'=>count($ids)]);
-  $db->commit();billing_json(200,['ok'=>true,'cleared_count'=>count($ids),'message'=>'Verified payment cleared. The separately authenticated n8n workflow may now process delivery.']);
+  $deliveryEventId='payment-cleared-'.($invoiceId?:'billing-'.$ids[0]).'-'.bin2hex(random_bytes(12));
+  foreach($ids as $clearedId)billing_audit($db,$clearedId,$username,'payment_cleared',['payment_reference'=>$ref,'client_utr_unverified'=>$utr,'actual_credit_confirmed'=>true,'invoice_id'=>$invoiceId?:null,'group_count'=>count($ids),'delivery_event_id'=>$deliveryEventId]);
+  $db->commit();
+  $deliveryWebhookSent=false;
+  try{
+   $marks=implode(',',array_fill(0,count($ids),'?'));
+   $deliveryQuery=$db->prepare("SELECT id AS billing_id,task_code,phone,customer_name,project_name,task_type,drive_file_id,file_name,invoice_number FROM final_delivery_billing WHERE id IN ($marks) ORDER BY id ASC");
+   $deliveryQuery->execute($ids);$deliveries=$deliveryQuery->fetchAll(PDO::FETCH_ASSOC);
+   $invoice=[];if($invoiceId>0){$invoiceQuery=$db->prepare('SELECT invoice_number,status,currency,total_paise,due_at FROM invoices WHERE id=? LIMIT 1');$invoiceQuery->execute([$invoiceId]);$invoice=$invoiceQuery->fetch(PDO::FETCH_ASSOC)?:[];}
+   $primary=$deliveries[0]??[];
+   $deliveryPayload=['event'=>'billing.payment.cleared','event_id'=>$deliveryEventId,'billing_id'=>(int)($primary['billing_id']??$id),'invoice_id'=>$invoiceId?:null,'invoice_number'=>(string)($invoice['invoice_number']??($primary['invoice_number']??'')),'invoice_status'=>(string)($invoice['status']??'sent'),'phone'=>(string)($primary['phone']??''),'customer_name'=>(string)($primary['customer_name']??''),'payment_status'=>'cleared','total_paise'=>(int)($invoice['total_paise']??0),'currency'=>(string)($invoice['currency']??'INR'),'due_at'=>(string)($invoice['due_at']??''),'deliveries'=>$deliveries];
+   $deliveryWebhookSent=billing_delivery_dispatch_event($deliveryPayload);
+  }catch(Throwable $webhookError){error_log('Billing delivery webhook payload failed for event '.$deliveryEventId.': '.$webhookError->getMessage());}
+  $message=$deliveryWebhookSent?'Verified payment cleared. The delivery workflow has been notified.':'Payment was cleared, but n8n was not reached. Check the delivery webhook settings and execution; do not clear the invoice again.';
+  billing_json(200,['ok'=>true,'cleared_count'=>count($ids),'delivery_webhook_sent'=>$deliveryWebhookSent,'delivery_event_id'=>$deliveryEventId,'message'=>$message]);
  }catch(Throwable $e){if($db->inTransaction())$db->rollBack();throw $e;}
 }
 billing_json(404,['error'=>'Unknown action.']);
