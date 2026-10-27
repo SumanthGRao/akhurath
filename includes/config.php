@@ -141,7 +141,7 @@ const AKH_PREVIEW_WORKFLOW_WEBHOOK_TOKEN = 'eLeK3Uz7vItNGCNP2iSQcpj0Dg4bFsNS';
 const AKH_N8N_INVOICE_CREATED_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook/54764c72-70ef-4baf-b67a-b3a486294473';
 const AKH_N8N_INVOICE_WEBHOOK_SECRET = '9fG9Wt9j30J6';
 
-const AKH_N8N_INVOICE_CREATED_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook/c17bf7be-c286-46e6-b270-9914d11e67e4';
+const AKH_N8N_DELIVERY_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook/c17bf7be-c286-46e6-b270-9914d11e67e4';
 const AKH_N8N_INVOICE_WEBHOOK_SECRET = 'zbmHl8vh1H3yNK65N4GMLbIP0CrF42i6';
 
 const AKH_PUBLIC_PAYMENT_BASE_URL = 'https://akhurathstudio.com/billing-dashboard';
