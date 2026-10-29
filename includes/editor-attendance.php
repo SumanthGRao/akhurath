@@ -155,8 +155,9 @@ function akh_editor_attendance_read_doc(): array
     return ['events' => $events];
 }
 
-function akh_editor_attendance_append(string $editor, string $type): bool
+function akh_editor_attendance_append(string $editor, string $type, bool $notify = true, ?bool &$recordedOut = null): bool
 {
+    $recordedOut = false;
     if (!AKH_EDITOR_ATTENDANCE_ENABLED) {
         return true;
     }
@@ -225,7 +226,8 @@ function akh_editor_attendance_append(string $editor, string $type): bool
         fclose($fp);
     }
 
-    if (!empty($recorded)) {
+    $recordedOut = $recorded;
+    if (!empty($recorded) && $notify) {
         require_once __DIR__ . '/site-notify-mail.php';
         akh_site_mail_studio_editor_attendance($editor, $type);
     }

@@ -30,6 +30,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim((string) ($_POST['ajax_action'
         exit;
     }
     $ajax = trim((string) ($_POST['ajax_action'] ?? ''));
+    if ($ajax === 'attendance') {
+        $type = trim((string) ($_POST['action'] ?? ''));
+        if (!AKH_EDITOR_ATTENDANCE_ENABLED || !in_array($type, ['clock_in', 'clock_out'], true)) {
+            echo json_encode(['ok' => false, 'error' => 'Invalid attendance action.']);
+            exit;
+        }
+        $recorded = false;
+        if (!akh_editor_attendance_append($editor, $type, false, $recorded)) {
+            echo json_encode(['ok' => false, 'error' => 'Could not record attendance.']);
+            exit;
+        }
+
+        $clockedIn = $type === 'clock_in';
+        $since = $clockedIn ? akh_editor_attendance_open_shift_started_at_for($editor) : null;
+        $sinceLabel = $since !== null ? akh_format_datetime_site_short((string) $since) : '';
+        echo json_encode([
+            'ok' => true,
+            'clocked_in' => $clockedIn,
+            'since_label' => $sinceLabel,
+        ], JSON_THROW_ON_ERROR);
+        if (function_exists('fastcgi_finish_request')) {
+            while (ob_get_level() > 0) {
+                ob_end_flush();
+            }
+            flush();
+            fastcgi_finish_request();
+        }
+        if ($recorded) {
+            require_once AKH_ROOT . '/includes/site-notify-mail.php';
+            akh_site_mail_studio_editor_attendance($editor, $type);
+        }
+        exit;
+    }
     if ($ajax === 'view_ack') {
         try {
             echo json_encode(
@@ -330,7 +363,7 @@ require_once AKH_ROOT . '/includes/header.php';
         <div class="edesk-topbar__brand">
           <p class="edesk-topbar__kicker"><?php echo h(SITE_NAME); ?></p>
           <h1 class="edesk-topbar__title">Editor desk</h1>
-          <p class="edesk-topbar__user"><?php echo h($editor); ?><?php if (AKH_EDITOR_ATTENDANCE_ENABLED): ?> · <?php echo $attendanceOn ? 'On shift since ' . h(akh_format_datetime_site_short((string) $attendanceSinceTs)) : 'Not clocked in'; ?><?php endif; ?> · <?php echo h(AKH_SITE_TIMEZONE === 'Asia/Kolkata' ? 'IST' : AKH_SITE_TIMEZONE); ?></p>
+          <p class="edesk-topbar__user"><?php echo h($editor); ?><?php if (AKH_EDITOR_ATTENDANCE_ENABLED): ?> · <span id="edesk-attendance-label"><?php echo $attendanceOn ? 'On shift since ' . h(akh_format_datetime_site_short((string) $attendanceSinceTs)) : 'Not clocked in'; ?></span><?php endif; ?> · <?php echo h(AKH_SITE_TIMEZONE === 'Asia/Kolkata' ? 'IST' : AKH_SITE_TIMEZONE); ?></p>
         </div>
         <nav class="edesk-topbar__tabs" aria-label="Task lists">
           <button type="button" class="edesk-tab" data-section="pool" aria-selected="<?php echo $defaultDeskTab === 'pool' ? 'true' : 'false'; ?>">

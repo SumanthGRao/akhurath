@@ -1557,6 +1557,40 @@
       var form = e.target;
       if (!form || !form.getAttribute) return;
 
+      if (form.classList.contains('edesk-att-form')) {
+        e.preventDefault();
+        var actionInput = form.querySelector('[name="action"]');
+        var attendanceAction = actionInput ? actionInput.value : '';
+        var attendanceButton = form.querySelector('button[type="submit"]');
+        if (attendanceButton) attendanceButton.disabled = true;
+        postAjax('attendance', { action: attendanceAction === 'attendance_clock_in' ? 'clock_in' : 'clock_out' })
+          .then(function (data) {
+            if (!data || !data.ok) {
+              showToast((data && data.error) || 'Could not update attendance.', 'err');
+              return;
+            }
+            var clockedIn = !!data.clocked_in;
+            if (actionInput) actionInput.value = clockedIn ? 'attendance_clock_out' : 'attendance_clock_in';
+            if (attendanceButton) {
+              attendanceButton.textContent = clockedIn ? 'Clock out' : 'Clock in';
+              attendanceButton.classList.toggle('btn--primary', !clockedIn);
+              attendanceButton.classList.toggle('btn--ghost', clockedIn);
+            }
+            var dot = qs('.edesk-att__dot', form.parentNode);
+            if (dot) dot.classList.toggle('edesk-att__dot--on', clockedIn);
+            var label = qs('#edesk-attendance-label', root);
+            if (label) label.textContent = clockedIn ? 'On shift since ' + (data.since_label || '') : 'Not clocked in';
+            showToast(clockedIn ? 'Clocked in.' : 'Clocked out.', 'ok');
+          })
+          .catch(function () {
+            showToast('Could not update attendance. Try again.', 'err');
+          })
+          .finally(function () {
+            if (attendanceButton) attendanceButton.disabled = false;
+          });
+        return;
+      }
+
       if (form.classList.contains('edesk-ajax-claim')) {
         e.preventDefault();
         var claimId = (form.querySelector('[name="task_id"]') || {}).value || '';
