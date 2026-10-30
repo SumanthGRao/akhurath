@@ -178,12 +178,22 @@ function akh_editor_task_view_model(
     if ($tidNorm !== '' && akh_wa_tasks_table_exists()) {
         $waRow = akh_wa_task_by_code($tidNorm);
         if (is_array($waRow)) {
+            $taskCode = (string) ($waRow['task_code'] ?? $tidNorm);
+            $comments = (string) ($waRow['comments'] ?? '');
             $t['whatsapp_project_name'] = (string) ($waRow['project_name'] ?? '');
-            $t['whatsapp_instructions'] = akh_wa_normalize_editor_instructions(
+            $waInstructions = akh_wa_normalize_editor_instructions(
                 (string) ($waRow['instructions'] ?? ''),
-                (string) ($waRow['task_code'] ?? $tidNorm),
-                (string) ($waRow['comments'] ?? '')
+                $taskCode,
+                $comments
             );
+            if ($waInstructions === '') {
+                $waInstructions = akh_wa_normalize_editor_instructions(
+                    (string) ($t['description'] ?? ''),
+                    $taskCode,
+                    $comments
+                );
+            }
+            $t['whatsapp_instructions'] = $waInstructions;
             $waDrive = trim((string) ($waRow['drive_link'] ?? ''));
             if ($waDrive !== '') {
                 $t['drive_link'] = $waDrive;

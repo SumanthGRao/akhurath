@@ -867,6 +867,15 @@ function akh_wa_normalize_editor_instructions(
         $value = trim($next);
     }
 
+    $metadataPattern = '/^WhatsApp task:\s*' . preg_quote($taskCode, '/')
+        . '(?:\R(?:Type:|Delivery:)[^\r\n]*)*\R*/i';
+    if (preg_match($metadataPattern, $value) === 1 && stripos($value, 'Instructions:') === false) {
+        $next = preg_replace($metadataPattern, '', $value, 1);
+        if (is_string($next)) {
+            $value = trim($next);
+        }
+    }
+
     $comments = trim($comments);
     if ($comments !== '') {
         $commentBlock = "\n\nComments:\n" . $comments;
