@@ -1611,6 +1611,36 @@
         return;
       }
 
+      if (form.classList.contains('edesk-ajax-details')) {
+        e.preventDefault();
+        var detailsId = (form.querySelector('[name="task_id"]') || {}).value || '';
+        var detailsBtn = form.querySelector('button[type="submit"]');
+        if (detailsBtn) detailsBtn.disabled = true;
+        postAjax('details_save', {
+          task_id: detailsId,
+          project_name: (form.querySelector('[name="project_name"]') || {}).value || '',
+          description: (form.querySelector('[name="description"]') || {}).value || '',
+        })
+          .then(function (data) {
+            if (!data || !data.ok) {
+              showToast((data && data.error) || 'Could not update task details.', 'err');
+              return;
+            }
+            showToast('Task details updated.', 'ok');
+            if (data.desk) applyDeskLists(data.desk, true);
+            if (typeof data.bell === 'number') setDeskBell(data.bell);
+            if (data.html) mountPanelHtml(detailsId, data.html);
+            selectTask(detailsId, { skipFetch: true, noScroll: true });
+          })
+          .catch(function () {
+            showToast('Could not update task details. Try again.', 'err');
+          })
+          .finally(function () {
+            if (detailsBtn) detailsBtn.disabled = false;
+          });
+        return;
+      }
+
       if (form.classList.contains('edesk-ajax-status')) {
         e.preventDefault();
         var taskId = (form.querySelector('[name="task_id"]') || {}).value || '';

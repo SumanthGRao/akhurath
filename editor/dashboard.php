@@ -216,6 +216,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim((string) ($_POST['ajax_action'
         }
         exit;
     }
+    if ($ajax === 'details_save') {
+        $taskId = trim((string) ($_POST['task_id'] ?? ''));
+        $t = akh_task_editor_update_details(
+            $taskId,
+            $editor,
+            (string) ($_POST['project_name'] ?? ''),
+            (string) ($_POST['description'] ?? '')
+        );
+        if ($t === null) {
+            echo json_encode([
+                'ok' => false,
+                'error' => 'Could not update task details. Check that the project name and description are filled in and within the length limits.',
+            ]);
+            exit;
+        }
+        $taskId = (string) ($t['id'] ?? $taskId);
+        try {
+            echo json_encode([
+                'ok' => true,
+                'task_id' => $taskId,
+                'html' => akh_editor_desk_panel_html($editor, $taskId, akh_csrf_token()),
+                'desk' => akh_editor_desk_poll_bundle($editor),
+                'bell' => akh_task_editor_board_bell_count($editor),
+            ], JSON_THROW_ON_ERROR);
+        } catch (\Throwable) {
+            echo json_encode(['ok' => true, 'task_id' => $taskId]);
+        }
+        exit;
+    }
     if ($ajax === 'poll') {
         try {
             echo json_encode(akh_task_ajax_poll_editor($editor), JSON_THROW_ON_ERROR);

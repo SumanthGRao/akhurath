@@ -1188,6 +1188,8 @@ function akh_tasks_overlay_persisted_on_bridge(array $bridge): array
     }
 
     $overlayKeys = [
+        'title',
+        'description',
         'status',
         'updated_at',
         'assigned_editor',
@@ -2672,6 +2674,74 @@ function akh_task_set_status(
         }
         $detail = $mailParts !== [] ? implode("\n\n", $mailParts) : 'Your task was updated.';
         akh_site_mail_client_editor_activity($cuser, $out, 'Your task was updated.', $detail);
+    }
+
+    return $out;
+}
+
+/**
+ * Update the assigned editor's project name and task brief.
+ *
+ * @return array<string, mixed>|null Updated task, or null when invalid/not editable.
+ */
+function akh_task_editor_update_details(
+    string $taskId,
+    string $editorUsername,
+    string $projectName,
+    string $description
+): ?array {
+    $projectName = trim($projectName);
+    $description = trim($description);
+    if ($projectName === '' || mb_strlen($projectName) > 200 || $description === '' || mb_strlen($description) > 8000) {
+        return null;
+    }
+
+    $editorUsername = strtolower(trim($editorUsername));
+    $list = akh_tasks_load();
+    $out = null;
+    $changed = false;
+    foreach ($list as $i => $task) {
+        if (!akh_task_ids_match((string) ($task['id'] ?? ''), $taskId)) {
+            continue;
+        }
+        if (strtolower(trim((string) ($task['assigned_editor'] ?? ''))) !== $editorUsername) {
+            return null;
+        }
+        if (akh_task_status_is_archive((string) ($task['status'] ?? ''))) {
+            return null;
+        }
+
+        $changed = (string) ($task['title'] ?? '') !== $projectName
+            || (string) ($task['description'] ?? '') !== $description;
+        $list[$i]['title'] = $projectName;
+        $list[$i]['description'] = $description;
+        $list[$i]['updated_at'] = gmdate('c');
+        if ($changed) {
+            $list[$i]['client_editor_notify'] = true;
+            $list[$i]['client_notify_detail'] = 'Project name or task description updated by the editor.';
+        }
+        $out = $list[$i];
+        break;
+    }
+
+    if ($out === null) {
+        return null;
+    }
+    if (!$changed) {
+        return $out;
+    }
+    if (!akh_tasks_save_locked($list)) {
+        return null;
+    }
+
+    $client = strtolower(trim((string) ($out['client_username'] ?? '')));
+    if ($client !== '') {
+        akh_site_mail_client_editor_activity(
+            $client,
+            $out,
+            'Your task details were updated.',
+            "Project name: {$projectName}\n\nThe task description was updated by your editor."
+        );
     }
 
     return $out;

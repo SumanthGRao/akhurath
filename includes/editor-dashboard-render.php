@@ -461,6 +461,25 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
 
       <div class="edesk-panel__grid">
         <div class="edesk-panel__work">
+          <?php if ($section === 'mine'): ?>
+            <section class="edesk-card edesk-card--action">
+              <h3 class="edesk-card__title">Task details</h3>
+              <form class="portal-form portal-form--compact edesk-details-form edesk-ajax-details" method="post" action="" data-edesk-ajax="details">
+                <input type="hidden" name="csrf_token" value="<?php echo h($pageCsrf); ?>" />
+                <input type="hidden" name="task_id" value="<?php echo h($tid); ?>" />
+                <label class="field">
+                  <span>Project name</span>
+                  <input type="text" name="project_name" value="<?php echo h((string) ($t['title'] ?? '')); ?>" maxlength="200" required />
+                </label>
+                <label class="field">
+                  <span>Description</span>
+                  <textarea name="description" rows="7" maxlength="8000" required><?php echo h((string) ($t['description'] ?? '')); ?></textarea>
+                </label>
+                <button type="submit" class="btn btn--primary btn--sm">Save task details</button>
+              </form>
+            </section>
+          <?php endif; ?>
+
           <?php if (trim((string) ($t['description'] ?? '')) !== ''): ?>
             <section class="edesk-card">
               <h3 class="edesk-card__title">Brief &amp; notes</h3>
