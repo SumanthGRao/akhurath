@@ -819,6 +819,7 @@ function akh_wa_resolve_client_username(array $waRow): string
 
 function akh_wa_build_studio_description(array $waRow): string
 {
+    $instructions = trim((string) ($waRow['instructions'] ?? ''));
     $parts = ['WhatsApp task: ' . (string) ($waRow['task_code'] ?? '')];
     $taskType = trim((string) ($waRow['task_type'] ?? ''));
     if ($taskType !== '') {
@@ -828,7 +829,6 @@ function akh_wa_build_studio_description(array $waRow): string
     if ($deliveryType !== '') {
         $parts[] = 'Delivery: ' . $deliveryType;
     }
-    $instructions = trim((string) ($waRow['instructions'] ?? ''));
     if ($instructions !== '') {
         $parts[] = '';
         $parts[] = 'Instructions:';
@@ -1475,6 +1475,10 @@ function akh_wa_sync_to_studio(array $waRow): ?string
     $referenceLink = $inputs['reference_link'];
 
     $studioBefore = akh_task_by_id($studioId);
+    $editorDescriptionOverride = trim((string) ($studioBefore['editor_description_override'] ?? ''));
+    if ($editorDescriptionOverride !== '') {
+        $description = $editorDescriptionOverride;
+    }
     if (
         is_array($studioBefore)
         && strtolower(trim((string) ($studioBefore['status'] ?? ''))) === 'reverted'

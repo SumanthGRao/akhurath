@@ -1192,6 +1192,7 @@ function akh_tasks_overlay_persisted_on_bridge(array $bridge): array
         'description',
         'project_name',
         'project_details',
+        'editor_description_override',
         'status',
         'updated_at',
         'assigned_editor',
@@ -2694,7 +2695,7 @@ function akh_task_editor_update_details(
 ): ?array {
     $projectName = trim($projectName);
     $description = trim($description);
-    if ($projectName === '' || mb_strlen($projectName) > 200 || mb_strlen($description) > 8000) {
+    if ($projectName === '' || mb_strlen($projectName) > 200 || $description === '' || mb_strlen($description) > 8000) {
         return null;
     }
 
@@ -2748,14 +2749,12 @@ function akh_task_editor_update_details(
         $waRow = $waSave['task'];
         $inputs = akh_wa_prepare_studio_task_inputs($waRow);
         $list[$taskIndex]['title'] = (string) $inputs['title'];
-        $list[$taskIndex]['description'] = (string) $inputs['description'];
+        $list[$taskIndex]['description'] = $description;
         $list[$taskIndex]['project_name'] = $projectName;
         $list[$taskIndex]['project_details'] = $description;
+        $list[$taskIndex]['editor_description_override'] = $description;
         $list[$taskIndex]['updated_at'] = gmdate('c');
     } else {
-        if ($description === '') {
-            return null;
-        }
         $list[$taskIndex]['title'] = $projectName;
         $list[$taskIndex]['description'] = $description;
         $list[$taskIndex]['updated_at'] = gmdate('c');
