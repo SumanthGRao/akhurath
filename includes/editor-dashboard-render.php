@@ -492,7 +492,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
             </section>
           <?php endif; ?>
 
-          <?php if (trim((string) ($t['description'] ?? '')) !== ''): ?>
+          <?php if ($section !== 'mine' && trim((string) ($t['description'] ?? '')) !== ''): ?>
             <section class="edesk-card">
               <h3 class="edesk-card__title">Brief &amp; notes</h3>
               <div class="edesk-prose"><?php echo nl2br(h((string) ($t['description'] ?? ''))); ?></div>
