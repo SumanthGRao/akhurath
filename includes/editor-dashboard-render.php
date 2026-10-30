@@ -178,6 +178,8 @@ function akh_editor_task_view_model(
     if ($tidNorm !== '' && akh_wa_tasks_table_exists()) {
         $waRow = akh_wa_task_by_code($tidNorm);
         if (is_array($waRow)) {
+            $t['whatsapp_project_name'] = (string) ($waRow['project_name'] ?? '');
+            $t['whatsapp_instructions'] = (string) ($waRow['instructions'] ?? '');
             $waDrive = trim((string) ($waRow['drive_link'] ?? ''));
             if ($waDrive !== '') {
                 $t['drive_link'] = $waDrive;
@@ -462,6 +464,15 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
       <div class="edesk-panel__grid">
         <div class="edesk-panel__work">
           <?php if ($section === 'mine'): ?>
+            <?php
+            $isWhatsAppTask = array_key_exists('whatsapp_project_name', $t);
+            $editProjectName = $isWhatsAppTask
+                ? (string) $t['whatsapp_project_name']
+                : (string) ($t['title'] ?? '');
+            $editDescription = $isWhatsAppTask
+                ? (string) ($t['whatsapp_instructions'] ?? '')
+                : (string) ($t['description'] ?? '');
+            ?>
             <section class="edesk-card edesk-card--action">
               <h3 class="edesk-card__title">Task details</h3>
               <form class="portal-form portal-form--compact edesk-details-form edesk-ajax-details" method="post" action="" data-edesk-ajax="details">
@@ -469,11 +480,11 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
                 <input type="hidden" name="task_id" value="<?php echo h($tid); ?>" />
                 <label class="field">
                   <span>Project name</span>
-                  <input type="text" name="project_name" value="<?php echo h((string) ($t['title'] ?? '')); ?>" maxlength="200" required />
+                  <input type="text" name="project_name" value="<?php echo h($editProjectName); ?>" maxlength="200" required />
                 </label>
                 <label class="field">
-                  <span>Description</span>
-                  <textarea name="description" rows="7" maxlength="8000" required><?php echo h((string) ($t['description'] ?? '')); ?></textarea>
+                  <span><?php echo $isWhatsAppTask ? 'Description / instructions' : 'Description'; ?></span>
+                  <textarea name="description" rows="7" maxlength="8000"<?php echo $isWhatsAppTask ? '' : ' required'; ?>><?php echo h($editDescription); ?></textarea>
                 </label>
                 <button type="submit" class="btn btn--primary btn--sm">Save task details</button>
               </form>

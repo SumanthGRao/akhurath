@@ -227,7 +227,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim((string) ($_POST['ajax_action'
         if ($t === null) {
             echo json_encode([
                 'ok' => false,
-                'error' => 'Could not update task details. Check that the project name and description are filled in and within the length limits.',
+                'error' => 'Could not update task details. Confirm you are assigned to this task and the values are within the length limits.',
             ]);
             exit;
         }

@@ -1190,6 +1190,8 @@ function akh_tasks_overlay_persisted_on_bridge(array $bridge): array
     $overlayKeys = [
         'title',
         'description',
+        'project_name',
+        'project_details',
         'status',
         'updated_at',
         'assigned_editor',
@@ -2692,7 +2694,7 @@ function akh_task_editor_update_details(
 ): ?array {
     $projectName = trim($projectName);
     $description = trim($description);
-    if ($projectName === '' || mb_strlen($projectName) > 200 || $description === '' || mb_strlen($description) > 8000) {
+    if ($projectName === '' || mb_strlen($projectName) > 200 || mb_strlen($description) > 8000) {
         return null;
     }
 
@@ -2700,6 +2702,8 @@ function akh_task_editor_update_details(
     $list = akh_tasks_load();
     $out = null;
     $changed = false;
+    $waRow = null;
+    $taskIndex = -1;
     foreach ($list as $i => $task) {
         if (!akh_task_ids_match((string) ($task['id'] ?? ''), $taskId)) {
             continue;
@@ -2711,26 +2715,62 @@ function akh_task_editor_update_details(
             return null;
         }
 
-        $changed = (string) ($task['title'] ?? '') !== $projectName
-            || (string) ($task['description'] ?? '') !== $description;
-        $list[$i]['title'] = $projectName;
-        $list[$i]['description'] = $description;
-        $list[$i]['updated_at'] = gmdate('c');
-        if ($changed) {
-            $list[$i]['client_editor_notify'] = true;
-            $list[$i]['client_notify_detail'] = 'Project name or task description updated by the editor.';
-        }
-        $out = $list[$i];
+        require_once __DIR__ . '/whatsapp-task-sync.php';
+        $waRow = akh_wa_find_row_for_studio_task($task);
+        $changed = is_array($waRow)
+            ? ((string) ($waRow['project_name'] ?? '') !== $projectName
+                || (string) ($waRow['instructions'] ?? '') !== $description)
+            : ((string) ($task['title'] ?? '') !== $projectName
+                || (string) ($task['description'] ?? '') !== $description);
+        $taskIndex = $i;
+        $out = $task;
         break;
     }
 
-    if ($out === null) {
+    if ($out === null || $taskIndex < 0) {
         return null;
     }
     if (!$changed) {
         return $out;
     }
+
+    if (is_array($waRow)) {
+        require_once __DIR__ . '/whatsapp-tasks.php';
+        $oldWaName = (string) ($waRow['project_name'] ?? '');
+        $oldWaInstructions = (string) ($waRow['instructions'] ?? '');
+        $waSave = akh_wa_task_update((int) ($waRow['id'] ?? 0), [
+            'project_name' => $projectName,
+            'instructions' => $description,
+        ]);
+        if (($waSave['ok'] ?? false) !== true || !is_array($waSave['task'] ?? null)) {
+            return null;
+        }
+        $waRow = $waSave['task'];
+        $inputs = akh_wa_prepare_studio_task_inputs($waRow);
+        $list[$taskIndex]['title'] = (string) $inputs['title'];
+        $list[$taskIndex]['description'] = (string) $inputs['description'];
+        $list[$taskIndex]['project_name'] = $projectName;
+        $list[$taskIndex]['project_details'] = $description;
+        $list[$taskIndex]['updated_at'] = gmdate('c');
+    } else {
+        if ($description === '') {
+            return null;
+        }
+        $list[$taskIndex]['title'] = $projectName;
+        $list[$taskIndex]['description'] = $description;
+        $list[$taskIndex]['updated_at'] = gmdate('c');
+    }
+
+    $list[$taskIndex]['client_editor_notify'] = true;
+    $list[$taskIndex]['client_notify_detail'] = 'Project name or task description updated by the editor.';
+    $out = $list[$taskIndex];
     if (!akh_tasks_save_locked($list)) {
+        if (is_array($waRow)) {
+            akh_wa_task_update((int) ($waRow['id'] ?? 0), [
+                'project_name' => $oldWaName,
+                'instructions' => $oldWaInstructions,
+            ]);
+        }
         return null;
     }
 
