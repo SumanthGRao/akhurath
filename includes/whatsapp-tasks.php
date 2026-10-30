@@ -849,7 +849,8 @@ function akh_wa_build_studio_description(array $waRow): string
 function akh_wa_normalize_editor_instructions(
     string $value,
     string $taskCode,
-    string $comments = ''
+    string $comments = '',
+    bool $fromGeneratedSummary = false
 ): string {
     $value = trim($value);
     $taskCode = trim($taskCode);
@@ -882,6 +883,11 @@ function akh_wa_normalize_editor_instructions(
         if (str_ends_with($value, $commentBlock)) {
             $value = trim(substr($value, 0, -strlen($commentBlock)));
         }
+    }
+
+    if ($fromGeneratedSummary) {
+        $value = preg_replace('/(?:\R{2,})(?:Comments:|Reference link:|Drive link:)\s*.*$/is', '', $value) ?? $value;
+        $value = trim($value);
     }
 
     return $value;

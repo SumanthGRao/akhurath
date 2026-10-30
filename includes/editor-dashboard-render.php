@@ -181,6 +181,7 @@ function akh_editor_task_view_model(
             $taskCode = (string) ($waRow['task_code'] ?? $tidNorm);
             $comments = (string) ($waRow['comments'] ?? '');
             $t['whatsapp_project_name'] = (string) ($waRow['project_name'] ?? '');
+            $t['whatsapp_comments'] = trim($comments);
             $waInstructions = akh_wa_normalize_editor_instructions(
                 (string) ($waRow['instructions'] ?? ''),
                 $taskCode,
@@ -190,7 +191,8 @@ function akh_editor_task_view_model(
                 $waInstructions = akh_wa_normalize_editor_instructions(
                     (string) ($t['description'] ?? ''),
                     $taskCode,
-                    $comments
+                    $comments,
+                    true
                 );
             }
             $t['whatsapp_instructions'] = $waInstructions;
@@ -500,6 +502,12 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
                   <span><?php echo $isWhatsAppTask ? 'Description / instructions' : 'Description'; ?></span>
                   <textarea name="description" rows="7" maxlength="8000"<?php echo $isWhatsAppTask ? '' : ' required'; ?> disabled><?php echo h($editDescription); ?></textarea>
                 </label>
+                <?php if ($isWhatsAppTask && trim((string) ($t['whatsapp_comments'] ?? '')) !== ''): ?>
+                  <div class="field">
+                    <span>WhatsApp comments</span>
+                    <div class="edesk-prose"><?php echo nl2br(h((string) $t['whatsapp_comments'])); ?></div>
+                  </div>
+                <?php endif; ?>
                 <div class="edesk-details-actions">
                   <button type="button" class="btn btn--ghost btn--sm edesk-details-edit">Edit details</button>
                   <button type="submit" class="btn btn--primary btn--sm edesk-details-save" hidden>Save task details</button>
