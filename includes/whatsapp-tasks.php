@@ -845,6 +845,39 @@ function akh_wa_build_studio_description(array $waRow): string
     return $desc !== '' ? $desc : '(WhatsApp task — no notes.)';
 }
 
+/** Remove repeated generated task headers from legacy editor-saved instructions. */
+function akh_wa_normalize_editor_instructions(
+    string $value,
+    string $taskCode,
+    string $comments = ''
+): string {
+    $value = trim($value);
+    $taskCode = trim($taskCode);
+    if ($value === '' || $taskCode === '') {
+        return $value;
+    }
+
+    $header = 'WhatsApp task: ' . preg_quote($taskCode, '/');
+    $pattern = '/^' . $header . '(?:\R(?:Type:|Delivery:)[^\r\n]*)*\R*Instructions:\s*/i';
+    while (preg_match($pattern, $value) === 1) {
+        $next = preg_replace($pattern, '', $value, 1);
+        if (!is_string($next) || $next === $value) {
+            break;
+        }
+        $value = trim($next);
+    }
+
+    $comments = trim($comments);
+    if ($comments !== '') {
+        $commentBlock = "\n\nComments:\n" . $comments;
+        if (str_ends_with($value, $commentBlock)) {
+            $value = trim(substr($value, 0, -strlen($commentBlock)));
+        }
+    }
+
+    return $value;
+}
+
 /** @return array{0: string, 1: string} */
 function akh_wa_resolve_delivery_mode(array $waRow): array
 {

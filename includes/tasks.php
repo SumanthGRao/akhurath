@@ -2695,7 +2695,7 @@ function akh_task_editor_update_details(
 ): ?array {
     $projectName = trim($projectName);
     $description = trim($description);
-    if ($projectName === '' || mb_strlen($projectName) > 200 || $description === '' || mb_strlen($description) > 8000) {
+    if ($projectName === '' || mb_strlen($projectName) > 200 || mb_strlen($description) > 8000) {
         return null;
     }
 
@@ -2718,6 +2718,17 @@ function akh_task_editor_update_details(
 
         require_once __DIR__ . '/whatsapp-task-sync.php';
         $waRow = akh_wa_find_row_for_studio_task($task);
+        if (!is_array($waRow) && $description === '') {
+            return null;
+        }
+        if (is_array($waRow)) {
+            require_once __DIR__ . '/whatsapp-tasks.php';
+            $description = akh_wa_normalize_editor_instructions(
+                $description,
+                (string) ($waRow['task_code'] ?? $taskId),
+                (string) ($waRow['comments'] ?? '')
+            );
+        }
         $changed = is_array($waRow)
             ? ((string) ($waRow['project_name'] ?? '') !== $projectName
                 || (string) ($waRow['instructions'] ?? '') !== $description)
@@ -2749,10 +2760,10 @@ function akh_task_editor_update_details(
         $waRow = $waSave['task'];
         $inputs = akh_wa_prepare_studio_task_inputs($waRow);
         $list[$taskIndex]['title'] = (string) $inputs['title'];
-        $list[$taskIndex]['description'] = $description;
+        $list[$taskIndex]['description'] = (string) $inputs['description'];
         $list[$taskIndex]['project_name'] = $projectName;
         $list[$taskIndex]['project_details'] = $description;
-        $list[$taskIndex]['editor_description_override'] = $description;
+        unset($list[$taskIndex]['editor_description_override']);
         $list[$taskIndex]['updated_at'] = gmdate('c');
     } else {
         $list[$taskIndex]['title'] = $projectName;

@@ -179,6 +179,11 @@ function akh_editor_task_view_model(
         $waRow = akh_wa_task_by_code($tidNorm);
         if (is_array($waRow)) {
             $t['whatsapp_project_name'] = (string) ($waRow['project_name'] ?? '');
+            $t['whatsapp_instructions'] = akh_wa_normalize_editor_instructions(
+                (string) ($waRow['instructions'] ?? ''),
+                (string) ($waRow['task_code'] ?? $tidNorm),
+                (string) ($waRow['comments'] ?? '')
+            );
             $waDrive = trim((string) ($waRow['drive_link'] ?? ''));
             if ($waDrive !== '') {
                 $t['drive_link'] = $waDrive;
@@ -468,7 +473,9 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
             $editProjectName = $isWhatsAppTask
                 ? (string) $t['whatsapp_project_name']
                 : (string) ($t['title'] ?? '');
-            $editDescription = (string) ($t['description'] ?? '');
+            $editDescription = $isWhatsAppTask
+                ? (string) ($t['whatsapp_instructions'] ?? '')
+                : (string) ($t['description'] ?? '');
             ?>
             <section class="edesk-card edesk-card--action">
               <h3 class="edesk-card__title">Task details</h3>
@@ -481,7 +488,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
                 </label>
                 <label class="field">
                   <span><?php echo $isWhatsAppTask ? 'Description / instructions' : 'Description'; ?></span>
-                  <textarea name="description" rows="7" maxlength="8000" required disabled><?php echo h($editDescription); ?></textarea>
+                  <textarea name="description" rows="7" maxlength="8000"<?php echo $isWhatsAppTask ? '' : ' required'; ?> disabled><?php echo h($editDescription); ?></textarea>
                 </label>
                 <div class="edesk-details-actions">
                   <button type="button" class="btn btn--ghost btn--sm edesk-details-edit">Edit details</button>
