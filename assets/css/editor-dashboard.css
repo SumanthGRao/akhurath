@@ -743,6 +743,19 @@
   color: var(--edesk-muted);
 }
 
+.edesk-details-actions {
+  display: flex;
+  gap: 0.55rem;
+}
+
+.edesk-details-actions .btn {
+  flex: 1;
+}
+
+.edesk-details-actions .btn[hidden] {
+  display: none !important;
+}
+
 .edesk-prose {
   font-family: var(--font-body, "Inter", system-ui, sans-serif);
   font-size: 0.92rem;

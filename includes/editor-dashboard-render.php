@@ -480,13 +480,17 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
                 <input type="hidden" name="task_id" value="<?php echo h($tid); ?>" />
                 <label class="field">
                   <span>Project name</span>
-                  <input type="text" name="project_name" value="<?php echo h($editProjectName); ?>" maxlength="200" required />
+                  <input type="text" name="project_name" value="<?php echo h($editProjectName); ?>" maxlength="200" required disabled />
                 </label>
                 <label class="field">
                   <span><?php echo $isWhatsAppTask ? 'Description / instructions' : 'Description'; ?></span>
-                  <textarea name="description" rows="7" maxlength="8000"<?php echo $isWhatsAppTask ? '' : ' required'; ?>><?php echo h($editDescription); ?></textarea>
+                  <textarea name="description" rows="7" maxlength="8000"<?php echo $isWhatsAppTask ? '' : ' required'; ?> disabled><?php echo h($editDescription); ?></textarea>
                 </label>
-                <button type="submit" class="btn btn--primary btn--sm">Save task details</button>
+                <div class="edesk-details-actions">
+                  <button type="button" class="btn btn--ghost btn--sm edesk-details-edit">Edit details</button>
+                  <button type="submit" class="btn btn--primary btn--sm edesk-details-save" hidden>Save task details</button>
+                  <button type="button" class="btn btn--ghost btn--sm edesk-details-cancel" hidden>Cancel</button>
+                </div>
               </form>
             </section>
           <?php endif; ?>

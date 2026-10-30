@@ -1553,6 +1553,41 @@
   }
 
   function bindAjaxForms() {
+    root.addEventListener('click', function (e) {
+      var target = e.target;
+      if (!target || !target.closest) return;
+      var editBtn = target.closest('.edesk-details-edit');
+      if (editBtn) {
+        var editForm = editBtn.closest('.edesk-ajax-details');
+        if (!editForm) return;
+        qsa('input:not([type="hidden"]), textarea', editForm).forEach(function (field) {
+          field.disabled = false;
+        });
+        editBtn.hidden = true;
+        var saveBtn = qs('.edesk-details-save', editForm);
+        var cancelBtn = qs('.edesk-details-cancel', editForm);
+        if (saveBtn) saveBtn.hidden = false;
+        if (cancelBtn) cancelBtn.hidden = false;
+        var projectName = qs('[name="project_name"]', editForm);
+        if (projectName) projectName.focus();
+        return;
+      }
+
+      var cancelBtn = target.closest('.edesk-details-cancel');
+      if (!cancelBtn) return;
+      var cancelForm = cancelBtn.closest('.edesk-ajax-details');
+      if (!cancelForm) return;
+      cancelForm.reset();
+      qsa('input:not([type="hidden"]), textarea', cancelForm).forEach(function (field) {
+        field.disabled = true;
+      });
+      var editControl = qs('.edesk-details-edit', cancelForm);
+      var saveControl = qs('.edesk-details-save', cancelForm);
+      if (editControl) editControl.hidden = false;
+      if (saveControl) saveControl.hidden = true;
+      cancelBtn.hidden = true;
+    });
+
     root.addEventListener('submit', function (e) {
       var form = e.target;
       if (!form || !form.getAttribute) return;
