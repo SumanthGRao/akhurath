@@ -601,6 +601,92 @@ function akh_whatsapp_status_n8n_webhook_url(): string
     return $default;
 }
 
+function akh_whatsapp_task_details_n8n_webhook_url(): string
+{
+    if (defined('AKH_N8N_TASK_DETAILS_WEBHOOK_URL')) {
+        $configured = trim((string) AKH_N8N_TASK_DETAILS_WEBHOOK_URL);
+        if ($configured !== '') {
+            return $configured;
+        }
+    }
+
+    return 'https://n8n.akhurathstudio.com/webhook/bda8fd41-d373-4bb7-9338-ccb7871961fb';
+}
+
+/** Notify the client-facing MariaDB workflow after an editor changes task details. */
+function akh_whatsapp_dispatch_n8n_task_details_update(
+    string $taskCode,
+    string $projectName,
+    string $description
+): bool {
+    $url = akh_whatsapp_task_details_n8n_webhook_url();
+    if (!str_starts_with($url, 'https://')) {
+        error_log('akh_n8n_task_details_webhook: skipped — invalid URL');
+
+        return false;
+    }
+    if (!function_exists('curl_init')) {
+        error_log('akh_n8n_task_details_webhook: cURL extension is not available');
+
+        return false;
+    }
+
+    require_once __DIR__ . '/tasks.php';
+    $taskCode = akh_task_normalize_id(trim($taskCode));
+    if ($taskCode === '') {
+        error_log('akh_n8n_task_details_webhook: skipped — empty task_code');
+
+        return false;
+    }
+
+    $payload = json_encode([
+        'event' => 'task_details_updated',
+        'task_code' => $taskCode,
+        'project_name' => trim($projectName),
+        'description' => trim($description),
+        'source' => 'editor',
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!is_string($payload)) {
+        error_log('akh_n8n_task_details_webhook: could not encode payload');
+
+        return false;
+    }
+
+    $ch = curl_init($url);
+    if ($ch === false) {
+        error_log('akh_n8n_task_details_webhook: curl_init failed');
+
+        return false;
+    }
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
+        CURLOPT_POSTFIELDS => $payload,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 8,
+        CURLOPT_CONNECTTIMEOUT => 3,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ]);
+
+    $response = curl_exec($ch);
+    $curlError = curl_error($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($response === false || $curlError !== '' || $httpCode < 200 || $httpCode >= 300) {
+        error_log(
+            'akh_n8n_task_details_webhook: failed'
+            . ($curlError !== '' ? ' (' . $curlError . ')' : '')
+            . ' HTTP ' . $httpCode
+        );
+
+        return false;
+    }
+
+    return true;
+}
+
 /**
  * Notify n8n after a successful editor status save (fire-and-forget).
  */

@@ -184,6 +184,9 @@ const AKH_N8N_WA_MESSAGE_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook/a
  */
 const AKH_N8N_TASK_STATUS_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook/8054f3a3-50da-4270-88f3-8e6aa1be1a5a';
 
+/** n8n webhook — POST JSON when an editor saves a WhatsApp task name or description. */
+const AKH_N8N_TASK_DETAILS_WEBHOOK_URL = 'https://n8n.akhurathstudio.com/webhook/bda8fd41-d373-4bb7-9338-ccb7871961fb';
+
 /**
  * Optional token for GET /webhooks/preview-workflow-tick.php?token=...
  * n8n can call this right after inserting whatsapp_preview_messages (or client feedback rows).

@@ -236,6 +236,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim((string) ($_POST['ajax_action'
             echo json_encode([
                 'ok' => true,
                 'task_id' => $taskId,
+                'sync_warning' => !empty($t['_client_details_sync_warning']),
                 'html' => akh_editor_desk_panel_html($editor, $taskId, akh_csrf_token()),
                 'desk' => akh_editor_desk_poll_bundle($editor),
                 'bell' => akh_task_editor_board_bell_count($editor),

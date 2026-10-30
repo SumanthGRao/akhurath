@@ -1661,7 +1661,12 @@
               showToast((data && data.error) || 'Could not update task details.', 'err');
               return;
             }
-            showToast('Task details updated.', 'ok');
+            showToast(
+              data.sync_warning
+                ? 'Saved here, but the client database sync failed.'
+                : 'Task details updated.',
+              data.sync_warning ? 'err' : 'ok'
+            );
             if (data.desk) applyDeskLists(data.desk, true);
             if (typeof data.bell === 'number') setDeskBell(data.bell);
             if (data.html) mountPanelHtml(detailsId, data.html);

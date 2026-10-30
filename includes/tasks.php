@@ -2773,6 +2773,17 @@ function akh_task_editor_update_details(
         return null;
     }
 
+    if (is_array($waRow)) {
+        require_once __DIR__ . '/whatsapp-task-sync.php';
+        if (!akh_whatsapp_dispatch_n8n_task_details_update(
+            (string) ($out['id'] ?? $taskId),
+            $projectName,
+            $description
+        )) {
+            $out['_client_details_sync_warning'] = true;
+        }
+    }
+
     $client = strtolower(trim((string) ($out['client_username'] ?? '')));
     if ($client !== '') {
         akh_site_mail_client_editor_activity(
