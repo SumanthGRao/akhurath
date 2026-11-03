@@ -317,3 +317,8 @@ const AKH_STUDIO_UPI_ID = '';
 const AKH_STUDIO_UPI_PAYEE_NAME = '';
 /** Generate a unique random secret of at least 32 characters and keep it only in untracked includes/config.php. */
 const AKH_PUBLIC_PAYMENT_TOKEN_SECRET = '';
+
+/** Billing dashboard Web Push (generate a VAPID key pair with web-push-php; never commit the private key). */
+const AKH_BILLING_VAPID_PUBLIC_KEY = '';
+const AKH_BILLING_VAPID_PRIVATE_KEY = '';
+const AKH_BILLING_VAPID_SUBJECT = 'mailto:admin@example.com';

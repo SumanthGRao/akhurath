@@ -17,6 +17,22 @@ The main Akhurath site is PHP/Apache hosted. For the website URL `/billing-dashb
 10. In the live Hostinger PHP config, verify `AKH_PUBLIC_PAYMENT_BASE_URL`, `AKH_STUDIO_UPI_ID`, and `AKH_STUDIO_UPI_PAYEE_NAME`, and set a unique `AKH_PUBLIC_PAYMENT_TOKEN_SECRET` of at least 32 random characters. Never commit the token secret. Keep the page in setup-required mode until the UPI ID and payee name have been independently checked against the receiving bank account. See [upi-payment-workflow.md](docs/upi-payment-workflow.md) for the n8n/WhatsApp branch and staged test plan.
 11. Re-test `https://akhurathstudio.com/billing-dashboard/` and the login, invoice, claim, verification, and clearance flows using staging data before enabling the live WhatsApp node.
 
+## Android background task notifications
+
+Background notifications require HTTPS, Android Chrome site notification permission, the service worker, the additional Composer dependency `minishlink/web-push` (PHP 8.1 compatible v9), migration `billing-dashboard/sql/007_billing_web_push.sql`, and VAPID keys in the untracked live `includes/config.php`. Generate a VAPID key pair with the library's `\Minishlink\WebPush\VAPID::createVapidKeys()` helper; configure its public key, private key and a real `mailto:` subject as `AKH_BILLING_VAPID_PUBLIC_KEY`, `AKH_BILLING_VAPID_PRIVATE_KEY` and `AKH_BILLING_VAPID_SUBJECT`. Keep the private key server-only. Re-run Composer and deploy the generated lock/vendor files with the PHP code.
+
+After sign-in on the phone, tap **Enable task notifications** (or **Enable background alerts**) and allow the Chrome prompt. The dashboard stores the subscription for that billing account. In the n8n workflow, after inserting a row into `final_delivery_billing`, call this endpoint with the same `AKH_BILLING_N8N_TOKEN` bearer credential:
+
+```http
+POST https://akhurathstudio.com/billing-dashboard/api.php?action=n8n-new-delivery
+Authorization: Bearer <AKH_BILLING_N8N_TOKEN>
+Content-Type: application/json
+
+{"billing_id":123,"event_id":"billing-task-123"}
+```
+
+Use the inserted row's `id` as `billing_id` and a stable unique `event_id` per insert. The endpoint deduplicates repeated callbacks. Confirm delivery with the dashboard closed and Chrome allowed to run notifications. If the workflow cannot call the endpoint, the phone will continue receiving only foreground polling alerts.
+
 The accountant invoice builder is restricted to the billing delivery flow. It reuses the studio invoice generator for tax, PDF previews/downloads and email, and updates the billing row only after the invoice email succeeds or an accountant records the manual send reference. The accountant role does not receive access to the full admin invoice-management screen.
 
 Pending deliveries are automatically suggested as one invoice group when they share a non-empty `folder_id`, customer name, and phone. Accountants can select pending projects to manually group them or split selected projects into single-project invoices before creating an invoice. Combined invoices contain one editable line per project. All delivery rows linked to the same invoice are marked cleared together when that invoice's payment is recorded; n8n still processes and delivers each final file separately after clearance.

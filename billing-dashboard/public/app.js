@@ -7,7 +7,7 @@ const money = (v) => v == null ? '—' : new Intl.NumberFormat('en-IN',{style:'c
 const niceDate = (v) => v ? new Date(v).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '—';
 function apiUrl(path) {
  if (!window.BILLING_API_BASE) return path;
- const routes = {'/api/login':'login','/api/logout':'logout','/api/me':'me','/api/billing':'billing','/api/group':'group','/api/ungroup':'ungroup'};
+ const routes = {'/api/login':'login','/api/logout':'logout','/api/me':'me','/api/billing':'billing','/api/group':'group','/api/ungroup':'ungroup','/api/push-config':'push-config','/api/push-subscribe':'push-subscribe'};
  if (routes[path]) return window.BILLING_API_BASE + routes[path];
  let match = path.match(/^\/api\/billing\/(\d+)\/invoice$/); if (match) return window.BILLING_API_BASE + 'invoice-' + match[1];
  match = path.match(/^\/api\/billing\/(\d+)\/clear$/); if (match) return window.BILLING_API_BASE + 'clear-' + match[1];
@@ -20,21 +20,28 @@ function updateNotificationButton() {
  const button=$('#enable-notifications');
  if(!button)return;
  if(!('Notification' in window)||!('serviceWorker' in navigator)) { button.textContent='Notifications unavailable';button.disabled=true;button.title='This browser does not support dashboard notifications.';return; }
- if(Notification.permission==='granted') { button.textContent='Notifications enabled';button.disabled=true;button.title='Task alerts are enabled for this browser.';return; }
+ if(Notification.permission==='granted') { button.textContent='Enable background alerts';button.disabled=false;button.title='Register this phone to receive alerts when the dashboard is closed.';return; }
  if(Notification.permission==='denied') { button.textContent='Notifications blocked';button.disabled=true;button.title='Allow notifications for this site in Chrome settings.';return; }
  button.textContent='Enable task notifications';button.disabled=false;button.title='Ask Chrome to allow task alerts.';
 }
 async function enableTaskNotifications() {
  if(!('Notification' in window)||!('serviceWorker' in navigator))return;
  try {
-  const permission=await Notification.requestPermission();
+  const permission=Notification.permission==='granted'?'granted':await Notification.requestPermission();
   updateNotificationButton();
   if(permission==='granted') {
    const registration=await navigator.serviceWorker.ready;
-   await registration.showNotification('Task notifications enabled',{body:'New delivery tasks will appear here while the dashboard is open.',icon:'../assets/images/brand/akhurath-favicon-192.png',tag:'billing-notifications-enabled'});
+   const config=await api('/api/push-config');
+   if(!config.public_key)throw new Error('Background push is not configured on the server yet.');
+   let subscription=await registration.pushManager.getSubscription();
+   if(!subscription)subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:base64UrlBytes(config.public_key)});
+   await api('/api/push-subscribe',{method:'POST',body:JSON.stringify({subscription:subscription.toJSON()})});
+   button.textContent='Background alerts enabled';button.disabled=true;
+   await registration.showNotification('Task notifications enabled',{body:'This phone is registered for new delivery task alerts. The workflow must send the push event.',icon:'../assets/images/brand/akhurath-favicon-192.png',tag:'billing-notifications-enabled'});
   }
- } catch(error) { console.error('Could not enable billing notifications:',error); }
+ } catch(error) { console.error('Could not enable billing notifications:',error);alert(error.message||'Could not enable notifications.'); }
 }
+function base64UrlBytes(value){const padded=value.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-value.length%4)%4);return Uint8Array.from(atob(padded),c=>c.charCodeAt(0));}
 function notifyNewBillingTasks(newTasks) {
  if(!newTasks.length||!('Notification' in window)||Notification.permission!=='granted')return;
  const count=newTasks.length;

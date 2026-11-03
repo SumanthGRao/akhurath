@@ -18,6 +18,20 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(fetch(request));
 });
 
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (_) { data = { body: event.data?.text() || '' }; }
+  const title = typeof data.title === 'string' ? data.title : 'New delivery task';
+  const options = {
+    body: typeof data.body === 'string' ? data.body : 'A new task is waiting in the billing dashboard.',
+    icon: new URL('../assets/images/brand/akhurath-favicon-192.png', self.registration.scope).href,
+    badge: new URL('../assets/images/brand/akhurath-favicon-48.png', self.registration.scope).href,
+    tag: typeof data.tag === 'string' ? data.tag : 'billing-new-task',
+    data: { url: typeof data.url === 'string' ? data.url : new URL('./', self.registration.scope).href }
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const target = event.notification.data?.url || new URL('./', self.registration.scope).href;
