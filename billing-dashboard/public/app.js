@@ -25,6 +25,7 @@ function updateNotificationButton() {
  button.textContent='Enable task notifications';button.disabled=false;button.title='Ask Chrome to allow task alerts.';
 }
 async function enableTaskNotifications() {
+ const button=$('#enable-notifications');
  if(!('Notification' in window)||!('serviceWorker' in navigator))return;
  try {
   const permission=Notification.permission==='granted'?'granted':await Notification.requestPermission();
