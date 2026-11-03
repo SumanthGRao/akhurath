@@ -17,3 +17,13 @@ self.addEventListener('fetch', (event) => {
   // Pass dashboard navigations directly to the server; do not store sensitive billing data.
   event.respondWith(fetch(request));
 });
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = event.notification.data?.url || new URL('./', self.registration.scope).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+    const openClient = clients.find((client) => client.url.startsWith(self.registration.scope));
+    if (openClient) return openClient.focus();
+    return self.clients.openWindow(target);
+  }));
+});
