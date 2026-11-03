@@ -237,13 +237,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null && $error === '')
                 } elseif (!akh_invoices_schema_ready()) {
                     $error = 'The studio invoice tables are not installed. An administrator must finish invoice setup first.';
                 } else {
-                    $client = akh_invoice_client_get($clientSlug);
-                    if ($client === null) {
+                    $client = akh_invoice_client_find_for_billing((string) $billing['customer_name'], $email, (string) $billing['phone']);
+                    if ($client !== null) {
+                        // Reuse a stable client reference instead of creating delivery_N entries.
+                        $clientSlug = (string) $client['slug'];
+                        if ($email !== '') {
+                            akh_invoice_client_update($clientSlug, (string) $billing['customer_name'], $email, (string) $billing['phone'], (string) ($client['address'] ?? ''), (string) ($client['notes'] ?? ''));
+                            $client = akh_invoice_client_get($clientSlug);
+                        }
+                    } else {
+                        $clientSlug = akh_invoice_client_slug_from_name((string) $billing['customer_name']);
                         $added = akh_invoice_client_add((string) $billing['customer_name'], $email, (string) $billing['phone'], '', 'Billing delivery ' . (string) $billing['task_code'], $clientSlug);
                         $client = $added !== null ? akh_invoice_client_get($clientSlug) : null;
-                    } elseif ($email !== '') {
-                        akh_invoice_client_update($clientSlug, (string) $billing['customer_name'], $email, (string) $billing['phone'], (string) ($client['address'] ?? ''), (string) ($client['notes'] ?? ''));
-                        $client = akh_invoice_client_get($clientSlug);
                     }
                     if ($client === null) {
                         $error = 'Could not prepare the customer for invoicing. Check server write access to data/invoice-clients.json.';

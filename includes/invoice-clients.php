@@ -138,6 +138,49 @@ function akh_invoice_client_get(string $slug): ?array
     return $all[$slug] ?? null;
 }
 
+/** Normalize Indian phone numbers so +91 and local 10-digit forms match. */
+function akh_invoice_client_phone_identity(string $phone): string
+{
+    $digits = preg_replace('/\D+/', '', trim($phone)) ?? '';
+    if (strlen($digits) === 12 && str_starts_with($digits, '91')) {
+        $digits = substr($digits, 2);
+    }
+    return $digits;
+}
+
+/**
+ * Find an existing invoice client by stable contact details.
+ * Name-only matching is used only when neither email nor phone is available.
+ *
+ * @return array{slug: string, display_name: string, email: string, phone: string, address: string, notes: string}|null
+ */
+function akh_invoice_client_find_for_billing(string $displayName, string $email, string $phone): ?array
+{
+    $email = strtolower(trim($email));
+    $phoneIdentity = akh_invoice_client_phone_identity($phone);
+    $nameIdentity = function_exists('mb_strtolower') ? mb_strtolower(trim($displayName), 'UTF-8') : strtolower(trim($displayName));
+    $clients = akh_invoice_clients_list();
+
+    // Email is the strongest identifier; prefer it when it is supplied.
+    if ($email !== '') {
+        foreach ($clients as $client) {
+            if (strtolower(trim($client['email'])) === $email) return $client;
+        }
+    }
+    if ($phoneIdentity !== '') {
+        foreach ($clients as $client) {
+            if (akh_invoice_client_phone_identity($client['phone']) === $phoneIdentity) return $client;
+        }
+    }
+    if ($email === '' && $phoneIdentity === '' && $nameIdentity !== '') {
+        foreach ($clients as $client) {
+            $clientName = function_exists('mb_strtolower') ? mb_strtolower(trim($client['display_name']), 'UTF-8') : strtolower(trim($client['display_name']));
+            if ($clientName === $nameIdentity) return $client;
+        }
+    }
+    return null;
+}
+
 /**
  * @return list<array{slug: string, display_name: string, email: string, phone: string, address: string, notes: string}>
  */
