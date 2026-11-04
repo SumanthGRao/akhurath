@@ -32,17 +32,31 @@ async function enableTaskNotifications() {
   updateNotificationButton();
   if(permission==='granted') {
    const registration=await navigator.serviceWorker.ready;
-   const config=await api('/api/push-config');
-   if(!config.public_key)throw new Error('Background push is not configured on the server yet.');
-   let subscription=await registration.pushManager.getSubscription();
-   if(!subscription)subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:base64UrlBytes(config.public_key)});
-   await api('/api/push-subscribe',{method:'POST',body:JSON.stringify({subscription:subscription.toJSON()})});
-   button.textContent='Background alerts enabled';button.disabled=true;
+   await syncTaskPushSubscription(true);
    await registration.showNotification('Task notifications enabled',{body:'This phone is registered for new delivery task alerts. The workflow must send the push event.',icon:'../assets/images/brand/akhurath-favicon-192.png',tag:'billing-notifications-enabled'});
   }
  } catch(error) { console.error('Could not enable billing notifications:',error);alert(error.message||'Could not enable notifications.'); }
 }
 function base64UrlBytes(value){const padded=value.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-value.length%4)%4);return Uint8Array.from(atob(padded),c=>c.charCodeAt(0));}
+function sameBytes(a,b){if(!a||a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(a[i]!==b[i])return false;return true;}
+async function syncTaskPushSubscription(createIfMissing=false){
+ const button=$('#enable-notifications');
+ if(!('Notification' in window)||Notification.permission!=='granted'||!('serviceWorker' in navigator))return false;
+ const registration=await navigator.serviceWorker.ready;
+ const config=await api('/api/push-config');
+ if(!config.public_key)throw new Error('Background push is not configured on the server yet.');
+ const applicationServerKey=base64UrlBytes(config.public_key);
+ let subscription=await registration.pushManager.getSubscription();
+ if(subscription?.options?.applicationServerKey&&!sameBytes(new Uint8Array(subscription.options.applicationServerKey),applicationServerKey)){
+  await subscription.unsubscribe();
+  subscription=null;
+ }
+ if(!subscription&&createIfMissing)subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey});
+ if(!subscription){updateNotificationButton();return false;}
+ await api('/api/push-subscribe',{method:'POST',body:JSON.stringify({subscription:subscription.toJSON()})});
+ if(button){button.textContent='Background alerts enabled';button.disabled=true;button.title='This browser subscription is saved for background task alerts.';}
+ return true;
+}
 function notifyNewBillingTasks(newTasks) {
  if(!newTasks.length||!('Notification' in window)||Notification.permission!=='granted')return;
  const count=newTasks.length;
@@ -51,7 +65,7 @@ function notifyNewBillingTasks(newTasks) {
  const body=count===1?`${first.task_code||'A task'} is waiting in the billing dashboard.`:`${count} tasks are waiting in the billing dashboard.`;
  navigator.serviceWorker.ready.then((registration)=>registration.showNotification(title,{body,icon:'../assets/images/brand/akhurath-favicon-192.png',badge:'../assets/images/brand/akhurath-favicon-48.png',tag:`billing-new-task-${first.id}`,data:{url:new URL('./',location.href).href}})).catch((error)=>console.error('Could not show billing notification:',error));
 }
-async function init() { try { const me=await api('/api/me'); currentUser=me.user; $('#user-name').textContent=currentUser.username; $('#user-role').textContent=currentUser.role; $('#mode-badge').textContent=me.mode==='demo'?'Demo mode':'MariaDB connected'; $('#mode-badge').style.background=me.mode==='demo'?'#f0eadc':'#e6f1e9'; $('#mode-badge').style.color=me.mode==='demo'?'#806d43':'#477251'; $('#today').textContent=new Date().toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'}); loginView.hidden=true; appView.hidden=false; try { await refresh(); } catch (e) { showAppError(e.message); } if (pollTimer===null) pollTimer=setInterval(()=>{if(currentUser&&!document.hidden)refresh(true);},5000); } catch (e) { if(e.message!=='Sign in required.') { console.error(e); $('#login-error').textContent=e.message; } showLogin(); } }
+async function init() { try { const me=await api('/api/me'); currentUser=me.user; $('#user-name').textContent=currentUser.username; $('#user-role').textContent=currentUser.role; $('#mode-badge').textContent=me.mode==='demo'?'Demo mode':'MariaDB connected'; $('#mode-badge').style.background=me.mode==='demo'?'#f0eadc':'#e6f1e9'; $('#mode-badge').style.color=me.mode==='demo'?'#806d43':'#477251'; $('#today').textContent=new Date().toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'}); loginView.hidden=true; appView.hidden=false; updateNotificationButton(); if(Notification.permission==='granted'){try{await syncTaskPushSubscription(false);}catch(pushError){console.error('Could not restore billing push subscription:',pushError);updateNotificationButton();}} try { await refresh(); } catch (e) { showAppError(e.message); } if (pollTimer===null) pollTimer=setInterval(()=>{if(currentUser&&!document.hidden)refresh(true);},5000); } catch (e) { if(e.message!=='Sign in required.') { console.error(e); $('#login-error').textContent=e.message; } showLogin(); } }
 async function refresh(silent=false) { if(refreshInFlight||!currentUser)return; refreshInFlight=true; try { const data=await api('/api/billing',{cache:'no-store'}); const nextItems=Array.isArray(data.items)?data.items:[]; const newTasks=knownBillingIds===null?[]:nextItems.filter(x=>!knownBillingIds.has(Number(x.id))); knownBillingIds=new Set(nextItems.map(x=>Number(x.id))); items=nextItems; notifyNewBillingTasks(newTasks); for(const id of selectedIds){const item=items.find(x=>Number(x.id)===id);if(!item||!eligibleForGrouping(item))selectedIds.delete(id);} render(); showAppError(); const status=$('#live-status'); if(status){status.textContent=`Live · ${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;status.classList.remove('sync-error');} } catch(e) { const status=$('#live-status'); if(status){status.textContent='Sync delayed';status.classList.add('sync-error');} if(!silent)showAppError(e.message); } finally { refreshInFlight=false; } }
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentUser)refresh(true);});
 function eligibleForGrouping(x) { return x.invoice_status==='pending'&&!x.source_invoice_id&&x.payment_status==='unpaid'&&x.delivery_status==='awaiting_payment'; }
