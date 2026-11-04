@@ -85,20 +85,23 @@ PREPARE billing_stmt FROM @billing_sql;
 EXECUTE billing_stmt;
 DEALLOCATE PREPARE billing_stmt;
 
--- Send existing duplicate, untouched task rows to review exactly once.
+-- Send duplicate, untouched versions to review. A task can also have older
+-- invoiced/delivered rows, which must stay out of the review workflow.
 UPDATE final_delivery_billing AS billing
 JOIN (
   SELECT task_code
   FROM final_delivery_billing
-  WHERE version_review_status = 'selected'
+  WHERE version_review_status IN ('selected', 'pending')
+    AND invoice_status = 'pending'
+    AND payment_status = 'unpaid'
+    AND source_invoice_id IS NULL
+    AND delivery_status = 'awaiting_payment'
   GROUP BY task_code
   HAVING COUNT(*) > 1
-    AND SUM(
-      invoice_status = 'pending'
-      AND payment_status = 'unpaid'
-      AND source_invoice_id IS NULL
-      AND delivery_status = 'awaiting_payment'
-    ) = COUNT(*)
 ) AS duplicate_tasks ON duplicate_tasks.task_code = billing.task_code
 SET billing.version_review_status = 'pending'
-WHERE billing.version_review_status = 'selected';
+WHERE billing.version_review_status = 'selected'
+  AND billing.invoice_status = 'pending'
+  AND billing.payment_status = 'unpaid'
+  AND billing.source_invoice_id IS NULL
+  AND billing.delivery_status = 'awaiting_payment';
