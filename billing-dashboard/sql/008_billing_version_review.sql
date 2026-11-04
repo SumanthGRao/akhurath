@@ -32,3 +32,19 @@ ALTER TABLE final_delivery_billing
   ADD COLUMN version_review_status ENUM('selected','pending','discarded') NOT NULL DEFAULT 'selected' AFTER task_code,
   ADD UNIQUE KEY uq_billing_task_file (task_code, drive_file_id),
   ADD INDEX idx_billing_version_review (task_code, version_review_status);
+
+-- Move existing duplicate, untouched task rows into accountant review as well.
+UPDATE final_delivery_billing AS billing
+JOIN (
+  SELECT task_code
+  FROM final_delivery_billing
+  GROUP BY task_code
+  HAVING COUNT(*) > 1
+    AND SUM(
+      invoice_status = 'pending'
+      AND payment_status = 'unpaid'
+      AND source_invoice_id IS NULL
+      AND delivery_status = 'awaiting_payment'
+    ) = COUNT(*)
+) AS duplicate_tasks ON duplicate_tasks.task_code = billing.task_code
+SET billing.version_review_status = 'pending';
