@@ -12,10 +12,11 @@ The main Akhurath site is PHP/Apache hosted. For the website URL `/billing-dashb
    If an invoice or payment action says its audit entry could not be saved, run `billing-dashboard/sql/004_billing_audit_log.sql` in phpMyAdmin and confirm the site database user has `INSERT` permission on `billing_audit_log`.
 6. Open `/admin/dashboard-access.php` as an administrator and use the **Accountant billing dashboard** section to create or remove accountant logins. Existing administrators can also sign in. Accounts created before the role migration may appear under **Accounts needing a role**; explicitly choose **Make accountant** for the intended account to preserve its existing password hash.
 7. Apply `billing-dashboard/sql/006_upi_payment_claims.sql` after the studio invoice tables exist. This adds tokenized public payment links, claim records, and the `payment_claimed` state. The migration is safe to rerun.
-8. Install the local SVG QR package from `billing-dashboard/composer.json` with Composer in a PHP 8.1+ build environment, commit its generated `composer.lock`, and upload `billing-dashboard/vendor/` to Hostinger alongside the PHP files. The QR is generated locally; do not substitute a third-party QR URL.
-9. Set `AKH_BILLING_N8N_TOKEN` as a server environment secret or define it in the untracked `includes/config.php`. Never add its value to Git.
-10. In the live Hostinger PHP config, verify `AKH_PUBLIC_PAYMENT_BASE_URL`, `AKH_STUDIO_UPI_ID`, and `AKH_STUDIO_UPI_PAYEE_NAME`, and set a unique `AKH_PUBLIC_PAYMENT_TOKEN_SECRET` of at least 32 random characters. Never commit the token secret. Keep the page in setup-required mode until the UPI ID and payee name have been independently checked against the receiving bank account. See [upi-payment-workflow.md](docs/upi-payment-workflow.md) for the n8n/WhatsApp branch and staged test plan.
-11. Re-test `https://akhurathstudio.com/billing-dashboard/` and the login, invoice, claim, verification, and clearance flows using staging data before enabling the live WhatsApp node.
+8. For an existing billing database, apply `billing-dashboard/sql/008_billing_version_review.sql` once after deploying the updated code. Fresh installations created from `001_php_hostinger.sql` already include version review. This migration keeps existing rows selected and lets different Drive file IDs share one task code.
+9. Install the local SVG QR package from `billing-dashboard/composer.json` with Composer in a PHP 8.1+ build environment, commit its generated `composer.lock`, and upload `billing-dashboard/vendor/` to Hostinger alongside the PHP files. The QR is generated locally; do not substitute a third-party QR URL.
+10. Set `AKH_BILLING_N8N_TOKEN` as a server environment secret or define it in the untracked `includes/config.php`. Never add its value to Git.
+11. In the live Hostinger PHP config, verify `AKH_PUBLIC_PAYMENT_BASE_URL`, `AKH_STUDIO_UPI_ID`, and `AKH_STUDIO_UPI_PAYEE_NAME`, and set a unique `AKH_PUBLIC_PAYMENT_TOKEN_SECRET` of at least 32 random characters. Never commit the token secret. Keep the page in setup-required mode until the UPI ID and payee name have been independently checked against the receiving bank account. See [upi-payment-workflow.md](docs/upi-payment-workflow.md) for the n8n/WhatsApp branch and staged test plan.
+12. Re-test `https://akhurathstudio.com/billing-dashboard/` and the login, invoice, claim, verification, and clearance flows using staging data before enabling the live WhatsApp node.
 
 ## Android background task notifications
 
@@ -32,6 +33,38 @@ Content-Type: application/json
 ```
 
 Use the inserted row's `id` as `billing_id` and a stable unique `event_id` per insert. The endpoint deduplicates repeated callbacks. Confirm delivery with the dashboard closed and Chrome allowed to run notifications. If the workflow cannot call the endpoint, the phone will continue receiving only foreground polling alerts.
+
+## Review multiple final versions
+
+The upload workflow must insert each distinct Drive file as its own `final_delivery_billing` row. Add `version_review_status` to the insert columns with the value `'pending'`. Since duplicate task codes are now allowed for different `drive_file_id` values, use the composite unique key `(task_code, drive_file_id)` for idempotency. Update the n8n SQL node to this shape (keep your existing expressions for the values):
+
+```sql
+INSERT INTO final_delivery_billing (
+  task_code, phone, customer_name, project_name, task_type, folder_id,
+  drive_file_id, file_name, mime_type, file_size,
+  delivery_status, invoice_status, payment_status, version_review_status
+)
+VALUES (
+  '{{ $("Execute a SQL query").item.json.task_code }}',
+  '{{ $("Execute a SQL query").item.json.phone }}',
+  '{{ $("Execute a SQL query").item.json.customer_name }}',
+  '{{ $("Execute a SQL query").item.json.project_name }}',
+  '{{ $("Execute a SQL query").item.json.task_type }}',
+  '{{ $("Execute a SQL query").item.json.folder_id }}',
+  '{{ $("Code in JavaScript").item.json.fileId }}',
+  '{{ $("Code in JavaScript").item.json.fileName }}',
+  '{{ $("Code in JavaScript").item.json.mimeType }}',
+  {{ $("Code in JavaScript").item.json.size }},
+  'awaiting_payment', 'pending', 'unpaid', 'pending'
+)
+ON DUPLICATE KEY UPDATE
+  id = LAST_INSERT_ID(id),
+  updated_at = CURRENT_TIMESTAMP;
+
+SELECT LAST_INSERT_ID() AS billing_id;
+```
+
+After upload, the accountant dashboard shows all versions for that task in **Final versions to review**. The accountant can preview each file in Drive, choose one for billing, or remove an alternative from the billing list. Removing a version marks it discarded in billing history; it does not delete its Drive file. While a task has an unresolved pending version, none of its versions can be invoiced. Once an accountant chooses one, the chosen version enters the billing queue and the alternatives are hidden from that queue.
 
 The accountant invoice builder is restricted to the billing delivery flow. It reuses the studio invoice generator for tax, PDF previews/downloads and email, and updates the billing row only after the invoice email succeeds or an accountant records the manual send reference. The accountant role does not receive access to the full admin invoice-management screen.
 

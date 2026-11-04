@@ -2,7 +2,8 @@
 
 CREATE TABLE IF NOT EXISTS final_delivery_billing (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  task_code VARCHAR(100) NOT NULL UNIQUE,
+  task_code VARCHAR(100) NOT NULL,
+  version_review_status ENUM('selected','pending','discarded') NOT NULL DEFAULT 'selected',
   phone VARCHAR(40) NOT NULL,
   customer_name VARCHAR(200) NOT NULL,
   project_name VARCHAR(255) NOT NULL,
@@ -32,6 +33,8 @@ CREATE TABLE IF NOT EXISTS final_delivery_billing (
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   INDEX idx_billing_queue (payment_status, invoice_status, created_at),
+  UNIQUE KEY uq_billing_task_file (task_code, drive_file_id),
+  INDEX idx_billing_version_review (task_code, version_review_status),
   INDEX idx_delivery_queue (delivery_status, payment_status),
   INDEX idx_billing_folder_group (folder_id, billing_group_mode, invoice_status, payment_status),
   INDEX idx_billing_manual_group (billing_group_key, billing_group_mode)

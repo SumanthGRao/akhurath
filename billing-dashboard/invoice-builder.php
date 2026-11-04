@@ -154,24 +154,32 @@ if (!$db instanceof PDO || $billingId < 1) {
         $st->execute([$billingId]);
         $billing = $st->fetch(PDO::FETCH_ASSOC) ?: null;
         if ($billing !== null) {
+            if (($billing['version_review_status'] ?? 'selected') !== 'selected') {
+                throw new RuntimeException('Choose the final version in the billing dashboard before creating an invoice.');
+            }
+            $pendingVersions = $db->prepare("SELECT COUNT(*) FROM final_delivery_billing WHERE task_code=? AND version_review_status='pending'");
+            $pendingVersions->execute([$billing['task_code']]);
+            if ((int) $pendingVersions->fetchColumn() > 0) {
+                throw new RuntimeException('Review the alternate final versions before creating an invoice.');
+            }
             if ($billingIds === []) {
                 if (!empty($billing['source_invoice_id'])) {
                     $group = $db->prepare('SELECT * FROM final_delivery_billing WHERE source_invoice_id=? ORDER BY id ASC');
                     $group->execute([$billing['source_invoice_id']]);
                     $billingRows = $group->fetchAll(PDO::FETCH_ASSOC);
                 } elseif (($billing['billing_group_mode'] ?? 'auto') === 'manual' && !empty($billing['billing_group_key'])) {
-                    $group = $db->prepare("SELECT * FROM final_delivery_billing WHERE billing_group_mode='manual' AND billing_group_key=? AND invoice_status='pending' AND payment_status='unpaid' AND source_invoice_id IS NULL ORDER BY id ASC");
+                    $group = $db->prepare("SELECT * FROM final_delivery_billing b WHERE b.version_review_status='selected' AND b.billing_group_mode='manual' AND b.billing_group_key=? AND b.invoice_status='pending' AND b.payment_status='unpaid' AND b.source_invoice_id IS NULL AND NOT EXISTS (SELECT 1 FROM final_delivery_billing p WHERE p.task_code=b.task_code AND p.version_review_status='pending') ORDER BY b.id ASC");
                     $group->execute([$billing['billing_group_key']]);
                     $billingRows = $group->fetchAll(PDO::FETCH_ASSOC);
                 } elseif (($billing['billing_group_mode'] ?? 'auto') === 'auto' && !empty($billing['folder_id'])) {
-                    $group = $db->prepare("SELECT * FROM final_delivery_billing WHERE billing_group_mode='auto' AND folder_id=? AND customer_name=? AND phone=? AND invoice_status='pending' AND payment_status='unpaid' AND source_invoice_id IS NULL AND delivery_status='awaiting_payment' ORDER BY id ASC");
+                    $group = $db->prepare("SELECT * FROM final_delivery_billing b WHERE b.version_review_status='selected' AND b.billing_group_mode='auto' AND b.folder_id=? AND b.customer_name=? AND b.phone=? AND b.invoice_status='pending' AND b.payment_status='unpaid' AND b.source_invoice_id IS NULL AND b.delivery_status='awaiting_payment' AND NOT EXISTS (SELECT 1 FROM final_delivery_billing p WHERE p.task_code=b.task_code AND p.version_review_status='pending') ORDER BY b.id ASC");
                     $group->execute([$billing['folder_id'], $billing['customer_name'], $billing['phone']]);
                     $billingRows = $group->fetchAll(PDO::FETCH_ASSOC);
                 }
             } else {
                 if (count($billingIds) > 50) throw new RuntimeException('A combined invoice can include at most 50 projects.');
                 $marks = implode(',', array_fill(0, count($billingIds), '?'));
-                $group = $db->prepare("SELECT * FROM final_delivery_billing WHERE id IN ($marks) ORDER BY id ASC");
+                $group = $db->prepare("SELECT b.* FROM final_delivery_billing b WHERE b.id IN ($marks) AND b.version_review_status='selected' AND NOT EXISTS (SELECT 1 FROM final_delivery_billing p WHERE p.task_code=b.task_code AND p.version_review_status='pending') ORDER BY b.id ASC");
                 $group->execute($billingIds);
                 $billingRows = $group->fetchAll(PDO::FETCH_ASSOC);
                 if (count($billingRows) !== count($billingIds)) throw new RuntimeException('One or more selected projects no longer exist.');
