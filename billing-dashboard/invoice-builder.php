@@ -359,6 +359,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null && $error === '')
                     }
                 }
             }
+        } elseif ($action === 'mark_paid_without_sending' && !empty($billing['source_invoice_id'])) {
+            $invoiceId = (int) $billing['source_invoice_id'];
+            $reference = trim((string) ($_POST['payment_reference'] ?? ''));
+            $confirmed = ($_POST['actual_credit_confirmed'] ?? '') === '1';
+            $linkedRowsReady = count($billingRows) > 0;
+            foreach ($billingRows as $row) {
+                if ((int) ($row['source_invoice_id'] ?? 0) !== $invoiceId || (string) ($row['invoice_status'] ?? '') !== 'pending' || (string) ($row['payment_status'] ?? '') !== 'unpaid' || (string) ($row['delivery_status'] ?? '') !== 'awaiting_payment') {
+                    $linkedRowsReady = false;
+                    break;
+                }
+            }
+            $linkedInvoice = akh_invoice_get($invoiceId);
+            if (!$confirmed || $reference === '' || strlen($reference) > 255) {
+                $error = 'Confirm the incoming credit and enter its verified bank or UPI reference.';
+            } elseif (!$linkedRowsReady || !is_array($linkedInvoice) || (string) ($linkedInvoice['status'] ?? '') !== 'draft') {
+                $error = 'Only a draft invoice with all linked projects still awaiting payment can be marked paid this way. Refresh the billing dashboard to verify its status.';
+            } else {
+                $actor = (string) ($_SESSION['akh_billing_user'] ?? akh_admin_current() ?? 'admin');
+                $deliveryEventId = 'payment-cleared-' . $invoiceId . '-' . bin2hex(random_bytes(12));
+                $db->beginTransaction();
+                try {
+                    $paidInvoice = $db->prepare("UPDATE invoices SET status='paid', sent_at=NULL WHERE id=? AND status='draft'");
+                    $paidInvoice->execute([$invoiceId]);
+                    if ($paidInvoice->rowCount() !== 1) throw new RuntimeException('The invoice is no longer a draft. Refresh and verify its status.');
+                    $marks = implode(',', array_fill(0, count($billingIds), '?'));
+                    $paidRows = $db->prepare("UPDATE final_delivery_billing SET invoice_status='paid', payment_status='cleared', payment_reference=?, cleared_by=?, cleared_at=UTC_TIMESTAMP(3), delivery_status='ready' WHERE id IN ($marks) AND source_invoice_id=? AND invoice_status='pending' AND payment_status='unpaid' AND delivery_status='awaiting_payment'");
+                    $paidRows->execute(array_merge([$reference, $actor], $billingIds, [$invoiceId]));
+                    if ($paidRows->rowCount() !== count($billingIds)) throw new RuntimeException('One or more linked projects changed before payment could be recorded. Refresh the billing dashboard.');
+                    foreach ($billingRows as $row) {
+                        $auditDetails = ['invoice_id'=>$invoiceId,'invoice_number'=>(string)$linkedInvoice['invoice_number'],'payment_reference'=>$reference,'actual_credit_confirmed'=>true,'group_count'=>count($billingRows),'delivery_event_id'=>$deliveryEventId];
+                        if (!billing_invoice_audit($db, (int) $row['id'], $actor, 'invoice_paid_without_sending', $auditDetails)
+                            || !billing_invoice_audit($db, (int) $row['id'], $actor, 'payment_cleared', $auditDetails)) {
+                            throw new RuntimeException('The payment audit could not be saved. Confirm billing-dashboard/sql/004_billing_audit_log.sql is installed, then retry.');
+                        }
+                    }
+                    $db->commit();
+                } catch (Throwable $e) {
+                    if ($db->inTransaction()) $db->rollBack();
+                    throw $e;
+                }
+                $deliveryQuery = $db->prepare('SELECT id AS billing_id,task_code,phone,customer_name,project_name,task_type,folder_id,drive_file_id,file_name,invoice_number FROM final_delivery_billing WHERE source_invoice_id=? ORDER BY id ASC');
+                $deliveryQuery->execute([$invoiceId]);
+                $deliveries = $deliveryQuery->fetchAll(PDO::FETCH_ASSOC);
+                $deliveryPayload = ['event'=>'billing.payment.cleared','event_id'=>$deliveryEventId,'billing_id'=>(int)($deliveries[0]['billing_id'] ?? $billingId),'invoice_id'=>$invoiceId,'invoice_number'=>(string)$linkedInvoice['invoice_number'],'invoice_status'=>'paid','phone'=>(string)$billing['phone'],'customer_name'=>(string)$billing['customer_name'],'payment_status'=>'cleared','total_paise'=>(int)($linkedInvoice['total_paise'] ?? 0),'currency'=>(string)($linkedInvoice['currency'] ?? 'INR'),'due_at'=>(string)($linkedInvoice['due_at'] ?? ''),'deliveries'=>$deliveries];
+                $deliverySent = billing_delivery_dispatch_event($deliveryPayload);
+                header('Location: ' . base_path('billing-dashboard/invoice-builder.php?ids=' . implode(',', $billingIds) . '&paid_invoice=1&delivery_notified=' . ($deliverySent ? '1' : '0')));
+                exit;
+            }
         } elseif ($action === 'resend_payment_link' && !empty($billing['source_invoice_id'])) {
             $invoiceId = (int) $billing['source_invoice_id'];
             $linkedRowsReady = count($billingRows) > 0;
@@ -528,6 +576,7 @@ $csrf = akh_csrf_token();
       <?php if ((string) $billing['invoice_status'] === 'pending' && (string) $invoice['status'] !== 'void'): ?>
         <form method="post"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><?php foreach ($billingIds as $rowId): ?><input type="hidden" name="billing_ids[]" value="<?php echo (int) $rowId; ?>"><?php endforeach; ?><input type="hidden" name="action" value="send_invoice"><div class="grid"><label class="field"><span>Send PDF invoice by email to</span><input type="email" name="send_email" value="<?php echo h((string) ($invoice['client_email'] ?? '')); ?>" placeholder="client@example.com"></label></div><button class="btn">Email invoice and mark as sent</button></form>
         <form method="post" style="margin-top:18px"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><?php foreach ($billingIds as $rowId): ?><input type="hidden" name="billing_ids[]" value="<?php echo (int) $rowId; ?>"><?php endforeach; ?><input type="hidden" name="action" value="mark_manual_sent"><label class="field"><span>Already sent this PDF outside the dashboard? Enter the recipient or reference</span><input type="text" name="send_reference" maxlength="255" placeholder="Client email or WhatsApp reference" required></label><button class="btn alt">Confirm sent manually</button><p class="muted">The billing queue becomes invoice-sent after email succeeds or you confirm manual sending here.</p></form>
+        <form method="post" class="notice" style="margin-top:18px"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><?php foreach ($billingIds as $rowId): ?><input type="hidden" name="billing_ids[]" value="<?php echo (int) $rowId; ?>"><?php endforeach; ?><input type="hidden" name="action" value="mark_paid_without_sending"><strong>Client already paid? Record this invoice as paid without sending it.</strong><p class="muted">This marks the invoice paid, records clearance, and releases delivery. It does not email the invoice or send a payment link.</p><label class="field"><span>Verified bank / UPI reference</span><input type="text" name="payment_reference" maxlength="255" placeholder="Reference visible in your bank account" required></label><label><input type="checkbox" name="actual_credit_confirmed" value="1" required> I have confirmed the incoming credit in the bank account.</label><p><button class="btn alt" onclick="return confirm('Mark this invoice paid and release the delivery without sending it to the client?');">Mark as paid without sending</button></p></form>
       <?php endif; ?>
     </section>
   <?php elseif ($billing !== null && array_filter($billingRows, static fn($row) => (string) $row['invoice_status'] === 'pending' && empty($row['source_invoice_id']))): ?>
