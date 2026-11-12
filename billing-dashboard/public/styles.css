@@ -136,3 +136,6 @@ button,input,select{max-width:100%}
  .version-option{align-items:flex-start;flex-direction:column}
  .version-actions{justify-content:flex-start}
 }
+
+.view-tabs{display:flex;gap:7px;align-items:center;border-bottom:1px solid var(--line);margin:0 0 20px;overflow-x:auto}.view-tab{display:flex;align-items:center;gap:8px;white-space:nowrap;border:0;border-bottom:2px solid transparent;padding:11px 14px 12px;background:transparent;color:#718078;font-size:12px;font-weight:700}.view-tab:hover{color:var(--green)}.view-tab.active{border-bottom-color:var(--green);color:var(--green)}.tab-count{display:grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:12px;background:#edf2ed;color:var(--green);font-size:10px}.tab-panel[hidden],#queue-panel[hidden]{display:none}.badge.paid{background:#e1f1e6;color:#28633c}.cleared-summary{margin:0 0 14px}.analytics-metrics{margin:0 0 16px}.metric-caption{display:block;margin-top:6px;color:#858f88;font-size:10px}.analytics-card{margin-bottom:12px}.queue-head .muted{margin:5px 0 0;max-width:600px}.queue-head>div{min-width:0}
+@media(max-width:620px){.view-tabs{gap:0;margin-bottom:15px}.view-tab{padding:10px 9px;font-size:11px}.tab-count{min-width:18px;height:18px;padding:0 5px}.analytics-metrics{margin:0 0 12px}}
