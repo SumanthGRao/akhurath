@@ -215,11 +215,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null && $error === '')
         $error = 'Security check failed. Refresh and try again.';
     } else {
         $action = (string) ($_POST['action'] ?? '');
-        if ($action === 'create_invoice') {
+        if ($action === 'create_invoice' || $action === 'create_paid_invoice') {
+            $alreadyPaid = $action === 'create_paid_invoice';
             $eligibleRows = array_filter($billingRows, static fn($row) => (string) $row['invoice_status'] === 'pending' && (string) $row['payment_status'] === 'unpaid' && empty($row['source_invoice_id']) && (string) $row['delivery_status'] === 'awaiting_payment');
             if (count($eligibleRows) !== count($billingRows)) {
                 $error = 'One or more selected projects already have an invoice or are no longer awaiting one. Refresh the billing dashboard.';
             } else {
+                $paidReference = trim((string) ($_POST['payment_reference'] ?? ''));
+                if ($alreadyPaid && (($_POST['actual_credit_confirmed'] ?? '') !== '1' || $paidReference === '' || strlen($paidReference) > 255)) {
+                    $error = 'Confirm the incoming credit and enter its verified bank or UPI reference before creating a paid invoice.';
+                }
                 $emailRaw = $_POST['client_email'] ?? '';
                 $email = is_scalar($emailRaw) ? strtolower(trim((string) $emailRaw)) : '';
                 $taxInput = $_POST['tax_percent'] ?? '';
@@ -236,7 +241,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null && $error === '')
                     $lineDescriptions[$rowId] = is_scalar($rowDescription) ? trim((string) $rowDescription) : '';
                 }
                 $taxBps = $taxRaw === '' ? (int) $studioProfile['default_tax_bps'] : (is_numeric($taxRaw) ? (int) round((float) $taxRaw * 100) : -1);
-                if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                if ($error !== '') {
+                    // Keep paid invoicing gated on accountant verification before any invoice or customer records are created.
+                } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                     $error = 'Enter a valid client email address, or leave it blank and download the PDF to send manually.';
                 } elseif ($taxBps < 0 || $taxBps > 5000) {
                     $error = 'Tax must be between 0% and 50%.';
@@ -293,10 +300,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null && $error === '')
                             $db->beginTransaction();
                             $linkedCount = 0;
                             try {
-                                $link = $db->prepare("UPDATE final_delivery_billing SET source_invoice_id=?, bill_amount=?, invoice_number=?, invoice_file_url=? WHERE id=? AND invoice_status='pending' AND payment_status='unpaid' AND source_invoice_id IS NULL");
+                                if ($alreadyPaid) {
+                                    $paid = $db->prepare("UPDATE invoices SET status='paid', sent_at=NULL WHERE id=? AND status='draft'");
+                                    $paid->execute([$invoiceId]);
+                                    if ($paid->rowCount() !== 1) throw new RuntimeException('The new invoice could not be recorded as paid.');
+                                }
+                                $link = $db->prepare($alreadyPaid
+                                    ? "UPDATE final_delivery_billing SET source_invoice_id=?, bill_amount=?, invoice_number=?, invoice_file_url=?, invoice_status='paid', payment_status='cleared', payment_reference=?, cleared_by=?, cleared_at=UTC_TIMESTAMP(3), delivery_status='ready' WHERE id=? AND invoice_status='pending' AND payment_status='unpaid' AND source_invoice_id IS NULL AND delivery_status='awaiting_payment'"
+                                    : "UPDATE final_delivery_billing SET source_invoice_id=?, bill_amount=?, invoice_number=?, invoice_file_url=? WHERE id=? AND invoice_status='pending' AND payment_status='unpaid' AND source_invoice_id IS NULL AND delivery_status='awaiting_payment'");
                                 foreach ($billingRows as $row) {
                                     $rowId = (int) $row['id'];
-                                    $link->execute([$invoiceId, $lineAmounts[$rowId] / 100, $invoiceNumber, $pdfUrl, $rowId]);
+                                    $params = $alreadyPaid
+                                        ? [$invoiceId, $lineAmounts[$rowId] / 100, $invoiceNumber, $pdfUrl, $paidReference, (string) ($_SESSION['akh_billing_user'] ?? akh_admin_current() ?? 'admin'), $rowId]
+                                        : [$invoiceId, $lineAmounts[$rowId] / 100, $invoiceNumber, $pdfUrl, $rowId];
+                                    $link->execute($params);
                                     $linkedCount += $link->rowCount();
                                 }
                                 if ($linkedCount !== count($billingRows)) throw new RuntimeException('One or more projects changed before the invoice could be linked.');
@@ -311,7 +328,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null && $error === '')
                                 $actor = (string) ($_SESSION['akh_billing_user'] ?? akh_admin_current() ?? 'admin');
                                 $auditOk = true;
                                 foreach ($billingRows as $row) {
-                                    $rowOk = billing_invoice_audit($db, (int) $row['id'], $actor, 'invoice_draft_created', ['invoice_id' => $invoiceId, 'invoice_number' => $invoiceNumber, 'group_count' => count($billingRows)]);
+                                    $rowOk = billing_invoice_audit($db, (int) $row['id'], $actor, $alreadyPaid ? 'invoice_created_paid' : 'invoice_draft_created', $alreadyPaid
+                                        ? ['invoice_id' => $invoiceId, 'invoice_number' => $invoiceNumber, 'group_count' => count($billingRows), 'payment_reference' => $paidReference, 'actual_credit_confirmed' => true]
+                                        : ['invoice_id' => $invoiceId, 'invoice_number' => $invoiceNumber, 'group_count' => count($billingRows)]);
                                     $auditOk = $rowOk && $auditOk;
                                 }
                                 if (!$auditOk) {
@@ -321,6 +340,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $billing !== null && $error === '')
                                     $billing['invoice_file_url'] = $pdfUrl;
                                     $error = 'The invoice was created and linked, but the audit table is missing, incompatible, or not writable. Run billing-dashboard/sql/004_billing_audit_log.sql and confirm the site database user can INSERT into billing_audit_log. Refresh the billing dashboard; do not create another invoice for this delivery.';
                                 } else {
+                                    if ($alreadyPaid) {
+                                        $deliveryEventId = 'payment-cleared-' . $invoiceId . '-' . bin2hex(random_bytes(12));
+                                        foreach ($billingRows as $row) billing_invoice_audit($db, (int) $row['id'], $actor, 'payment_cleared', ['invoice_id' => $invoiceId, 'payment_reference' => $paidReference, 'actual_credit_confirmed' => true, 'group_count' => count($billingRows), 'delivery_event_id' => $deliveryEventId]);
+                                        $deliveryQuery = $db->prepare('SELECT id AS billing_id,task_code,phone,customer_name,project_name,task_type,folder_id,drive_file_id,file_name,invoice_number FROM final_delivery_billing WHERE source_invoice_id=? ORDER BY id ASC');
+                                        $deliveryQuery->execute([$invoiceId]);
+                                        $deliveries = $deliveryQuery->fetchAll(PDO::FETCH_ASSOC);
+                                        $deliveryPayload = ['event'=>'billing.payment.cleared','event_id'=>$deliveryEventId,'billing_id'=>(int)($deliveries[0]['billing_id'] ?? $billingId),'invoice_id'=>$invoiceId,'invoice_number'=>$invoiceNumber,'invoice_status'=>'paid','phone'=>(string)$billing['phone'],'customer_name'=>(string)$billing['customer_name'],'payment_status'=>'cleared','total_paise'=>(int)($createdInvoice['total_paise'] ?? 0),'currency'=>(string)($createdInvoice['currency'] ?? 'INR'),'due_at'=>(string)($createdInvoice['due_at'] ?? ''),'deliveries'=>$deliveries];
+                                        $deliverySent = billing_delivery_dispatch_event($deliveryPayload);
+                                        header('Location: ' . base_path('billing-dashboard/invoice-builder.php?ids=' . implode(',', $billingIds) . '&paid_invoice=1&delivery_notified=' . ($deliverySent ? '1' : '0')));
+                                        exit;
+                                    }
                                     header('Location: ' . base_path('billing-dashboard/invoice-builder.php?ids=' . implode(',', $billingIds)));
                                     exit;
                                 }
@@ -467,7 +497,10 @@ if ($billing !== null) {
         if ($invoice === null) $error = $error !== '' ? $error : 'The linked invoice could not be loaded.';
     }
 }
-if ((string) ($_GET['payment_link_sent'] ?? '') === '1') $flash = 'Payment link sent to n8n for WhatsApp delivery.';
+if ((string) ($_GET['paid_invoice'] ?? '') === '1') $flash = (string) ($_GET['delivery_notified'] ?? '') === '1'
+    ? 'Paid invoice created without sending it to the client. Verified payment was recorded and the delivery workflow was notified.'
+    : 'Paid invoice created without sending it to the client. Payment is recorded; delivery is ready, but the delivery workflow was not reached. Check n8n before retrying.';
+elseif ((string) ($_GET['payment_link_sent'] ?? '') === '1') $flash = 'Payment link sent to n8n for WhatsApp delivery.';
 elseif ((string) ($_GET['sent'] ?? '') === '1') $flash = 'Invoice emailed to the client with PDF attached.';
 $csrf = akh_csrf_token();
 ?>
@@ -489,7 +522,7 @@ $csrf = akh_csrf_token();
   <?php if ($invoice !== null): ?>
     <section class="invoice-summary"><p class="eyebrow">Invoice summary</p><p><strong><?php echo h((string) $invoice['invoice_number']); ?></strong> · Status: <?php echo h((string) $invoice['status']); ?> · Total: <?php echo h(akh_invoice_money_format_paise((int) $invoice['total_paise'], (string) $invoice['currency'])); ?></p>
       <div class="actions"><a class="btn alt" href="<?php echo h(base_path('billing-dashboard/invoice-pdf.php?id=' . (int) $invoice['id'])); ?>" target="_blank" rel="noopener">Preview / download PDF</a></div>
-      <?php if ((string) $invoice['status'] === 'sent' && count(array_filter($billingRows, static fn($row) => (string) ($row['invoice_status'] ?? '') === 'sent' && (string) ($row['payment_status'] ?? '') === 'unpaid')) === count($billingRows)): ?>
+  <?php if ((string) $invoice['status'] === 'sent' && count(array_filter($billingRows, static fn($row) => (string) ($row['invoice_status'] ?? '') === 'sent' && (string) ($row['payment_status'] ?? '') === 'unpaid')) === count($billingRows)): ?>
         <form method="post" style="margin-top:18px"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><?php foreach ($billingIds as $rowId): ?><input type="hidden" name="billing_ids[]" value="<?php echo (int) $rowId; ?>"><?php endforeach; ?><input type="hidden" name="action" value="resend_payment_link"><button class="btn alt">Resend payment link via WhatsApp</button><p class="muted">Use after payment-link setup is complete. This sends a fresh WhatsApp event for this existing invoice; it does not create another invoice or clear payment.</p></form>
       <?php endif; ?>
       <?php if ((string) $billing['invoice_status'] === 'pending' && (string) $invoice['status'] !== 'void'): ?>
@@ -504,12 +537,13 @@ $csrf = akh_csrf_token();
       catch (Throwable $e) { error_log('Billing invoice schema check failed: ' . $e->getMessage()); }
     ?>
     <?php if (!$invoiceSchemaReady): ?><p class="error">The studio invoice tables could not be verified. An administrator must finish the existing invoice setup and confirm database access before an accountant can create invoices.</p><?php else: ?>
-      <form method="post" id="create-invoice-form"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><?php foreach ($billingIds as $rowId): ?><input type="hidden" name="billing_ids[]" value="<?php echo (int) $rowId; ?>"><?php endforeach; ?><input type="hidden" name="action" value="create_invoice">
+      <form method="post" id="create-invoice-form"><input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>"><input type="hidden" name="billing_id" value="<?php echo $billingId; ?>"><?php foreach ($billingIds as $rowId): ?><input type="hidden" name="billing_ids[]" value="<?php echo (int) $rowId; ?>"><?php endforeach; ?>
         <div class="grid"><label class="field"><span>Client email (optional; required to email the PDF)</span><input type="email" name="client_email" maxlength="255" placeholder="client@example.com"></label><label class="field"><span>GST / tax rate (%)</span><input type="number" name="tax_percent" min="0" max="50" step="0.01" value="<?php echo h(number_format((int) $studioProfile['default_tax_bps'] / 100, 2, '.', '')); ?>"></label></div>
         <?php foreach ($billingRows as $row): $rowId = (int) $row['id']; ?><div class="notice"><strong><?php echo h((string) $row['task_code']); ?> · <?php echo h((string) $row['project_name']); ?></strong><label class="field"><span>Invoice line</span><input type="text" name="delivery_description[<?php echo $rowId; ?>]" maxlength="500" required value="<?php echo h(trim((string) $row['project_name'] . ' — ' . (string) ($row['task_type'] ?? 'Final video') . ' (' . (string) $row['file_name'] . ')')); ?>"></label><label class="field"><span>Amount (INR)</span><input type="number" name="delivery_amount[<?php echo $rowId; ?>]" min="0.01" step="0.01" required value="<?php echo h(number_format((float) ($row['bill_amount'] ?? 0), 2, '.', '')); ?>"></label></div><?php endforeach; ?>
         <div id="extra-lines"></div><p><button type="button" class="btn alt" id="add-line">+ Add another line item</button></p>
         <label class="field"><span>Invoice notes / payment terms</span><textarea name="notes" rows="3" maxlength="2000" placeholder="Optional invoice notes"></textarea></label>
-        <button class="btn">Create draft invoice</button>
+        <div class="notice"><strong>Choose how to record this invoice</strong><p class="muted">A draft stays pending and follows the usual email/payment flow. If the client has already paid, record the verified credit below; the invoice will be marked paid and delivery will be released without sending any invoice or payment link to the client.</p><label class="field"><span>Verified bank / UPI reference (required for paid invoice)</span><input type="text" name="payment_reference" maxlength="255" placeholder="Reference visible in your bank account" data-paid-required></label><label><input type="checkbox" name="actual_credit_confirmed" value="1" data-paid-required> I have confirmed the incoming credit in the bank account.</label></div>
+        <button class="btn" name="action" value="create_invoice">Create draft invoice</button> <button class="btn alt" name="action" value="create_paid_invoice" onclick="return confirm('Create this invoice as paid and release the delivery? This will not send the invoice or a payment link to the client.');">Create invoice as already paid</button>
       </form>
       <template id="extra-line-template"><div class="line"><label class="field"><span>Additional line description</span><input name="extra_description[]" maxlength="500"></label><label class="field"><span>Qty</span><input type="number" name="extra_quantity[]" min="1" max="99" value="1"></label><label class="field"><span>Rate (INR)</span><input type="number" name="extra_rate[]" min="0.01" step="0.01"></label></div></template>
       <script>document.getElementById('add-line').addEventListener('click',()=>document.getElementById('extra-lines').append(document.getElementById('extra-line-template').content.cloneNode(true)));</script>

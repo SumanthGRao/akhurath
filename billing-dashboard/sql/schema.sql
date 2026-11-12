@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS final_delivery_billing (
   source_invoice_id BIGINT UNSIGNED NULL,
   billing_group_mode ENUM('auto','single','manual') NOT NULL DEFAULT 'auto',
   billing_group_key CHAR(36) NULL,
-  invoice_status ENUM('pending','sent') NOT NULL DEFAULT 'pending',
+  invoice_status ENUM('pending','sent','paid') NOT NULL DEFAULT 'pending',
   payment_status ENUM('unpaid','cleared') NOT NULL DEFAULT 'unpaid',
   payment_reference VARCHAR(255) NULL,
   cleared_by VARCHAR(100) NULL,

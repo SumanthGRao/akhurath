@@ -6,7 +6,7 @@ A deployable accountant dashboard for final video billing. It includes a Node.js
 
 The open billing page automatically checks for database updates every five seconds and refreshes immediately when the browser tab becomes active again. The header shows the last successful sync time; a delayed sync is indicated if the server cannot be reached. This is near-live polling, so an inserted row typically appears within five seconds without manually reloading the page.
 
-The PHP accountant dashboard can combine pending project rows into one invoice. Matching rows are suggested automatically by `folder_id` for the same customer and phone. Accountants can manually group or split eligible projects before invoicing. Payment clearance applies to all project rows linked to a combined invoice, while final files remain separate delivery jobs.
+The PHP accountant dashboard can combine pending project rows into one invoice. Matching rows are suggested automatically by `folder_id` for the same customer and phone. Accountants can manually group or split eligible projects before invoicing. Payment clearance applies to all project rows linked to a combined invoice, while final files remain separate delivery jobs. When a client has already paid, an accountant can create the invoice as paid by confirming the bank credit and entering its reference; this does not send an invoice or payment link and releases delivery through the same authenticated workflow.
 
 When an upload workflow sends multiple final files for the same task, insert each distinct Drive file as a row with `version_review_status='pending'`. The accountant dashboard holds those versions outside the invoice queue until one is selected. Alternatives can be removed from the billing list without deleting their Drive files. See [README-Hostinger.md](README-Hostinger.md#review-multiple-final-versions) for the migration and n8n insert change.
 
@@ -17,7 +17,7 @@ The public payment page is implemented in `pay.php` and `payment-claim.php`. It 
 1. The existing upload workflow inserts each finished video into `final_delivery_billing`.
 2. An accountant signs in and records the bill amount, invoice number, and optional HTTPS invoice attachment reference.
 3. The accountant records payment clearance and a payment reference.
-4. A distinct n8n delivery workflow, using its own bearer token, polls only records where the invoice is sent, payment is cleared, and delivery is ready. It claims the record before processing.
+4. A distinct n8n delivery workflow, using its own bearer token, polls only records where the invoice is sent or recorded as paid, payment is cleared, and delivery is ready. It claims the record before processing.
 5. n8n re-checks clearance immediately before changing Drive permissions. It shares the file only at that point, sends the link to WhatsApp, and calls the completion endpoint.
 
 The dashboard has no Google Drive or WhatsApp integration and never makes Drive permissions public. Remove or disable any existing upload-stage Google Drive permission node configured as `type=anyone`; place the appropriate restricted sharing operation only in the delivery workflow after clearance verification. Do not expose a `drive_file_id` or final link to customers before delivery.
@@ -72,9 +72,9 @@ The MariaDB adapter uses parameterized queries, row locks for delivery claims, c
 
 Configure the n8n workflow with an HTTP Request credential using `Authorization: Bearer <N8N_API_TOKEN>`. Do not put this token in browser code or a customer-facing flow.
 
-1. Poll `GET /api/n8n/eligible` on a schedule. The response includes only cleared, sent, ready records and contains the Drive file ID needed for internal processing.
+1. Poll `GET /api/n8n/eligible` on a schedule. The response includes only cleared, sent-or-paid, ready records and contains the Drive file ID needed for internal processing.
 2. For each record, call `POST /api/n8n/claim/{id}`. Process only a successful claim. The claim response includes a `delivery_claim_token`.
-3. Immediately before altering Drive permissions, query the dashboard's eligible/clearance state with the shared token and verify this exact record remains payment-cleared and invoice-sent. Add your deployment-specific way to re-check the row, or create a protected clearance-verification endpoint for n8n. Never interpret a queued record or a stale claim alone as payment authorization.
+3. Immediately before altering Drive permissions, query the dashboard's eligible/clearance state with the shared token and verify this exact record remains payment-cleared with invoice status `sent` or `paid`. Add your deployment-specific way to re-check the row, or create a protected clearance-verification endpoint for n8n. Never interpret a queued record or a stale claim alone as payment authorization.
 4. Use Google Drive sharing with the intended recipient or restricted access. Never use `anyone` access unless the business has explicitly decided that policy outside this dashboard.
 5. Send the resulting final link via the configured WhatsApp provider.
 6. Call `POST /api/n8n/complete/{id}` with `{ "claim_token": "...", "status": "delivered", "final_link": "https://..." }`. For failure, send `{ "claim_token": "...", "status": "failed", "error": "..." }`.

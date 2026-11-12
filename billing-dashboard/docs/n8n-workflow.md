@@ -6,13 +6,13 @@ Keep this as a separate workflow from final-video upload. The dashboard does not
 2. Add HTTP Request `GET /api/n8n/eligible` with the dedicated `N8N_API_TOKEN` bearer credential.
 3. Split returned `items` into individual records.
 4. Call `POST /api/n8n/claim/{id}` with the same credential. Stop on any non-2xx response; retain `item.delivery_claim_token`.
-5. Immediately before sharing, verify the row still has `payment_status=cleared`, `invoice_status=sent`, and the current claim token. A recommended production pattern is a read-only MariaDB query node:
+5. Immediately before sharing, verify the row still has `payment_status=cleared`, `invoice_status IN ('sent','paid')`, and the current claim token. `paid` is used for invoices recorded after an already-cleared client payment; these invoices are not sent to the client. A recommended production pattern is a read-only MariaDB query node:
 
 ```sql
 SELECT id FROM final_delivery_billing
 WHERE id = ?
   AND payment_status = 'cleared'
-  AND invoice_status = 'sent'
+  AND invoice_status IN ('sent', 'paid')
   AND delivery_status = 'processing'
   AND delivery_claim_token = ?;
 ```
