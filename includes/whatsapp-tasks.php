@@ -1527,25 +1527,6 @@ function akh_wa_sync_to_studio(array $waRow): ?string
     if ($editorDescriptionOverride !== '') {
         $description = $editorDescriptionOverride;
     }
-    if (
-        is_array($studioBefore)
-        && strtolower(trim((string) ($studioBefore['status'] ?? ''))) === 'reverted'
-        && $waStatus !== 'reverted'
-    ) {
-        $prevWaForLog = $waStatus;
-        $waStatus = 'reverted';
-        $studioStatus = 'reverted';
-        if ($waId > 0 && akh_wa_tasks_table_exists()) {
-            try {
-                akh_db()->prepare('UPDATE whatsapp_tasks SET status = ? WHERE id = ?')
-                    ->execute(['reverted', $waId]);
-                akh_wa_log_whatsapp_row_status_change($taskCode, $prevWaForLog, 'reverted');
-            } catch (Throwable $e) {
-                error_log('akh_wa_sync_to_studio: reconcile reverted status: ' . $e->getMessage());
-            }
-        }
-    }
-
     if (akh_task_by_id($studioId) === null) {
         $created = akh_wa_insert_studio_task_direct($inputs, $taskCode);
         if ($created === null) {
@@ -1603,21 +1584,7 @@ function akh_wa_sync_to_studio(array $waRow): ?string
             }
         }
         $studioAfterAssign = akh_task_by_id($studioId);
-        $studioStNow = is_array($studioAfterAssign)
-            ? strtolower(trim((string) ($studioAfterAssign['status'] ?? '')))
-            : '';
-        if ($studioStNow === 'reverted') {
-            if ($waStatus !== 'reverted' && $waId > 0) {
-                try {
-                    $prevWaForLog = $waStatus;
-                    akh_db()->prepare('UPDATE whatsapp_tasks SET status = ? WHERE id = ?')
-                        ->execute(['reverted', $waId]);
-                    akh_wa_log_whatsapp_row_status_change($taskCode, $prevWaForLog, 'reverted');
-                } catch (Throwable $e) {
-                    error_log('akh_wa_sync_to_studio: keep WA reverted: ' . $e->getMessage());
-                }
-            }
-        } elseif (!in_array($studioStatus, ['new', 'assigned'], true)) {
+        if (!in_array($studioStatus, ['new', 'assigned'], true)) {
             $statusErr = akh_task_admin_set_status($studioId, $studioStatus, 'whatsapp');
             if ($statusErr !== null) {
                 return $statusErr;
@@ -1668,20 +1635,18 @@ function akh_wa_sync_to_studio(array $waRow): ?string
     }
     if (is_array($studio) && strtolower(trim((string) ($studio['status'] ?? ''))) !== $studioStatus) {
         $studioPrev = strtolower(trim((string) ($studio['status'] ?? 'new')));
-        if ($studioPrev !== 'reverted' || $studioStatus === 'reverted') {
-            require_once __DIR__ . '/task-status-log.php';
-            akh_task_status_log_record(
-                $taskCode,
-                $studioPrev,
-                $studioStatus,
-                'whatsapp',
-                'WhatsApp sync',
-                'Editor board synced from WhatsApp queue.'
-            );
-            $statusErr = akh_wa_sync_status_to_studio_board($taskCode, $waStatus);
-            if ($statusErr !== null) {
-                return $statusErr;
-            }
+        require_once __DIR__ . '/task-status-log.php';
+        akh_task_status_log_record(
+            $taskCode,
+            $studioPrev,
+            $studioStatus,
+            'whatsapp',
+            'WhatsApp sync',
+            'Editor board synced from WhatsApp queue.'
+        );
+        $statusErr = akh_wa_sync_status_to_studio_board($taskCode, $waStatus);
+        if ($statusErr !== null) {
+            return $statusErr;
         }
     }
 
