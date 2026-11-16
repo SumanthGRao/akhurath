@@ -617,7 +617,8 @@ function akh_whatsapp_task_details_n8n_webhook_url(): string
 function akh_whatsapp_dispatch_n8n_task_details_update(
     string $taskCode,
     string $projectName,
-    string $description
+    string $description,
+    string $taskType = ''
 ): bool {
     $url = akh_whatsapp_task_details_n8n_webhook_url();
     if (!str_starts_with($url, 'https://')) {
@@ -643,6 +644,7 @@ function akh_whatsapp_dispatch_n8n_task_details_update(
         'event' => 'task_details_updated',
         'task_code' => $taskCode,
         'project_name' => trim($projectName),
+        'task_type' => trim($taskType),
         'description' => trim($description),
         'source' => 'editor',
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

@@ -222,7 +222,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim((string) ($_POST['ajax_action'
             $taskId,
             $editor,
             (string) ($_POST['project_name'] ?? ''),
-            (string) ($_POST['description'] ?? '')
+            (string) ($_POST['description'] ?? ''),
+            (string) ($_POST['task_type'] ?? '')
         );
         if ($t === null) {
             echo json_encode([

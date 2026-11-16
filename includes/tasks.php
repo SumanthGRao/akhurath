@@ -2683,7 +2683,7 @@ function akh_task_set_status(
 }
 
 /**
- * Update the assigned editor's project name and task brief.
+ * Update the assigned editor's project name, task type, and task brief.
  *
  * @return array<string, mixed>|null Updated task, or null when invalid/not editable.
  */
@@ -2691,11 +2691,13 @@ function akh_task_editor_update_details(
     string $taskId,
     string $editorUsername,
     string $projectName,
-    string $description
+    string $description,
+    string $taskType = ''
 ): ?array {
     $projectName = trim($projectName);
     $description = trim($description);
-    if ($projectName === '' || mb_strlen($projectName) > 200 || mb_strlen($description) > 8000) {
+    $taskType = trim($taskType);
+    if ($projectName === '' || mb_strlen($projectName) > 200 || mb_strlen($description) > 8000 || mb_strlen($taskType) > 100) {
         return null;
     }
 
@@ -2705,6 +2707,7 @@ function akh_task_editor_update_details(
     $changed = false;
     $waRow = null;
     $taskIndex = -1;
+    $oldWaType = '';
     foreach ($list as $i => $task) {
         if (!akh_task_ids_match((string) ($task['id'] ?? ''), $taskId)) {
             continue;
@@ -2723,6 +2726,7 @@ function akh_task_editor_update_details(
         }
         if (is_array($waRow)) {
             require_once __DIR__ . '/whatsapp-tasks.php';
+            $oldWaType = (string) ($waRow['task_type'] ?? '');
             $description = akh_wa_normalize_editor_instructions(
                 $description,
                 (string) ($waRow['task_code'] ?? $taskId),
@@ -2731,9 +2735,11 @@ function akh_task_editor_update_details(
         }
         $changed = is_array($waRow)
             ? ((string) ($waRow['project_name'] ?? '') !== $projectName
-                || (string) ($waRow['instructions'] ?? '') !== $description)
+                || (string) ($waRow['instructions'] ?? '') !== $description
+                || (string) ($waRow['task_type'] ?? '') !== $taskType)
             : ((string) ($task['title'] ?? '') !== $projectName
-                || (string) ($task['description'] ?? '') !== $description);
+                || (string) ($task['description'] ?? '') !== $description
+                || (string) ($task['task_type'] ?? '') !== $taskType);
         $taskIndex = $i;
         $out = $task;
         break;
@@ -2753,6 +2759,7 @@ function akh_task_editor_update_details(
         $waSave = akh_wa_task_update((int) ($waRow['id'] ?? 0), [
             'project_name' => $projectName,
             'instructions' => $description,
+            'task_type' => $taskType,
         ]);
         if (($waSave['ok'] ?? false) !== true || !is_array($waSave['task'] ?? null)) {
             return null;
@@ -2763,22 +2770,26 @@ function akh_task_editor_update_details(
         $list[$taskIndex]['description'] = (string) $inputs['description'];
         $list[$taskIndex]['project_name'] = $projectName;
         $list[$taskIndex]['project_details'] = $description;
+        $list[$taskIndex]['task_type'] = $taskType;
+        $list[$taskIndex]['whatsapp_task_type'] = $taskType;
         unset($list[$taskIndex]['editor_description_override']);
         $list[$taskIndex]['updated_at'] = gmdate('c');
     } else {
         $list[$taskIndex]['title'] = $projectName;
         $list[$taskIndex]['description'] = $description;
+        $list[$taskIndex]['task_type'] = $taskType;
         $list[$taskIndex]['updated_at'] = gmdate('c');
     }
 
     $list[$taskIndex]['client_editor_notify'] = true;
-    $list[$taskIndex]['client_notify_detail'] = 'Project name or task description updated by the editor.';
+    $list[$taskIndex]['client_notify_detail'] = 'Project name, task type, or task description updated by the editor.';
     $out = $list[$taskIndex];
     if (!akh_tasks_save_locked($list)) {
         if (is_array($waRow)) {
             akh_wa_task_update((int) ($waRow['id'] ?? 0), [
                 'project_name' => $oldWaName,
                 'instructions' => $oldWaInstructions,
+                'task_type' => $oldWaType,
             ]);
         }
         return null;
@@ -2789,7 +2800,8 @@ function akh_task_editor_update_details(
         if (!akh_whatsapp_dispatch_n8n_task_details_update(
             (string) ($out['id'] ?? $taskId),
             $projectName,
-            $description
+            $description,
+            $taskType
         )) {
             $out['_client_details_sync_warning'] = true;
         }
@@ -2801,7 +2813,7 @@ function akh_task_editor_update_details(
             $client,
             $out,
             'Your task details were updated.',
-            "Project name: {$projectName}\n\nThe task description was updated by your editor."
+            "Project name: {$projectName}\nTask type: " . ($taskType !== '' ? $taskType : '—') . "\n\nThe task description was updated by your editor."
         );
     }
 

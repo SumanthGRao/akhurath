@@ -18,6 +18,11 @@ function akh_editor_task_list_type_label(array $t): string
 {
     require_once __DIR__ . '/tasks.php';
 
+    $taskType = trim((string) ($t['task_type'] ?? ''));
+    if ($taskType !== '') {
+        return $taskType;
+    }
+
     $editType = trim((string) ($t['edit_type'] ?? ''));
     if ($editType !== '' && !in_array($editType, ['studio_admin', 'bundle_parent'], true)) {
         return akh_task_edit_type_label($editType);
@@ -181,6 +186,7 @@ function akh_editor_task_view_model(
             $taskCode = (string) ($waRow['task_code'] ?? $tidNorm);
             $comments = (string) ($waRow['comments'] ?? '');
             $t['whatsapp_project_name'] = (string) ($waRow['project_name'] ?? '');
+            $t['whatsapp_task_type'] = (string) ($waRow['task_type'] ?? '');
             $t['whatsapp_comments'] = trim($comments);
             $waInstructions = akh_wa_normalize_editor_instructions(
                 (string) ($waRow['instructions'] ?? ''),
@@ -414,6 +420,7 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
     $stSlug = (string) $vm['status_slug'];
     $dm = (string) $vm['delivery_mode'];
     $headline = (string) $vm['headline'];
+    $typeLabel = trim((string) ($vm['type_label'] ?? ''));
     $taskAlert = $vm['task_alert'];
     $customerLabel = (string) ($vm['customer_label'] ?? akh_editor_task_customer_display_name($t));
     $customerTone = (string) ($vm['customer_tone'] ?? akh_editor_task_customer_badge_tone($t, $vm));
@@ -437,7 +444,10 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
       <header class="edesk-panel__head">
         <div class="edesk-panel__head-main">
           <p class="edesk-panel__kicker"><?php echo h($tid); ?></p>
-          <h2 class="edesk-panel__title"><?php echo h($headline !== '' ? $headline : '—'); ?></h2>
+          <div class="edesk-panel__title-row">
+            <h2 class="edesk-panel__title"><?php echo h($headline !== '' ? $headline : '—'); ?></h2>
+            <?php if ($typeLabel !== ''): ?><span class="edesk-panel__type"><?php echo h($typeLabel); ?></span><?php endif; ?>
+          </div>
           <div class="edesk-panel__chips">
             <?php if ($section === 'mine'): ?>
               <span class="task-badge task-badge--<?php echo h($stSlug); ?>"><?php echo h(akh_task_status_label($st)); ?></span>
@@ -488,16 +498,25 @@ function akh_editor_render_detail_panel(array $vm, string $pageCsrf): void
             $editDescription = $isWhatsAppTask
                 ? (string) ($t['whatsapp_instructions'] ?? '')
                 : (string) ($t['description'] ?? '');
+            $editTaskType = $isWhatsAppTask
+                ? (string) ($t['whatsapp_task_type'] ?? '')
+                : (string) ($t['task_type'] ?? $typeLabel);
             ?>
             <section class="edesk-card edesk-card--action">
               <h3 class="edesk-card__title">Task details</h3>
               <form class="portal-form portal-form--compact edesk-details-form edesk-ajax-details" method="post" action="" data-edesk-ajax="details">
                 <input type="hidden" name="csrf_token" value="<?php echo h($pageCsrf); ?>" />
                 <input type="hidden" name="task_id" value="<?php echo h($tid); ?>" />
-                <label class="field">
-                  <span>Project name</span>
-                  <input type="text" name="project_name" value="<?php echo h($editProjectName); ?>" maxlength="200" required disabled />
-                </label>
+                <div class="edesk-details-fields">
+                  <label class="field">
+                    <span>Project name</span>
+                    <input type="text" name="project_name" value="<?php echo h($editProjectName); ?>" maxlength="200" required disabled />
+                  </label>
+                  <label class="field">
+                    <span>Task type</span>
+                    <input type="text" name="task_type" value="<?php echo h($editTaskType); ?>" maxlength="100" placeholder="e.g. Teaser, Reel" disabled />
+                  </label>
+                </div>
                 <label class="field">
                   <span><?php echo $isWhatsAppTask ? 'Description / instructions' : 'Description'; ?></span>
                   <textarea name="description" rows="7" maxlength="8000"<?php echo $isWhatsAppTask ? '' : ' required'; ?> disabled><?php echo h($editDescription); ?></textarea>

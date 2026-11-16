@@ -647,6 +647,31 @@
   line-height: 1.2;
 }
 
+.edesk-panel__title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-bottom: 0.45rem;
+}
+
+.edesk-panel__title-row .edesk-panel__title {
+  margin: 0;
+}
+
+.edesk-panel__type {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.8rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(61, 95, 140, 0.12);
+  color: var(--edesk-accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
 .edesk-panel__chips {
   display: flex;
   flex-wrap: wrap;
@@ -746,6 +771,24 @@
 .edesk-details-actions {
   display: flex;
   gap: 0.55rem;
+}
+
+.edesk-details-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(12rem, 0.85fr);
+  gap: 0.75rem;
+}
+
+.edesk-details-fields .field input {
+  min-height: 3.1rem;
+  font-size: 1rem;
+}
+
+@media (max-width: 620px) {
+  .edesk-details-fields {
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+  }
 }
 
 .edesk-details-actions .btn {

@@ -1654,6 +1654,7 @@
         postAjax('details_save', {
           task_id: detailsId,
           project_name: (form.querySelector('[name="project_name"]') || {}).value || '',
+          task_type: (form.querySelector('[name="task_type"]') || {}).value || '',
           description: (form.querySelector('[name="description"]') || {}).value || '',
         })
           .then(function (data) {
