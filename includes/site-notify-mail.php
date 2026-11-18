@@ -218,6 +218,28 @@ function akh_site_mail_studio_editor_attendance(string $editor, string $type): v
     akh_site_notify_log_mail_failure('editor_attendance_studio', akh_smtp_send($to, $subject, $body));
 }
 
+/** Notify the studio when a new project enters the billing queue. */
+function akh_site_mail_studio_billing_project(array $project): void
+{
+    if (!akh_site_notify_smtp_enabled()) {
+        return;
+    }
+    $to = trim(LEADS_EMAIL);
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
+        return;
+    }
+    $subject = 'New billing project ' . (string) ($project['task_code'] ?? '') . ' — ' . SITE_NAME;
+    $body = "A new project was added to the billing dashboard.\n\n"
+        . 'When: ' . akh_site_mail_format_when() . "\n"
+        . 'Project: ' . (string) ($project['project_name'] ?? '') . "\n"
+        . 'Client: ' . (string) ($project['customer_name'] ?? '') . "\n"
+        . 'Task code: ' . (string) ($project['task_code'] ?? '') . "\n"
+        . 'Task type: ' . (string) ($project['task_type'] ?? '') . "\n"
+        . 'File: ' . (string) ($project['file_name'] ?? '') . "\n";
+
+    akh_site_notify_log_mail_failure('billing_project_studio', akh_smtp_send($to, $subject, $body));
+}
+
 function akh_site_mail_studio_new_task(array $task): void
 {
     if (!akh_site_notify_smtp_enabled()) {

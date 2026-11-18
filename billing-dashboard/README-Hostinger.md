@@ -37,7 +37,7 @@ Use the inserted row's `id` as `billing_id` and a stable unique `event_id` per i
 
 ## Review multiple final versions
 
-The upload workflow must insert each distinct Drive file as its own `final_delivery_billing` row. Add `version_review_status` to the insert columns with the value `'pending'`. Since duplicate task codes are now allowed for different `drive_file_id` values, use the composite unique key `(task_code, drive_file_id)` for idempotency. Update the n8n SQL node to this shape (keep your existing expressions for the values):
+The upload workflow must insert each distinct Drive file as its own `final_delivery_billing` row. The existing `n8n-new-delivery` callback sends the studio an email and a phone push notification once per unique event. The email recipient is `LEADS_EMAIL` in `includes/config.php` (the same setting used by attendance notifications). Add `version_review_status` to the insert columns with the value `'pending'`. Since duplicate task codes are now allowed for different `drive_file_id` values, use the composite unique key `(task_code, drive_file_id)` for idempotency. Update the n8n SQL node to this shape (keep your existing expressions for the values):
 
 ```sql
 INSERT INTO final_delivery_billing (
